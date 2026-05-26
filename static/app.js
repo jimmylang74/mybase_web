@@ -950,23 +950,50 @@
     e.preventDefault();
   });
 
+  $('#search-splitter').addEventListener('mousedown', (e) => {
+    searchDragging = true;
+    searchSplitter.classList.add('active');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
   document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const sidebar = $('#sidebar');
-    const mainContent = $('#main-content');
-    const rect = mainContent.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    const minWidth = 150;
-    const maxWidth = rect.width - 200;
-    if (x < minWidth) x = minWidth;
-    if (x > maxWidth) x = maxWidth;
-    sidebar.style.width = x + 'px';
+    if (isDragging) {
+      const sidebar = $('#sidebar');
+      const mainContent = $('#main-content');
+      const rect = mainContent.getBoundingClientRect();
+      let x = e.clientX - rect.left;
+      const minWidth = 150;
+      const maxWidth = rect.width - 200;
+      if (x < minWidth) x = minWidth;
+      if (x > maxWidth) x = maxWidth;
+      sidebar.style.width = x + 'px';
+      return;
+    }
+    if (searchDragging) {
+      const appEl = $('#app');
+      const appRect = appEl.getBoundingClientRect();
+      let h = appRect.bottom - e.clientY;
+      const minH = 60;
+      const maxH = appRect.height * 0.6;
+      if (h < minH) h = minH;
+      if (h > maxH) h = maxH;
+      searchPanel.style.height = h + 'px';
+      return;
+    }
   });
 
   document.addEventListener('mouseup', () => {
     if (isDragging) {
       isDragging = false;
       $('#splitter').classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    if (searchDragging) {
+      searchDragging = false;
+      searchSplitter.classList.remove('active');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     }
@@ -1057,6 +1084,107 @@
     if (!ctxMenu.contains(e.target)) {
       ctxMenu.style.display = 'none';
     }
+  });
+
+  // ─── Search ────────────────────────────────────────────────────────────
+
+  const searchInput = $('#search-input');
+  const searchBtn = $('#btn-search');
+  const searchGlobal = $('#search-global');
+  const searchPanel = $('#search-results-panel');
+  const searchSplitter = $('#search-splitter');
+  const searchResultsBody = $('#search-results-body');
+  const searchResultsClose = $('#search-results-close');
+  let searchDragging = false;
+
+  async function performSearch() {
+    const query = searchInput.value.trim();
+    if (!query) return;
+
+    const globalMode = searchGlobal.checked;
+    const tabParam = globalMode ? '' : (currentTab || '');
+
+    searchResultsBody.innerHTML = '<div class="search-loading">搜索中...</div>';
+    searchPanel.style.display = 'flex';
+    searchSplitter.style.display = 'block';
+    $('#search-results-column-headers').style.display = 'none';
+
+    try {
+      let url = `/api/search?q=${encodeURIComponent(query)}`;
+      if (tabParam) {
+        url += `&tab=${encodeURIComponent(tabParam)}`;
+      }
+      const results = await api('GET', url);
+
+      if (results.length === 0) {
+        searchResultsBody.innerHTML = '<div class="search-empty">未找到匹配结果</div>';
+        return;
+      }
+
+      let html = `<div class="search-stats">找到 ${results.length} 条结果</div>`;
+      results.forEach((r) => {
+        const tab = escapeHtml(r.tab);
+        const path = escapeHtml(r.menu_path);
+        const snippet = escapeHtml(r.snippet || '');
+        html += `<div class="search-result-item" data-tab="${escapeHtml(r.tab)}" data-item-id="${escapeHtml(r.menu_item_id)}">`;
+        html += `<span class="col-tab">${tab}</span>`;
+        html += `<span class="col-path">${path}</span>`;
+        html += `<span class="col-snippet">${snippet || ''}</span>`;
+        html += '</div>';
+      });
+      searchResultsBody.innerHTML = html;
+      $('#search-results-column-headers').style.display = 'flex';
+
+      searchResultsBody.querySelectorAll('.search-result-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          const targetTab = el.dataset.tab;
+          const targetItemId = el.dataset.itemId;
+          // Highlight selected item
+          searchResultsBody.querySelectorAll('.search-result-item').forEach((x) => x.classList.remove('active'));
+          el.classList.add('active');
+          navigateToSearchResult(targetTab, targetItemId);
+        });
+      });
+    } catch (e) {
+      searchResultsBody.innerHTML = `<div class="search-empty">搜索出错: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function navigateToSearchResult(tabName, itemId) {
+    // Keep search panel open (no longer hides it on select)
+
+    if (tabName && tabName !== currentTab) {
+      const tabEl = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(tabName)}"]`);
+      if (tabEl) {
+        await switchTab(tabName, tabEl);
+      } else {
+        await loadTabs();
+        const newTabEl = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(tabName)}"]`);
+        if (newTabEl) {
+          await switchTab(tabName, newTabEl);
+        } else {
+          return;
+        }
+      }
+    }
+
+    if (findNodeById(menuTree, itemId)) {
+      scrollToTreeNode(itemId);
+      selectItem(itemId);
+    }
+  }
+
+  searchBtn.addEventListener('click', performSearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      performSearch();
+    }
+  });
+
+  searchResultsClose.addEventListener('click', () => {
+    searchPanel.style.display = 'none';
+    searchSplitter.style.display = 'none';
   });
 
   // ─── Init ──────────────────────────────────────────────────────────────

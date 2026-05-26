@@ -3,7 +3,9 @@ import os
 import re
 import json
 import uuid
+import sqlite3
 import argparse
+import shutil
 from pathlib import Path
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
 from werkzeug.utils import secure_filename
@@ -12,8 +14,10 @@ app = Flask(__name__)
 
 BASE_DIR = Path(__file__).parent
 mybase_dir = BASE_DIR / 'mybase'
+INDEX_DB_DIR = BASE_DIR / 'index_db'
 UPLOAD_DIR_NAME = 'images'
 server_port = 9999
+force_index_target = None
 
 
 def parse_args():
@@ -22,14 +26,17 @@ def parse_args():
                         help='MyBase root directory name (default: mybase)')
     parser.add_argument('--port', type=int, default=9999,
                         help='Server port (default: 9999)')
+    parser.add_argument('--force-index', type=str, nargs='?', const='all', default=None,
+                        help='Force reindex a specific knowledge base. If no name given, reindex all.')
     return parser.parse_args()
 
 
 def init_config():
-    global mybase_dir, server_port
+    global mybase_dir, server_port, force_index_target
     args = parse_args()
     mybase_dir = BASE_DIR / args.mybase
     server_port = args.port
+    force_index_target = args.force_index
     mybase_dir.mkdir(exist_ok=True)
 
 
@@ -193,6 +200,252 @@ def _extract_body_from_qrich(html):
     return html
 
 
+# ─── Search Index Engine (SQLite3) ─────────────────────────────────────────
+
+
+def get_index_db_path(tab_name):
+    """Return path to the SQLite index db for a given tab."""
+    return INDEX_DB_DIR / f"{tab_name}.db"
+
+
+def init_index_db(tab_name):
+    """Create the index database and table for a tab if not exists."""
+    INDEX_DB_DIR.mkdir(exist_ok=True)
+    db_path = get_index_db_path(tab_name)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS item_index (
+            menu_item_id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            content_text TEXT DEFAULT '',
+            menu_path TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def strip_html_tags(html_text):
+    """Strip HTML tags and decode entities for plain text indexing."""
+    if not html_text:
+        return ''
+    text = re.sub(r'<[^>]+>', ' ', html_text)
+    text = re.sub(r'&nbsp;', ' ', text)
+    text = re.sub(r'&amp;', '&', text)
+    text = re.sub(r'&lt;', '<', text)
+    text = re.sub(r'&gt;', '>', text)
+    text = re.sub(r'&quot;', '"', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def make_snippet(text, query, context_len=40):
+    """Create a text snippet around the first keyword match."""
+    if not text:
+        return ''
+    idx = text.lower().find(query.lower())
+    if idx == -1:
+        return text[:80]
+    start = max(0, idx - context_len)
+    end = min(len(text), idx + len(query) + context_len)
+    snippet = text[start:end]
+    if start > 0:
+        snippet = '...' + snippet
+    if end < len(text):
+        snippet = snippet + '...'
+    return snippet
+
+
+def compute_item_path(menu, item_id, tab_name):
+    """Find the full menu path for an item (tab/label/label/...)."""
+    def _walk(items, target_id, parent_path):
+        for item in items:
+            current = f"{parent_path}/{item['label']}"
+            if item['id'] == target_id:
+                return current
+            if item.get('children'):
+                result = _walk(item['children'], target_id, current)
+                if result:
+                    return result
+        return None
+    return _walk(menu, item_id, tab_name)
+
+
+def index_tab(tab_name):
+    """Full reindex of a single knowledge base tab."""
+    if not get_tab_path(tab_name):
+        return
+    init_index_db(tab_name)
+    menu = load_menu(tab_name)
+    conn = sqlite3.connect(str(get_index_db_path(tab_name)))
+    conn.execute("DELETE FROM item_index")
+
+    def _flatten(items, parent_path):
+        rows = []
+        for item in items:
+            path = f"{parent_path}/{item['label']}"
+            rows.append((item, path))
+            if item.get('children'):
+                rows.extend(_flatten(item['children'], path))
+        return rows
+
+    flat = _flatten(menu, tab_name)
+    for item, path in flat:
+        content = load_content(tab_name, item['id'])
+        text = strip_html_tags(content)
+        conn.execute(
+            "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, ?, ?)",
+            (item['id'], item['label'], text, path)
+        )
+    conn.commit()
+    conn.close()
+
+
+def index_all_tabs():
+    """Reindex all existing knowledge bases."""
+    if mybase_dir.exists():
+        for entry in sorted(mybase_dir.iterdir()):
+            if entry.is_dir() and not entry.name.startswith('.'):
+                index_tab(entry.name)
+
+
+def search_index(tab_name, query):
+    """Search within a single tab's index. Returns list of result dicts."""
+    db_path = get_index_db_path(tab_name)
+    if not db_path.exists():
+        return []
+    conn = sqlite3.connect(str(db_path))
+    try:
+        like_pattern = f'%{query}%'
+        cursor = conn.execute(
+            "SELECT menu_item_id, label, content_text, menu_path FROM item_index "
+            "WHERE label LIKE ? OR content_text LIKE ? ORDER BY menu_path LIMIT 50",
+            (like_pattern, like_pattern)
+        )
+        results = []
+        for row in cursor.fetchall():
+            content_text = row[2] or ''
+            snippet = ''
+            # Try to find match in label first, then content
+            if query.lower() in row[1].lower():
+                snippet = row[1]
+            elif query.lower() in content_text.lower():
+                snippet = make_snippet(content_text, query)
+            else:
+                snippet = content_text[:80]
+            results.append({
+                'menu_item_id': row[0],
+                'label': row[1],
+                'menu_path': row[3],
+                'snippet': snippet,
+                'tab': tab_name,
+            })
+        return results
+    finally:
+        conn.close()
+
+
+def search_all_tabs(query):
+    """Search across all indexed knowledge bases."""
+    results = []
+    if INDEX_DB_DIR.exists():
+        for db_file in sorted(INDEX_DB_DIR.glob("*.db")):
+            tab_name = db_file.stem
+            results.extend(search_index(tab_name, query))
+    return results
+
+
+def update_item_in_index(tab_name, item_id):
+    """Incremental update: reindex a single item (e.g. after content save)."""
+    db_path = get_index_db_path(tab_name)
+    if not db_path.exists():
+        return
+    menu = load_menu(tab_name)
+    item = find_menu_item(menu, item_id)
+    if not item:
+        return
+    path = compute_item_path(menu, item_id, tab_name)
+    if not path:
+        return
+    content = load_content(tab_name, item_id)
+    text = strip_html_tags(content)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("DELETE FROM item_index WHERE menu_item_id = ?", (item_id,))
+        conn.execute(
+            "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, ?, ?)",
+            (item_id, item['label'], text, path)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_item_from_index(tab_name, item_id):
+    """Remove a single item from the index."""
+    db_path = get_index_db_path(tab_name)
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("DELETE FROM item_index WHERE menu_item_id = ?", (item_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reindex_tab(tab_name):
+    """Full reindex of a tab (for menu mutations that change paths)."""
+    if get_tab_path(tab_name):
+        index_tab(tab_name)
+
+
+def delete_tab_index(tab_name):
+    """Remove the index db file for a deleted tab."""
+    db_path = get_index_db_path(tab_name)
+    if db_path.exists():
+        db_path.unlink()
+
+
+def ensure_indexes():
+    """On startup: delete orphan index files, auto-index new tabs, force-index if requested."""
+    INDEX_DB_DIR.mkdir(exist_ok=True)
+
+    tabs = set()
+    if mybase_dir.exists():
+        for entry in mybase_dir.iterdir():
+            if entry.is_dir() and not entry.name.startswith('.'):
+                tabs.add(entry.name)
+
+    for db_file in list(INDEX_DB_DIR.glob("*.db")):
+        if db_file.stem not in tabs:
+            print(f"  Removing orphan index: {db_file.stem}")
+            db_file.unlink()
+
+    indexed = {db.stem for db in INDEX_DB_DIR.glob("*.db")}
+
+    for tab in sorted(tabs):
+        if tab not in indexed:
+            print(f"  Creating index for tab: {tab}")
+            index_tab(tab)
+
+    global force_index_target
+    if force_index_target:
+        if force_index_target == 'all':
+            for tab in sorted(tabs):
+                print(f"  Force reindexing: {tab}")
+                index_tab(tab)
+        elif force_index_target in tabs:
+            print(f"  Force reindexing: {force_index_target}")
+            index_tab(force_index_target)
+        else:
+            print(f"  Warning: Knowledge base '{force_index_target}' not found, skipping.")
+
+
+# ─── End Index Engine ─────────────────────────────────────────────────────
+
+
 def save_content(tab_name, item_id, content_html):
     content_dir = get_content_dir(tab_name)
     if content_dir:
@@ -322,6 +575,19 @@ def create_menu_item(tab):
         return jsonify({'error': 'Parent or reference item not found'}), 404
 
     save_menu(tab, menu)
+    path = compute_item_path(menu, new_item['id'], tab)
+    if path:
+        db_path = get_index_db_path(tab)
+        if db_path.exists():
+            conn = sqlite3.connect(str(db_path))
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, '', ?)",
+                    (new_item['id'], new_item['label'], path)
+                )
+                conn.commit()
+            finally:
+                conn.close()
     return jsonify(new_item), 201
 
 
@@ -339,6 +605,7 @@ def update_menu_item_route(tab, item_id):
         return jsonify({'error': 'Item not found'}), 404
 
     save_menu(tab, menu)
+    reindex_tab(tab)
     return jsonify({'success': True})
 
 
@@ -362,6 +629,7 @@ def delete_menu_item_route(tab, item_id):
             if content_file.exists():
                 content_file.unlink()
 
+    reindex_tab(tab)
     return jsonify({'deleted_ids': deleted_ids})
 
 
@@ -382,6 +650,7 @@ def save_content_route(tab, item_id):
         return jsonify({'error': 'Content is required'}), 400
 
     save_content(tab, item_id, data['content'])
+    update_item_in_index(tab, item_id)
     return jsonify({'success': True})
 
 
@@ -417,6 +686,19 @@ def serve_uploaded_image(tab, filename):
         abort(404)
     upload_dir = tab_path / UPLOAD_DIR_NAME
     return send_from_directory(str(upload_dir), filename)
+
+
+@app.route('/api/search')
+def search():
+    query = request.args.get('q', '').strip()
+    tab = request.args.get('tab', '').strip()
+    if not query:
+        return jsonify([])
+    if tab:
+        results = search_index(tab, query)
+    else:
+        results = search_all_tabs(query)
+    return jsonify(results)
 
 
 def generate_standalone_html(tab_name):
@@ -526,7 +808,7 @@ def delete_tab(tab):
     tab_path = get_tab_path(tab)
     if not tab_path:
         return jsonify({'error': 'Tab not found'}), 404
-    import shutil
+    delete_tab_index(tab)
     shutil.rmtree(str(tab_path))
     return jsonify({'success': True})
 
@@ -599,6 +881,7 @@ def move_menu_item_route(tab, item_id):
         return jsonify({'error': 'Specify direction or target_parent_id'}), 400
 
     save_menu(tab, menu)
+    reindex_tab(tab)
     return jsonify({'success': True})
 
 
@@ -632,6 +915,12 @@ if __name__ == '__main__':
     print("  Web Document Center Server")
     print("=" * 60)
     print(f"  MyBase directory: {mybase_dir}")
+    if force_index_target:
+        print(f"  Force reindex: {force_index_target}")
     print(f"  Server URL: http://0.0.0.0:{server_port}")
+    print("=" * 60)
+    print("  Checking indexes...")
+    ensure_indexes()
+    print("  Done.")
     print("=" * 60)
     app.run(host='0.0.0.0', port=server_port, debug=False)

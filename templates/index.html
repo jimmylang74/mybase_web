@@ -55,6 +55,12 @@
         <button class="tool-btn" id="btn-upload-image" title="Upload Image">📤</button>
         <span class="separator"></span>
         <button class="tool-btn" id="btn-paste-plain" title="Paste as Plain Text">📋 Plain</button>
+        <span class="separator"></span>
+        <label class="search-checkbox-label" title="Search all knowledge bases">
+          <input type="checkbox" id="search-global"> 全局搜索
+        </label>
+        <button class="tool-btn" id="btn-search" title="Search">🔍 搜索</button>
+        <input type="text" id="search-input" class="search-input" placeholder="输入搜索关键词..." title="Search">
         <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
         <button class="tool-btn" id="btn-new-tab" title="New Tab">+ Tab</button>
         <input type="file" id="image-upload-input" accept="image/*" style="display:none">
@@ -64,6 +70,19 @@
       </div>
       <div id="editor-status">No item selected</div>
     </div>
+  </div>
+  <div id="search-splitter" style="display:none"></div>
+  <div id="search-results-panel" style="display:none">
+    <div id="search-results-header">
+      <span id="search-results-title">搜索结果</span>
+      <span id="search-results-close" title="关闭">✕</span>
+    </div>
+    <div id="search-results-column-headers" style="display:none">
+      <span class="col-tab">知识库</span>
+      <span class="col-path">路径</span>
+      <span class="col-snippet">内容简述</span>
+    </div>
+    <div id="search-results-body"></div>
   </div>
 </div>
 
