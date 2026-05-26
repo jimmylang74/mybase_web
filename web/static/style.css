@@ -794,6 +794,54 @@ body {
   min-width: 50px;
 }
 
+/* ─── Indexing Status Indicator ───────────────────────────────────────── */
+
+.indexing-status {
+  font-size: 12px;
+  color: #e67e22;
+  padding: 2px 10px;
+  background: #fef3e2;
+  border: 1px solid #f0d9a8;
+  border-radius: 3px;
+  white-space: nowrap;
+  animation: indexing-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes indexing-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ─── Indexing Wait Dialog ────────────────────────────────────────────── */
+
+.indexing-wait-status {
+  color: #e67e22;
+  font-weight: bold;
+  margin-top: 8px;
+}
+
+.indexing-progress-track {
+  height: 4px;
+  background: #eee;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.indexing-progress-bar {
+  width: 30%;
+  height: 100%;
+  background: #3498db;
+  border-radius: 2px;
+  animation: indexing-progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indexing-progress-indeterminate {
+  0% { transform: translateX(-100%); width: 30%; }
+  50% { width: 50%; }
+  100% { transform: translateX(400%); width: 30%; }
+}
+
 /* ─── Scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;

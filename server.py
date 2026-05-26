@@ -6,6 +6,8 @@ import uuid
 import sqlite3
 import argparse
 import shutil
+import multiprocessing as mp
+import queue
 from pathlib import Path
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
 from werkzeug.utils import secure_filename
@@ -305,6 +307,9 @@ def index_tab(tab_name):
     for item, path in flat:
         content = load_content(tab_name, item['id'])
         text = strip_html_tags(content)
+        ocr_text = extract_text_from_html_images(content, tab_name)
+        if ocr_text:
+            text = (text + ' ' + ocr_text) if text else ocr_text
         conn.execute(
             "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, ?, ?)",
             (item['id'], item['label'], text, path)
@@ -381,6 +386,9 @@ def update_item_in_index(tab_name, item_id):
         return
     content = load_content(tab_name, item_id)
     text = strip_html_tags(content)
+    ocr_text = extract_text_from_html_images(content, tab_name)
+    if ocr_text:
+        text = (text + ' ' + ocr_text) if text else ocr_text
     conn = sqlite3.connect(str(db_path))
     try:
         conn.execute("DELETE FROM item_index WHERE menu_item_id = ?", (item_id,))
@@ -452,6 +460,194 @@ def ensure_indexes():
             index_tab(force_index_target)
         else:
             print(f"  Warning: Knowledge base '{force_index_target}' not found, skipping.")
+
+
+# ─── Background Index Manager (separate process to avoid GIL contention) ──
+
+
+class IndexManager:
+    """Background indexer that processes indexing tasks in a separate process.
+
+    Uses ``multiprocessing.Process`` so CPU-heavy OCR runs in its own
+    process with its own GIL — the Flask request thread is never blocked.
+    """
+
+    def __init__(self):
+        self._task_queue = mp.Queue()
+        self._busy = mp.Event()
+        self._status_queue = mp.Queue()
+        self._process = None
+
+    # ── Public API ──────────────────────────────────────────────────────
+
+    def index_item(self, tab_name, item_id):
+        self._task_queue.put(('item', tab_name, item_id))
+        self._ensure_worker()
+
+    def index_tab(self, tab_name):
+        self._task_queue.put(('tab', tab_name, None))
+        self._ensure_worker()
+
+    def get_status(self):
+        # Drain latest status message from the worker
+        status_text = 'idle'
+        while not self._status_queue.empty():
+            try:
+                status_text = self._status_queue.get_nowait()
+            except queue.Empty:
+                break
+        return {
+            'busy': self._busy.is_set(),
+            'status': status_text,
+        }
+
+    # ── Internals ───────────────────────────────────────────────────────
+
+    def _ensure_worker(self):
+        if not self._process or not self._process.is_alive():
+            self._process = mp.Process(
+                target=self._worker_loop,
+                args=(self._task_queue, self._busy, self._status_queue),
+                daemon=True,
+            )
+            self._process.start()
+
+    @staticmethod
+    def _worker_loop(task_queue, busy, status_queue):
+        """Pull tasks from the queue and process them.
+
+        Stays alive for a short grace window after the queue empties so
+        that a newly enqueued task doesn't require a process restart.
+        """
+        while True:
+            try:
+                task = task_queue.get(timeout=5)
+            except queue.Empty:
+                busy.clear()
+                break
+
+            busy.set()
+            task_type, tab_name, item_id = task
+            try:
+                if task_type == 'item':
+                    status_queue.put(f'正在索引: {tab_name}')
+                    update_item_in_index(tab_name, item_id)
+                elif task_type == 'tab':
+                    status_queue.put(f'正在重建索引: {tab_name}')
+                    index_tab(tab_name)
+            except Exception as e:
+                print(f"  Background indexing error ({tab_name}): {e}")
+
+
+index_manager = IndexManager()
+
+
+# ─── OCR Integration (PaddleOCR) ──────────────────────────────────────────
+
+OCR_MODEL_DIR = BASE_DIR / 'models' / 'ocr'
+_ocr = None
+
+
+def init_ocr():
+    """Initialize PaddleOCR, downloading models to ./models/ocr/ if not cached."""
+    global _ocr
+    try:
+        # Redirect PaddleX cache to our models directory so models download there
+        OCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault('PADDLE_PDX_CACHE_HOME', str(OCR_MODEL_DIR))
+        os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
+
+        from paddleocr import PaddleOCR
+        _ocr = PaddleOCR(
+            use_textline_orientation=True,
+            lang='ch',
+            device='cpu',
+            enable_mkldnn=False,
+        )
+        print(f"  PaddleOCR initialized (models cached in: {OCR_MODEL_DIR})")
+        return True
+    except ImportError:
+        print("  Warning: paddleocr not installed. Image OCR will be unavailable.")
+        print("    Install: pip install paddleocr paddlepaddle")
+        return False
+    except Exception as e:
+        print(f"  Warning: PaddleOCR init failed: {e}")
+        return False
+
+
+def get_ocr():
+    """Get the OCR instance, initializing lazily if needed."""
+    global _ocr
+    if _ocr is None:
+        init_ocr()
+    return _ocr
+
+
+def ocr_image(image_path):
+    """Run OCR on an image file and return recognized text string."""
+    ocr = get_ocr()
+    if ocr is None:
+        return ''
+    try:
+        results = ocr.predict(str(image_path))
+        texts = []
+        if results:
+            for page_result in results:
+                if page_result is None:
+                    continue
+                rec_texts = page_result.get('rec_texts', [])
+                if rec_texts:
+                    texts.extend(rec_texts)
+        return ' '.join(texts)
+    except Exception as e:
+        print(f"  OCR error on {image_path}: {e}")
+        return ''
+
+
+def resolve_image_path(img_src, tab_name):
+    """Resolve an HTML <img> src attribute to a local file path.
+
+    Handles:
+      - URL pattern: /uploads/<tab>/images/<filename>
+      - Relative path: images/<filename> or <filename>
+      - Base64 data URIs: data:image/... (returns None, unsupported)
+    """
+    if not img_src or img_src.startswith('data:'):
+        return None
+
+    # URL pattern: /uploads/<tab>/images/<filename>
+    m = re.match(r'^/uploads/([^/]+)/images/(.+)$', img_src)
+    if m:
+        tab_path = get_tab_path(m.group(1))
+        if tab_path:
+            return tab_path / 'images' / m.group(2)
+
+    # Relative path (e.g. images/foo.png, ./images/foo.png, foo.png)
+    tab_path = get_tab_path(tab_name)
+    if tab_path:
+        candidate = tab_path / img_src.lstrip('/')
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def extract_text_from_html_images(html_content, tab_name):
+    """Find all <img> tags in HTML, run OCR on each, return combined text."""
+    if not html_content:
+        return ''
+    img_pattern = re.compile(
+        r'<img[^>]+src=[\'"]([^\'"]+)[\'"][^>]*>', re.IGNORECASE
+    )
+    all_text = []
+    for match in img_pattern.finditer(html_content):
+        img_src = match.group(1)
+        image_path = resolve_image_path(img_src, tab_name)
+        if image_path and image_path.exists():
+            text = ocr_image(image_path)
+            if text:
+                all_text.append(text)
+    return ' '.join(all_text)
 
 
 # ─── Common Database (tab_order, general config) ───────────────────────────
@@ -686,7 +882,7 @@ def update_menu_item_route(tab, item_id):
         return jsonify({'error': 'Item not found'}), 404
 
     save_menu(tab, menu)
-    reindex_tab(tab)
+    index_manager.index_tab(tab)
     return jsonify({'success': True})
 
 
@@ -710,7 +906,7 @@ def delete_menu_item_route(tab, item_id):
             if content_file.exists():
                 content_file.unlink()
 
-    reindex_tab(tab)
+    index_manager.index_tab(tab)
     return jsonify({'deleted_ids': deleted_ids})
 
 
@@ -728,10 +924,10 @@ def save_content_route(tab, item_id):
         return jsonify({'error': 'Tab not found'}), 404
     data = request.get_json()
     if data is None or 'content' not in data:
-        return jsonify({'error': 'Content is required'}), 400
+        return jsonify({'error': 'Content is required'}, 400)
 
     save_content(tab, item_id, data['content'])
-    update_item_in_index(tab, item_id)
+    index_manager.index_item(tab, item_id)
     return jsonify({'success': True})
 
 
@@ -780,6 +976,11 @@ def search():
     else:
         results = search_all_tabs(query)
     return jsonify(results)
+
+
+@app.route('/api/indexing-status')
+def get_indexing_status():
+    return jsonify(index_manager.get_status())
 
 
 def generate_standalone_html(tab_name):
@@ -1060,7 +1261,7 @@ def move_menu_item_route(tab, item_id):
         return jsonify({'error': 'Specify direction or target_parent_id'}), 400
 
     save_menu(tab, menu)
-    reindex_tab(tab)
+    index_manager.index_tab(tab)
     return jsonify({'success': True})
 
 
@@ -1099,6 +1300,8 @@ if __name__ == '__main__':
         print(f"  Force reindex: {force_index_target}")
     print(f"  Server URL: http://0.0.0.0:{server_port}")
     print("=" * 60)
+    print("  Initializing OCR...")
+    init_ocr()
     print("  Checking indexes...")
     ensure_indexes()
     init_common_db()

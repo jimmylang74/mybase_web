@@ -1357,6 +1357,75 @@
     }
   });
 
+  // ─── Background Indexing ───────────────────────────────────────────────
+
+  async function checkIndexingStatus() {
+    try {
+      const state = await api('GET', '/api/indexing-status');
+      const statusEl = $('#indexing-status');
+      if (state.busy) {
+        statusEl.style.display = 'inline';
+        statusEl.textContent = state.status || '📇 索引中...';
+      } else {
+        statusEl.style.display = 'none';
+      }
+    } catch (e) {
+      // ignore polling errors
+    }
+  }
+
+  // Periodic status polling (every 2 s, inexpensive)
+  setInterval(checkIndexingStatus, 2000);
+
+  /**
+   * Show a modal dialog that auto-polls indexing status.
+   * Resolves `true` when indexing finishes (dialog auto-closes).
+   * Resolves `false` if the user clicks Cancel.
+   */
+  function waitForIndexing(initialStatus) {
+    return new Promise((resolve) => {
+      const overlay = $('#dialog-overlay');
+      $('#dialog-title').textContent = '索引建立中';
+      $('#dialog-content').innerHTML =
+        '<p>系统正在后台建立索引，请等待索引完成后重试搜索。</p>' +
+        '<p class="indexing-wait-status" id="indexing-wait-status">' + escapeHtml(initialStatus) + '</p>' +
+        '<div class="indexing-progress-track"><div class="indexing-progress-bar"></div></div>';
+      $('#dialog-buttons').innerHTML = '<button id="dialog-cancel">取消</button>';
+      overlay.style.display = 'flex';
+
+      const cancelBtn = $('#dialog-cancel');
+      let cancelled = false;
+
+      cancelBtn.onclick = () => {
+        cancelled = true;
+        overlay.style.display = 'none';
+        resolve(false);
+      };
+
+      // Poll every second until indexing finishes or user cancels
+      const timer = setInterval(async () => {
+        if (cancelled) {
+          clearInterval(timer);
+          return;
+        }
+        try {
+          const state = await api('GET', '/api/indexing-status');
+          const statusEl = $('#indexing-wait-status');
+          if (statusEl) {
+            statusEl.textContent = state.status || '索引中...';
+          }
+          if (!state.busy) {
+            clearInterval(timer);
+            overlay.style.display = 'none';
+            resolve(true);
+          }
+        } catch (e) {
+          // ignore polling errors
+        }
+      }, 1000);
+    });
+  }
+
   // ─── Search ────────────────────────────────────────────────────────────
 
   const searchInput = $('#search-input');
@@ -1371,6 +1440,18 @@
   async function performSearch() {
     const query = searchInput.value.trim();
     if (!query) return;
+
+    // Check if background indexing is in progress — if so, wait
+    try {
+      const state = await api('GET', '/api/indexing-status');
+      if (state.busy) {
+        const proceed = await waitForIndexing(state.status);
+        if (!proceed) return; // user cancelled
+        // Indexing done — proceed with search below
+      }
+    } catch (e) {
+      // If status check fails, proceed anyway
+    }
 
     const globalMode = searchGlobal.checked;
     const tabParam = globalMode ? '' : (currentTab || '');
