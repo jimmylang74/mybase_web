@@ -22,7 +22,7 @@ force_index_target = None
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Web Document Center Server')
+    parser = argparse.ArgumentParser(description='Web of Mybase Knowledge Server')
     parser.add_argument('--mybase', type=str, default='mybase',
                         help='MyBase root directory name (default: mybase)')
     parser.add_argument('--port', type=int, default=9999,
@@ -999,7 +999,7 @@ def get_tree(tab):
 if __name__ == '__main__':
     init_config()
     print("=" * 60)
-    print("  Web Document Center Server")
+    print("  Web of Mybase Knowledge Server")
     print("=" * 60)
     print(f"  MyBase directory: {mybase_dir}")
     if force_index_target:
