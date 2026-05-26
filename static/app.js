@@ -6,6 +6,9 @@
   let menuTree = [];
   let contentModified = false;
   let activeTabEl = null;
+  let treeCtxItemId = null;
+  let treeExpandedState = {}; // { tabName: Set<nodeId> }
+  let dirtyTabs = {}; // { tabName: true/false }
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -15,6 +18,8 @@
   const editor = $('#editor');
   const editorStatus = $('#editor-status');
   const ctxMenu = $('#context-menu');
+  const treeCtxMenu = $('#tree-context-menu');
+  const tabCtxMenu = $('#tab-context-menu');
 
 
   async function api(method, url, body) {
@@ -50,9 +55,15 @@
     tabs.forEach((name) => {
       const el = document.createElement('div');
       el.className = 'tab';
-      el.textContent = name;
       el.dataset.tab = name;
+      el.dataset.origName = name;
+      el.textContent = name;
       el.addEventListener('click', () => switchTab(name, el));
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showTabContextMenu(e, name);
+      });
       tabsEl.appendChild(el);
     });
     if (!currentTab || !tabs.includes(currentTab)) {
@@ -62,6 +73,9 @@
   }
 
   async function switchTab(name, el) {
+    if (currentTab && currentTab !== name) {
+      treeExpandedState[currentTab] = saveExpandedState();
+    }
     if (activeTabEl) activeTabEl.classList.remove('active');
     el.classList.add('active');
     activeTabEl = el;
@@ -89,9 +103,40 @@
     renderTree();
   }
 
+  function saveExpandedState() {
+    const expanded = new Set();
+    treeContainer.querySelectorAll('.tree-node').forEach((node) => {
+      const childrenDiv = node.querySelector('.tree-children');
+      if (childrenDiv && childrenDiv.style.display !== 'none') {
+        expanded.add(node.dataset.id);
+      }
+    });
+    return expanded;
+  }
+
+  function restoreExpandedState(expanded) {
+    if (!expanded) return;
+    expanded.forEach((id) => {
+      const node = treeContainer.querySelector(`.tree-node[data-id="${id}"]`);
+      if (node) {
+        const childrenDiv = node.querySelector('.tree-children');
+        const toggle = node.querySelector('.toggle');
+        if (childrenDiv && toggle && !toggle.classList.contains('empty')) {
+          childrenDiv.style.display = '';
+          toggle.textContent = '\u25BE';
+        }
+      }
+    });
+  }
+
   function renderTree() {
+    if (currentTab) {
+      treeExpandedState[currentTab] = saveExpandedState();
+    }
     treeContainer.innerHTML = '';
     menuTree.forEach((item) => renderTreeNode(item, treeContainer, 0));
+    const saved = currentTab ? treeExpandedState[currentTab] : null;
+    if (saved) restoreExpandedState(saved);
   }
 
   function renderTreeNode(item, container, depth) {
@@ -106,18 +151,17 @@
     const toggle = document.createElement('span');
     toggle.className = 'toggle';
     const hasChildren = item.children && item.children.length > 0;
-    if (item.children && item.children.length > 0) {
-      toggle.textContent = '▾';
-    } else {
+    toggle.textContent = '\u25B8';
+    if (!hasChildren) {
       toggle.className = 'toggle empty';
-      toggle.textContent = '▸';
     }
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
       const childrenDiv = nodeDiv.querySelector('.tree-children');
       if (childrenDiv) {
-        childrenDiv.style.display = childrenDiv.style.display === 'none' ? '' : 'none';
-        toggle.textContent = childrenDiv.style.display === 'none' ? '▸' : '▾';
+        const isHidden = childrenDiv.style.display === 'none';
+        childrenDiv.style.display = isHidden ? '' : 'none';
+        toggle.textContent = isHidden ? '\u25BE' : '\u25B8';
       }
     });
 
@@ -125,50 +169,27 @@
     label.className = 'label';
     label.textContent = item.label;
 
-    const actions = document.createElement('span');
-    actions.className = 'node-actions';
-
-    const btnAdd = document.createElement('button');
-    btnAdd.className = 'node-action-btn';
-    btnAdd.textContent = '+';
-    btnAdd.title = 'Add child';
-    btnAdd.addEventListener('click', (e) => {
-      e.stopPropagation();
-      promptAddChild(item.id);
-    });
-
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'node-action-btn';
-    btnEdit.textContent = '✎';
-    btnEdit.title = 'Rename';
-    btnEdit.addEventListener('click', (e) => {
-      e.stopPropagation();
-      promptRename(item.id, item.label);
-    });
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'node-action-btn';
-    btnDel.textContent = '✕';
-    btnDel.title = 'Delete';
-    btnDel.addEventListener('click', (e) => {
-      e.stopPropagation();
-      promptDelete(item.id, item.label);
-    });
-
-    actions.appendChild(btnAdd);
-    actions.appendChild(btnEdit);
-    actions.appendChild(btnDel);
-
     header.appendChild(toggle);
     header.appendChild(label);
-    header.appendChild(actions);
-    header.addEventListener('click', () => selectItem(item.id));
+    header.addEventListener('click', () => {
+      if (currentItemId === item.id && !item._editing) {
+        startInlineEdit(item, label);
+      } else {
+        selectItem(item.id);
+      }
+    });
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showTreeContextMenu(e, item.id);
+    });
 
     nodeDiv.appendChild(header);
 
     if (hasChildren) {
       const childrenDiv = document.createElement('div');
       childrenDiv.className = 'tree-children';
+      childrenDiv.style.display = 'none';
       item.children.forEach((child) => renderTreeNode(child, childrenDiv, depth + 1));
       nodeDiv.appendChild(childrenDiv);
     }
@@ -185,6 +206,17 @@
       }
     }
     return null;
+  }
+
+  function findParentId(items, id, parentId) {
+    for (const item of items) {
+      if (item.id === id) return parentId;
+      if (item.children) {
+        const found = findParentId(item.children, id, item.id);
+        if (found !== undefined) return found;
+      }
+    }
+    return undefined;
   }
 
   function selectItem(id) {
@@ -227,19 +259,24 @@
       await api('PUT', `/api/${encodeURIComponent(currentTab)}/content/${itemId}`, { content: html });
       contentModified = false;
       editorStatus.textContent = editorStatus.textContent.replace(' (unsaved)', '') + ' (saved)';
+      dirtyTabs[currentTab] = false;
+      updateTabLabel(currentTab);
     } catch (e) {
       console.error('Save failed:', e);
       editorStatus.textContent = 'Save failed!';
     }
   }
 
-  async function addMenuItem(label, parentId) {
+  async function addMenuItem(label, parentId, afterId) {
     if (!currentTab) return;
     try {
-      await api('POST', `/api/${encodeURIComponent(currentTab)}/menu`, {
-        label,
-        parent_id: parentId || null,
-      });
+      const body = { label };
+      if (afterId) {
+        body.after_id = afterId;
+      } else {
+        body.parent_id = parentId || null;
+      }
+      await api('POST', `/api/${encodeURIComponent(currentTab)}/menu`, body);
       await loadMenu();
     } catch (e) {
       alert('Add failed: ' + e.message);
@@ -274,6 +311,76 @@
     }
   }
 
+  async function deleteTab(name) {
+    try {
+      await api('DELETE', `/api/tabs/${encodeURIComponent(name)}`);
+      if (currentTab === name) {
+        currentTab = null;
+        currentItemId = null;
+        editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
+        editorStatus.textContent = 'No item selected';
+      }
+      await loadTabs();
+    } catch (e) {
+      alert('Delete tab failed: ' + e.message);
+    }
+  }
+
+  function updateTabLabel(name) {
+    const el = tabsEl.querySelector(`.tab[data-tab="${name}"]`);
+    if (!el) return;
+    const base = el.dataset.origName || name;
+    el.textContent = dirtyTabs[name] ? '*' + base : base;
+  }
+
+  async function saveAllTabs() {
+    if (currentItemId) {
+      await saveContent(currentItemId);
+    }
+    const dirty = Object.keys(dirtyTabs).filter((t) => dirtyTabs[t]);
+    if (dirty.length === 0) {
+      editorStatus.textContent = 'All tabs saved';
+      return;
+    }
+    const current = currentTab;
+    for (const name of dirty) {
+      if (name === current) continue;
+      const el = tabsEl.querySelector(`.tab[data-tab="${name}"]`);
+      if (!el) continue;
+      await switchTab(name, el);
+      if (currentItemId) {
+        await saveContent(currentItemId);
+      }
+    }
+    if (current && current !== currentTab) {
+      const el = tabsEl.querySelector(`.tab[data-tab="${current}"]`);
+      if (el) await switchTab(current, el);
+    }
+    editorStatus.textContent = 'Save All completed';
+  }
+
+  async function moveMenuItem(itemId, direction) {
+    if (!currentTab) return;
+    try {
+      await api('PUT', `/api/${encodeURIComponent(currentTab)}/menu/${itemId}/move`, { direction });
+      await loadMenu();
+    } catch (e) {
+      alert('Move failed: ' + e.message);
+    }
+  }
+
+  async function moveMenuItemToTarget(itemId, targetParentId) {
+    if (!currentTab) return;
+    try {
+      await api('PUT', `/api/${encodeURIComponent(currentTab)}/menu/${itemId}/move`, { target_parent_id: targetParentId });
+      await loadMenu();
+    } catch (e) {
+      alert('Move failed: ' + e.message);
+    }
+  }
+
+  // ─── Dialog ────────────────────────────────────────────────────────────
+
   function showDialog(title, contentHtml, onOk) {
     const overlay = $('#dialog-overlay');
     $('#dialog-title').textContent = title;
@@ -293,7 +400,7 @@
     });
   }
 
-  function promptAddChild(parentId) {
+  function promptAddChild(parentId, afterId) {
     showDialog(
       'Add Menu Item',
       '<label>Item name:</label><input type="text" id="dialog-input" placeholder="Enter item name">',
@@ -301,7 +408,7 @@
         const input = $('#dialog-input');
         const val = input.value.trim();
         if (val) {
-          addMenuItem(val, parentId);
+          addMenuItem(val, parentId, afterId);
           return true;
         }
         return false;
@@ -365,6 +472,185 @@
       }
     );
   }
+
+  // ─── New Tab ───────────────────────────────────────────────────────────
+
+  $('#tab-add').addEventListener('click', () => {
+    showDialog(
+      'New Tab',
+      '<label>Tab name:</label><input type="text" id="dialog-input" placeholder="Enter tab name">',
+      async () => {
+        const input = $('#dialog-input');
+        const val = input.value.trim();
+        if (!val) return false;
+        try {
+          await api('POST', '/api/tabs', { name: val });
+          await loadTabs();
+        } catch (e) {
+          alert('Create tab failed: ' + e.message);
+        }
+        return true;
+      }
+    );
+    const input = $('#dialog-input');
+    if (input) {
+      input.focus();
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('#dialog-ok').click();
+      });
+    }
+  });
+
+  // ─── Toolbar Dropdown ──────────────────────────────────────────────────
+
+  $('#btn-toolbar-menu').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = $('#toolbar-dropdown');
+    dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.addEventListener('click', (e) => {
+    const dd = $('#toolbar-dropdown');
+    if (dd && !e.target.closest('#toolbar-dropdown-wrap')) {
+      dd.style.display = 'none';
+    }
+  });
+
+  $('#dd-collapse-all').addEventListener('click', () => {
+    $('#toolbar-dropdown').style.display = 'none';
+    collapseAll();
+  });
+
+  $('#dd-expand-all').addEventListener('click', () => {
+    $('#toolbar-dropdown').style.display = 'none';
+    expandAll();
+  });
+
+  $('#dd-add-root').addEventListener('click', () => {
+    $('#toolbar-dropdown').style.display = 'none';
+    promptAddChild(null);
+  });
+
+  function collapseAll() {
+    treeContainer.querySelectorAll('.tree-children').forEach((el) => {
+      el.style.display = 'none';
+    });
+    treeContainer.querySelectorAll('.tree-node-header .toggle').forEach((t) => {
+      if (!t.classList.contains('empty')) {
+        t.textContent = '\u25B8';
+      }
+    });
+    if (currentTab) treeExpandedState[currentTab] = new Set();
+  }
+
+  function expandAll() {
+    treeContainer.querySelectorAll('.tree-children').forEach((el) => {
+      el.style.display = '';
+    });
+    treeContainer.querySelectorAll('.tree-node-header .toggle').forEach((t) => {
+      if (!t.classList.contains('empty')) {
+        t.textContent = '\u25BE';
+      }
+    });
+    if (currentTab) {
+      const all = new Set();
+      treeContainer.querySelectorAll('.tree-node').forEach((n) => all.add(n.dataset.id));
+      treeExpandedState[currentTab] = all;
+    }
+  }
+
+  // ─── Tree Right-Click Context Menu ─────────────────────────────────────
+
+  function showTreeContextMenu(e, itemId) {
+    treeCtxItemId = itemId;
+    treeCtxMenu.style.left = e.clientX + 'px';
+    treeCtxMenu.style.top = e.clientY + 'px';
+    treeCtxMenu.style.display = 'block';
+  }
+
+  $$('#tree-context-menu .tree-ctx-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const action = item.dataset.action;
+      const id = treeCtxItemId;
+      treeCtxMenu.style.display = 'none';
+      if (!id) return;
+
+      switch (action) {
+        case 'add-child':
+          promptAddChild(id);
+          break;
+        case 'add-sibling': {
+          const parentId = findParentId(menuTree, id, null);
+          promptAddChild(parentId, id);
+          break;
+        }
+        case 'move-up':
+          moveMenuItem(id, 'up');
+          break;
+        case 'move-down':
+          moveMenuItem(id, 'down');
+          break;
+        case 'move-to':
+          showMoveToDialog(id);
+          break;
+        case 'edit': {
+          const node = findNodeById(menuTree, id);
+          if (node) promptRename(id, node.label);
+          break;
+        }
+        case 'delete': {
+          const node = findNodeById(menuTree, id);
+          if (node) promptDelete(id, node.label);
+          break;
+        }
+      }
+    });
+  });
+
+  async function showMoveToDialog(itemId) {
+    if (!currentTab) return;
+    let treeData;
+    try {
+      treeData = await api('GET', `/api/${encodeURIComponent(currentTab)}/tree`);
+    } catch (e) {
+      alert('Failed to load tree: ' + e.message);
+      return;
+    }
+
+    const currentItem = findNodeById(menuTree, itemId);
+    const currentLabel = currentItem ? currentItem.label : 'Unknown';
+
+    let html = `<p style="margin-bottom:8px;font-size:13px;color:#555">Move "<strong>${escapeHtml(currentLabel)}</strong>" to:</p>`;
+    html += '<div id="move-tree">';
+    html += '<div class="move-tree-item" data-id="">&lt;Root (top level)&gt;</div>';
+    treeData.forEach((n) => {
+      if (n.id === itemId) return;
+      const indent = n.depth * 20;
+      html += `<div class="move-tree-item" data-id="${n.id}" style="padding-left:${10 + indent}px">${escapeHtml(n.label)}</div>`;
+    });
+    html += '</div>';
+
+    let selectedTargetId = null;
+
+    showDialog('Move Item', html, () => {
+      if (selectedTargetId === undefined) return false;
+      moveMenuItemToTarget(itemId, selectedTargetId);
+      return true;
+    });
+
+    const moveTreeEl = $('#move-tree');
+    if (moveTreeEl) {
+      moveTreeEl.querySelectorAll('.move-tree-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          moveTreeEl.querySelectorAll('.move-tree-item').forEach((x) => x.classList.remove('selected'));
+          el.classList.add('selected');
+          selectedTargetId = el.dataset.id === '' ? null : el.dataset.id;
+        });
+      });
+    }
+  }
+
+  // ─── Editor Toolbar ────────────────────────────────────────────────────
 
   $$('.tool-btn[data-cmd]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -451,12 +737,18 @@
     }
   });
 
+  $('#btn-save-all').addEventListener('click', saveAllTabs);
+
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       if (currentItemId) saveContent(currentItemId);
     }
-    if (e.key === 'Escape') ctxMenu.style.display = 'none';
+    if (e.key === 'Escape') {
+      ctxMenu.style.display = 'none';
+      treeCtxMenu.style.display = 'none';
+      tabCtxMenu.style.display = 'none';
+    }
   });
 
   function markModified() {
@@ -465,6 +757,10 @@
       const txt = editorStatus.textContent;
       if (!txt.includes('(unsaved)')) {
         editorStatus.textContent = txt + ' (unsaved)';
+      }
+      if (currentTab) {
+        dirtyTabs[currentTab] = true;
+        updateTabLabel(currentTab);
       }
     }
   }
@@ -516,6 +812,8 @@
     }
   }
 
+  // ─── Editor Context Menu ───────────────────────────────────────────────
+
   editor.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const selection = window.getSelection();
@@ -523,12 +821,6 @@
     ctxMenu.style.top = e.clientY + 'px';
     ctxMenu.style.display = 'block';
     ctxMenu.dataset.hasSelection = selection.toString().length > 0 ? 'true' : 'false';
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!ctxMenu.contains(e.target)) {
-      ctxMenu.style.display = 'none';
-    }
   });
 
   $$('.ctx-item[data-cmd]').forEach((item) => {
@@ -594,15 +886,128 @@
     ctxMenu.style.display = 'none';
   });
 
-  $('#btn-add-root').addEventListener('click', () => {
-    promptAddChild(null);
+  // ─── Splitter ──────────────────────────────────────────────────────────
+
+  let isDragging = false;
+
+  $('#splitter').addEventListener('mousedown', (e) => {
+    isDragging = true;
+    $('#splitter').classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
   });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const sidebar = $('#sidebar');
+    const mainContent = $('#main-content');
+    const rect = mainContent.getBoundingClientRect();
+    let x = e.clientX - rect.left;
+    const minWidth = 150;
+    const maxWidth = rect.width - 200;
+    if (x < minWidth) x = minWidth;
+    if (x > maxWidth) x = maxWidth;
+    sidebar.style.width = x + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      $('#splitter').classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+
+  // ─── Utilities ─────────────────────────────────────────────────────────
 
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
   }
+
+  // ─── Inline Rename ────────────────────────────────────────────────────
+
+  let inlineEditInput = null;
+
+  function startInlineEdit(item, labelEl) {
+    if (inlineEditInput) return;
+    item._editing = true;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'inline-rename-input';
+    input.value = item.label;
+    labelEl.replaceWith(input);
+    inlineEditInput = input;
+    input.focus();
+    input.select();
+
+    function finish(save) {
+      if (!inlineEditInput) return;
+      const val = input.value.trim();
+      input.replaceWith(labelEl);
+      inlineEditInput = null;
+      item._editing = false;
+      if (save && val && val !== item.label) {
+        updateMenuItem(item.id, val);
+      }
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
+  // ─── Tab Context Menu ─────────────────────────────────────────────────
+
+  let tabCtxName = null;
+
+  function showTabContextMenu(e, name) {
+    tabCtxName = name;
+    tabCtxMenu.style.left = e.clientX + 'px';
+    tabCtxMenu.style.top = e.clientY + 'px';
+    tabCtxMenu.style.display = 'block';
+  }
+
+  $$('#tab-context-menu .tab-ctx-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const action = item.dataset.action;
+      const name = tabCtxName;
+      tabCtxMenu.style.display = 'none';
+      if (!name) return;
+
+      switch (action) {
+        case 'delete-tab':
+          showDialog(
+            '删除 Tab',
+            `<p>确定要删除 tab "<strong>${escapeHtml(name)}</strong>" 及其所有数据吗？</p>`,
+            () => {
+              deleteTab(name);
+              return true;
+            }
+          );
+          break;
+      }
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!tabCtxMenu.contains(e.target)) {
+      tabCtxMenu.style.display = 'none';
+    }
+    if (!treeCtxMenu.contains(e.target)) {
+      treeCtxMenu.style.display = 'none';
+    }
+    if (!ctxMenu.contains(e.target)) {
+      ctxMenu.style.display = 'none';
+    }
+  });
+
+  // ─── Init ──────────────────────────────────────────────────────────────
 
   loadTabs();
 

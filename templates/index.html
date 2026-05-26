@@ -10,14 +10,24 @@
 <div id="app">
   <div id="tab-bar">
     <div id="tabs"></div>
+    <div id="tab-add" title="New Tab">+</div>
   </div>
   <div id="main-content">
     <div id="sidebar">
       <div id="tree-toolbar">
-        <button id="btn-add-root" title="Add Root Item">+ Add</button>
+        <div id="toolbar-dropdown-wrap">
+          <button id="btn-toolbar-menu" title="Menu">☰ Menu</button>
+          <div id="toolbar-dropdown" style="display:none">
+            <div class="dropdown-item" id="dd-collapse-all">全部收起</div>
+            <div class="dropdown-item" id="dd-expand-all">全部展开</div>
+            <div class="dropdown-sep"></div>
+            <div class="dropdown-item" id="dd-add-root">新增 Root Item</div>
+          </div>
+        </div>
       </div>
       <div id="tree-container"></div>
     </div>
+    <div id="splitter"></div>
     <div id="editor-area">
       <div id="editor-toolbar">
         <select id="font-family" title="Font Family">
@@ -46,6 +56,7 @@
         <span class="separator"></span>
         <button class="tool-btn" id="btn-paste-plain" title="Paste as Plain Text">📋 Plain</button>
         <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
+        <button class="tool-btn" id="btn-save-all" title="Save All Tabs">💾 Save All</button>
         <input type="file" id="image-upload-input" accept="image/*" style="display:none">
       </div>
       <div id="editor" contenteditable="true">
@@ -56,7 +67,7 @@
   </div>
 </div>
 
-<!-- Context Menu -->
+<!-- Editor Context Menu -->
 <div id="context-menu">
   <div class="ctx-item" data-cmd="bold">Bold</div>
   <div class="ctx-item" data-cmd="italic">Italic</div>
@@ -69,6 +80,24 @@
   <div class="ctx-separator"></div>
   <div class="ctx-item" data-cmd="copy">Copy</div>
   <div class="ctx-item" data-cmd="paste">Paste</div>
+</div>
+
+<!-- Tree Right-Click Context Menu -->
+<div id="tree-context-menu" style="display:none">
+  <div class="tree-ctx-item" data-action="add-child">Add Child</div>
+  <div class="tree-ctx-item" data-action="add-sibling">Add</div>
+  <div class="tree-ctx-sep"></div>
+  <div class="tree-ctx-item" data-action="move-up">上移</div>
+  <div class="tree-ctx-item" data-action="move-down">下移</div>
+  <div class="tree-ctx-item" data-action="move-to">移动到...</div>
+  <div class="tree-ctx-sep"></div>
+  <div class="tree-ctx-item" data-action="edit">编辑</div>
+  <div class="tree-ctx-item" data-action="delete">删除</div>
+</div>
+
+<!-- Tab Right-Click Context Menu -->
+<div id="tab-context-menu" style="display:none">
+  <div class="tab-ctx-item" data-action="delete-tab">删除</div>
 </div>
 
 <!-- Dialog Overlay -->

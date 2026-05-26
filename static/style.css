@@ -67,9 +67,8 @@ body {
 /* ─── Sidebar / Tree ─────────────────────────────────────────────────── */
 #sidebar {
   width: 280px;
-  min-width: 200px;
+  min-width: 150px;
   background: #fff;
-  border-right: 1px solid #ddd;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -79,9 +78,14 @@ body {
   padding: 8px;
   border-bottom: 1px solid #eee;
   flex-shrink: 0;
+  position: relative;
 }
 
-#btn-add-root {
+#toolbar-dropdown-wrap {
+  position: relative;
+}
+
+#btn-toolbar-menu {
   padding: 6px 14px;
   background: #3498db;
   color: #fff;
@@ -90,15 +94,46 @@ body {
   cursor: pointer;
   font-size: 13px;
   width: 100%;
+  text-align: left;
 }
 
-#btn-add-root:hover {
+#btn-toolbar-menu:hover {
   background: #2980b9;
+}
+
+#toolbar-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 500;
+  margin-top: 2px;
+}
+
+.dropdown-item {
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.dropdown-item:hover {
+  background: #e8f0fe;
+}
+
+.dropdown-sep {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
 }
 
 #tree-container {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
   padding: 4px 0;
 }
 
@@ -150,37 +185,24 @@ body {
   white-space: nowrap;
 }
 
-.tree-node-header .node-actions {
-  display: none;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.tree-node-header:hover .node-actions {
-  display: flex;
-}
-
-.node-action-btn {
-  width: 22px;
-  height: 22px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 13px;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-}
-
-.node-action-btn:hover {
-  opacity: 1;
-  background: #ddd;
-}
-
 .tree-children {
   padding-left: 20px;
+}
+
+/* ─── Splitter ────────────────────────────────────────────────────────── */
+#splitter {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+}
+
+#splitter:hover,
+#splitter.active {
+  background: #b0c4de;
 }
 
 /* ─── Editor Area ────────────────────────────────────────────────────── */
@@ -189,6 +211,7 @@ body {
   display: flex;
   flex-direction: column;
   background: #fff;
+  min-width: 0;
 }
 
 #editor-toolbar {
@@ -247,7 +270,7 @@ body {
 #editor {
   flex: 1;
   padding: 20px;
-  overflow-y: auto;
+  overflow: auto;
   outline: none;
   line-height: 1.6;
   font-size: 14px;
@@ -267,7 +290,7 @@ body {
   flex-shrink: 0;
 }
 
-/* ─── Context Menu ───────────────────────────────────────────────────── */
+/* ─── Editor Context Menu ─────────────────────────────────────────────── */
 #context-menu {
   display: none;
   position: fixed;
@@ -295,6 +318,65 @@ body {
   height: 1px;
   background: #e0e0e0;
   margin: 4px 0;
+}
+
+/* ─── Tree Right-Click Context Menu ───────────────────────────────────── */
+#tree-context-menu {
+  display: none;
+  position: fixed;
+  z-index: 1001;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 4px 0;
+  min-width: 160px;
+}
+
+#tree-context-menu .tree-ctx-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+#tree-context-menu .tree-ctx-item:hover {
+  background: #e8f0fe;
+}
+
+#tree-context-menu .tree-ctx-sep {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
+/* ─── Move-To Dialog Tree ─────────────────────────────────────────────── */
+#move-tree {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+
+.move-tree-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 3px;
+  margin: 1px 4px;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+
+.move-tree-item:hover {
+  background: #e8f0fe;
+}
+
+.move-tree-item.selected {
+  background: #d4e4fc;
+  font-weight: 600;
 }
 
 /* ─── Dialog ──────────────────────────────────────────────────────────── */
@@ -377,8 +459,73 @@ body {
 @media (max-width: 768px) {
   #sidebar {
     width: 200px;
-    min-width: 150px;
+    min-width: 120px;
   }
+}
+
+/* ─── Tab Right-Click Context Menu ─────────────────────────────────────── */
+#tab-context-menu {
+  display: none;
+  position: fixed;
+  z-index: 1001;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 4px 0;
+  min-width: 120px;
+}
+
+#tab-context-menu .tab-ctx-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+#tab-context-menu .tab-ctx-item:hover {
+  background: #e8f0fe;
+}
+
+/* ─── Tab Add (Green Circular) ─────────────────────────────────────────── */
+#tab-add {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #27ae60;
+  color: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: bold;
+  user-select: none;
+  margin: auto 4px auto 8px;
+  line-height: 1;
+  transition: background 0.2s, transform 0.15s;
+}
+
+#tab-add:hover {
+  background: #2ecc71;
+  transform: scale(1.1);
+}
+
+#tab-add:active {
+  transform: scale(0.95);
+}
+
+/* ─── Inline Rename Input ──────────────────────────────────────────────── */
+.inline-rename-input {
+  flex: 1;
+  font-size: 13px;
+  padding: 1px 4px;
+  border: 1px solid #3498db;
+  border-radius: 3px;
+  outline: none;
+  font-family: inherit;
+  min-width: 50px;
 }
 
 /* ─── Scrollbar ───────────────────────────────────────────────────────── */

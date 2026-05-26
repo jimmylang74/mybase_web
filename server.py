@@ -3,6 +3,7 @@ import os
 import re
 import json
 import uuid
+import argparse
 from pathlib import Path
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
 from werkzeug.utils import secure_filename
@@ -10,14 +11,30 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).parent
-MYBASE_DIR = BASE_DIR / 'mybase'
+mybase_dir = BASE_DIR / 'mybase'
 UPLOAD_DIR_NAME = 'images'
+server_port = 9999
 
-MYBASE_DIR.mkdir(exist_ok=True)
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Web Document Center Server')
+    parser.add_argument('--mybase', type=str, default='mybase',
+                        help='MyBase root directory name (default: mybase)')
+    parser.add_argument('--port', type=int, default=9999,
+                        help='Server port (default: 9999)')
+    return parser.parse_args()
+
+
+def init_config():
+    global mybase_dir, server_port
+    args = parse_args()
+    mybase_dir = BASE_DIR / args.mybase
+    server_port = args.port
+    mybase_dir.mkdir(exist_ok=True)
 
 
 def get_tab_path(tab_name):
-    tab_path = MYBASE_DIR / tab_name
+    tab_path = mybase_dir / tab_name
     if tab_path.exists() and tab_path.is_dir():
         return tab_path
     return None
@@ -127,6 +144,10 @@ def save_menu(tab_name, menu_data):
         menu_path.parent.mkdir(exist_ok=True)
         with open(menu_path, 'w', encoding='utf-8') as f:
             json.dump(menu_data, f, ensure_ascii=False, indent=2)
+        menu_js = menu_path.with_name('menu.js')
+        js_content = 'var MENU_DATA = ' + json.dumps(menu_data, ensure_ascii=False) + ';'
+        with open(menu_js, 'w', encoding='utf-8') as f:
+            f.write(js_content)
         return True
     return False
 
@@ -208,6 +229,17 @@ def add_menu_item(items, parent_id, new_item):
     return False
 
 
+def add_menu_item_after(items, new_item, after_id):
+    for i, item in enumerate(items):
+        if item['id'] == after_id:
+            items.insert(i + 1, new_item)
+            return True
+        if item.get('children'):
+            if add_menu_item_after(item['children'], new_item, after_id):
+                return True
+    return False
+
+
 def update_menu_item(items, item_id, updates):
     item = find_menu_item(items, item_id)
     if item:
@@ -250,8 +282,8 @@ def index():
 @app.route('/api/tabs')
 def list_tabs():
     tabs = []
-    if MYBASE_DIR.exists():
-        for entry in sorted(MYBASE_DIR.iterdir()):
+    if mybase_dir.exists():
+        for entry in sorted(mybase_dir.iterdir()):
             if entry.is_dir() and not entry.name.startswith('.'):
                 tabs.append(entry.name)
     return jsonify(tabs)
@@ -279,11 +311,15 @@ def create_menu_item(tab):
         'children': []
     }
     parent_id = data.get('parent_id')
+    after_id = data.get('after_id')
 
     menu = load_menu(tab)
-    success = add_menu_item(menu, parent_id, new_item)
-    if not success and parent_id is not None:
-        return jsonify({'error': 'Parent item not found'}), 404
+    if after_id:
+        success = add_menu_item_after(menu, new_item, after_id)
+    else:
+        success = add_menu_item(menu, parent_id, new_item)
+    if not success:
+        return jsonify({'error': 'Parent or reference item not found'}), 404
 
     save_menu(tab, menu)
     return jsonify(new_item), 201
@@ -382,11 +418,220 @@ def serve_uploaded_image(tab, filename):
     upload_dir = tab_path / UPLOAD_DIR_NAME
     return send_from_directory(str(upload_dir), filename)
 
+
+def generate_standalone_html(tab_name):
+    return '''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>''' + tab_name + '''</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; height:100vh; display:flex; color:#333; }
+  #sidebar { width:300px; min-width:200px; display:flex; flex-direction:column; border-right:1px solid #ddd; background:#fff; }
+  #tree { flex:1; overflow:auto; padding:8px 0; }
+  #main { flex:1; display:flex; flex-direction:column; }
+  #content { flex:1; position:relative; }
+  #content iframe { width:100%; height:100%; border:none; display:block; }
+  #placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#999; font-size:14px; }
+  .node { user-select:none; }
+  .node-header { display:flex; align-items:center; padding:4px 8px; cursor:pointer; border-radius:3px; margin:1px 4px; }
+  .node-header:hover { background:#e8f0fe; }
+  .node-header.active { background:#d4e4fc; font-weight:600; }
+  .toggle { width:18px; font-size:10px; color:#888; flex-shrink:0; cursor:pointer; }
+  .toggle.empty { visibility:hidden; }
+  .label { flex:1; font-size:13px; padding:2px 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .children { padding-left:20px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div id="tree"></div>
+</div>
+<div id="main">
+  <div id="content">
+    <div id="placeholder">Select an item</div>
+    <iframe id="content-frame" name="content-frame" style="display:none"></iframe>
+  </div>
+</div>
+<script src="menu.js"></script>
+<script>
+(function() {
+  var treeEl = document.getElementById('tree');
+  var frame = document.getElementById('content-frame');
+  var placeholder = document.getElementById('placeholder');
+
+  function render(items, container) {
+    items.forEach(function(item) {
+      var div = document.createElement('div');
+      div.className = 'node';
+      var hdr = document.createElement('div');
+      hdr.className = 'node-header';
+      var tgl = document.createElement('span');
+      var hasKids = item.children && item.children.length;
+      tgl.className = 'toggle' + (hasKids ? '' : ' empty');
+      tgl.textContent = hasKids ? '\\u25BE' : '\\u25B8';
+      var lbl = document.createElement('span');
+      lbl.className = 'label';
+      lbl.textContent = item.label;
+      hdr.appendChild(tgl);
+      hdr.appendChild(lbl);
+      div.appendChild(hdr);
+      if (hasKids) {
+        var ch = document.createElement('div');
+        ch.className = 'children';
+        render(item.children, ch);
+        div.appendChild(ch);
+        tgl.addEventListener('click', function(e) { e.stopPropagation(); var d = ch.style.display; ch.style.display = d==='none'?'':'none'; this.textContent = d==='none'?'\\u25BE':'\\u25B8'; });
+      }
+      hdr.addEventListener('click', function() {
+        var act = document.querySelectorAll('.node-header');
+        for (var i = 0; i < act.length; i++) act[i].classList.remove('active');
+        this.classList.add('active');
+        frame.style.display = 'block';
+        placeholder.style.display = 'none';
+        frame.src = 'content/' + item.id + '.html';
+      });
+      container.appendChild(div);
+    });
+  }
+
+  render(MENU_DATA, treeEl);
+})();
+</script>
+</body>
+</html>'''
+
+
+@app.route('/api/tabs', methods=['POST'])
+def create_tab():
+    data = request.get_json() or {}
+    name = data.get('name', '').strip()
+    if not name:
+        name = f"NewTab_{uuid.uuid4().hex[:6]}"
+    tab_path = mybase_dir / name
+    if tab_path.exists():
+        return jsonify({'error': 'Tab already exists'}), 409
+    tab_path.mkdir(parents=True)
+    save_menu(name, [])
+    index_html = generate_standalone_html(name)
+    with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
+        f.write(index_html)
+    return jsonify({'name': name}), 201
+
+
+@app.route('/api/tabs/<tab>', methods=['DELETE'])
+def delete_tab(tab):
+    tab_path = get_tab_path(tab)
+    if not tab_path:
+        return jsonify({'error': 'Tab not found'}), 404
+    import shutil
+    shutil.rmtree(str(tab_path))
+    return jsonify({'success': True})
+
+
+def move_menu_item(items, item_id, direction):
+    for i, item in enumerate(items):
+        if item['id'] == item_id:
+            if direction == 'up' and i > 0:
+                items[i], items[i-1] = items[i-1], items[i]
+                return True
+            elif direction == 'down' and i < len(items) - 1:
+                items[i], items[i+1] = items[i+1], items[i]
+                return True
+            return False
+        if 'children' in item and item['children']:
+            if move_menu_item(item['children'], item_id, direction):
+                return True
+    return False
+
+
+def move_menu_item_to_parent(items, item_id, target_parent_id):
+    item_to_move = None
+    def find_and_remove(items_list):
+        nonlocal item_to_move
+        new_list = []
+        for item in items_list:
+            if item['id'] == item_id:
+                item_to_move = item
+                continue
+            if 'children' in item:
+                item['children'] = find_and_remove(item['children'])
+            new_list.append(item)
+        return new_list
+    updated = find_and_remove(items)
+    if item_to_move is None:
+        return items, False
+    if target_parent_id is None:
+        updated.append(item_to_move)
+    else:
+        target = find_menu_item(updated, target_parent_id)
+        if target is None:
+            return items, False
+        if 'children' not in target:
+            target['children'] = []
+        target['children'].append(item_to_move)
+    return updated, True
+
+
+@app.route('/api/<tab>/menu/<item_id>/move', methods=['PUT'])
+def move_menu_item_route(tab, item_id):
+    if not get_tab_path(tab):
+        return jsonify({'error': 'Tab not found'}), 404
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    menu = load_menu(tab)
+    direction = data.get('direction')
+    target_parent_id = data.get('target_parent_id')
+
+    if direction in ('up', 'down'):
+        success = move_menu_item(menu, item_id, direction)
+        if not success:
+            return jsonify({'error': 'Cannot move item'}), 400
+    elif 'target_parent_id' in data:
+        menu, success = move_menu_item_to_parent(menu, item_id, target_parent_id)
+        if not success:
+            return jsonify({'error': 'Cannot move item to target'}), 400
+    else:
+        return jsonify({'error': 'Specify direction or target_parent_id'}), 400
+
+    save_menu(tab, menu)
+    return jsonify({'success': True})
+
+
+@app.route('/api/<tab>/tree')
+def get_tree(tab):
+    if not get_tab_path(tab):
+        return jsonify({'error': 'Tab not found'}), 404
+    menu = load_menu(tab)
+
+    def flatten(items, parent_id=None, depth=0):
+        result = []
+        for item in items:
+            node = {
+                'id': item['id'],
+                'label': item['label'],
+                'parent_id': parent_id,
+                'depth': depth,
+                'has_children': bool(item.get('children'))
+            }
+            result.append(node)
+            if item.get('children'):
+                result.extend(flatten(item['children'], item['id'], depth + 1))
+        return result
+
+    return jsonify(flatten(menu))
+
+
 if __name__ == '__main__':
+    init_config()
     print("=" * 60)
     print("  Web Document Center Server")
     print("=" * 60)
-    print(f"  MyBase directory: {MYBASE_DIR}")
-    print(f"  Server URL: http://0.0.0.0:9999")
+    print(f"  MyBase directory: {mybase_dir}")
+    print(f"  Server URL: http://0.0.0.0:{server_port}")
     print("=" * 60)
-    app.run(host='0.0.0.0', port=9999, debug=False)
+    app.run(host='0.0.0.0', port=server_port, debug=False)
