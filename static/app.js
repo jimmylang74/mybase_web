@@ -491,6 +491,36 @@
     }
   }
 
+  async function renameTab(oldName, newName) {
+    try {
+      await api('PUT', `/api/tabs/${encodeURIComponent(oldName)}`, { new_name: newName });
+      if (currentTab === oldName) {
+        currentTab = newName;
+      }
+      if (treeExpandedState[oldName] !== undefined) {
+        treeExpandedState[newName] = treeExpandedState[oldName];
+        delete treeExpandedState[oldName];
+      }
+      if (dirtyTabs[oldName] !== undefined) {
+        dirtyTabs[newName] = dirtyTabs[oldName];
+        delete dirtyTabs[oldName];
+      }
+      if (lastEditedItem[oldName] !== undefined) {
+        lastEditedItem[newName] = lastEditedItem[oldName];
+        delete lastEditedItem[oldName];
+      }
+      await loadTabs();
+      if (currentTab === newName) {
+        const newTabEl = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(newName)}"]`);
+        if (newTabEl) {
+          switchTab(newName, newTabEl);
+        }
+      }
+    } catch (e) {
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
+    }
+  }
+
   async function deleteTab(name) {
     try {
       await api('DELETE', `/api/tabs/${encodeURIComponent(name)}`);
@@ -615,6 +645,29 @@
         return true;
       }
     );
+  }
+
+  function promptRenameTab(oldName) {
+    showDialog(
+      '重命名 Tab',
+      `<label>新名称:</label><input type="text" id="dialog-input" value="${escapeHtml(oldName)}">`,
+      () => {
+        const input = $('#dialog-input');
+        const val = input.value.trim();
+        if (val && val !== oldName) {
+          renameTab(oldName, val);
+        }
+        return true;
+      }
+    );
+    const input = $('#dialog-input');
+    if (input) {
+      input.focus();
+      input.select();
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') $('#dialog-ok').click();
+      });
+    }
   }
 
   function promptInsertLink() {
@@ -1275,6 +1328,9 @@
       if (!name) return;
 
       switch (action) {
+        case 'edit-tab':
+          promptRenameTab(name);
+          break;
         case 'delete-tab':
           showDialog(
             '删除 Tab',

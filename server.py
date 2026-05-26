@@ -889,6 +889,88 @@ def create_tab():
     return jsonify({'name': name}), 201
 
 
+def rename_tab_in_index_db(old_name, new_name):
+    db_path = get_index_db_path(old_name)
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        old_prefix = old_name + '/'
+        new_prefix = new_name + '/'
+        conn.execute(
+            "UPDATE item_index SET menu_path = replace(menu_path, ?, ?)",
+            (old_prefix, new_prefix)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def rename_tab_in_common_db(old_name, new_name):
+    if not COMMON_DB.exists():
+        return
+    conn = sqlite3.connect(str(COMMON_DB))
+    try:
+        conn.execute(
+            "UPDATE tab_order SET tab_name = ? WHERE tab_name = ?",
+            (new_name, old_name)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def regenerate_index_html(tab_name, tab_path):
+    index_html = generate_standalone_html(tab_name)
+    with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
+        f.write(index_html)
+
+
+@app.route('/api/tabs/<old_name>', methods=['PUT'])
+def rename_tab(old_name):
+    data = request.get_json() or {}
+    new_name = data.get('new_name', '').strip()
+
+    if not new_name:
+        return jsonify({'error': 'New name is required'}), 400
+
+    if new_name == old_name:
+        return jsonify({'success': True})
+
+    old_tab_path = get_tab_path(old_name)
+    if not old_tab_path:
+        return jsonify({'error': 'Tab not found'}), 404
+
+    new_tab_path = mybase_dir / new_name
+    if new_tab_path.exists():
+        return jsonify({'error': 'Tab with new name already exists'}), 409
+
+    old_index_db_path = get_index_db_path(old_name)
+    new_index_db_path = get_index_db_path(new_name)
+
+    try:
+        if old_index_db_path.exists():
+            rename_tab_in_index_db(old_name, new_name)
+
+        rename_tab_in_common_db(old_name, new_name)
+
+        if old_index_db_path.exists():
+            old_index_db_path.rename(new_index_db_path)
+            wal_file = old_index_db_path.with_suffix('.db-wal')
+            shm_file = old_index_db_path.with_suffix('.db-shm')
+            if wal_file.exists():
+                wal_file.rename(new_index_db_path.with_suffix('.db-wal'))
+            if shm_file.exists():
+                shm_file.rename(new_index_db_path.with_suffix('.db-shm'))
+
+        old_tab_path.rename(new_tab_path)
+        regenerate_index_html(new_name, new_tab_path)
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/tabs/<tab>', methods=['DELETE'])
 def delete_tab(tab):
     tab_path = get_tab_path(tab)

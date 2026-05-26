@@ -487,6 +487,12 @@ body {
   background: #e8f0fe;
 }
 
+#tab-context-menu .tab-ctx-sep {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
 /* ─── Search Elements ──────────────────────────────────────────────────── */
 
 .search-input {
