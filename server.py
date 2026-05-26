@@ -10,21 +10,26 @@ from pathlib import Path
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
 from werkzeug.utils import secure_filename
 
-app = Flask(__name__)
-
 BASE_DIR = Path(__file__).parent
-mybase_dir = BASE_DIR / 'mybase'
-INDEX_DB_DIR = BASE_DIR / 'index_db'
+
+app = Flask(__name__,
+    template_folder=str(BASE_DIR / 'web' / 'templates'),
+    static_folder=str(BASE_DIR / 'web' / 'static'),
+    static_url_path='/static')
+
+data_dir = None
+mybase_dir = None
+index_db_dir = None
 UPLOAD_DIR_NAME = 'images'
-COMMON_DB = BASE_DIR / 'common.db'
+common_db = None
 server_port = 9999
 force_index_target = None
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Web of Mybase Knowledge Server')
-    parser.add_argument('--mybase', type=str, default='mybase',
-                        help='MyBase root directory name (default: mybase)')
+    parser.add_argument('--data', type=str, default='data',
+                        help='Data root directory (default: data)')
     parser.add_argument('--port', type=int, default=9999,
                         help='Server port (default: 9999)')
     parser.add_argument('--force-index', type=str, nargs='?', const='all', default=None,
@@ -33,11 +38,16 @@ def parse_args():
 
 
 def init_config():
-    global mybase_dir, server_port, force_index_target
+    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target
     args = parse_args()
-    mybase_dir = BASE_DIR / args.mybase
+    data_dir = BASE_DIR / args.data
+    mybase_dir = data_dir / 'mybase'
+    index_db_dir = data_dir / 'db' / 'index_db'
+    common_db = data_dir / 'db' / 'common.db'
     server_port = args.port
     force_index_target = args.force_index
+    data_dir.mkdir(exist_ok=True)
+    (data_dir / 'db').mkdir(exist_ok=True)
     mybase_dir.mkdir(exist_ok=True)
 
 
@@ -206,12 +216,12 @@ def _extract_body_from_qrich(html):
 
 def get_index_db_path(tab_name):
     """Return path to the SQLite index db for a given tab."""
-    return INDEX_DB_DIR / f"{tab_name}.db"
+    return index_db_dir / f"{tab_name}.db"
 
 
 def init_index_db(tab_name):
     """Create the index database and table for a tab if not exists."""
-    INDEX_DB_DIR.mkdir(exist_ok=True)
+    index_db_dir.mkdir(exist_ok=True)
     db_path = get_index_db_path(tab_name)
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
@@ -350,8 +360,8 @@ def search_index(tab_name, query):
 def search_all_tabs(query):
     """Search across all indexed knowledge bases."""
     results = []
-    if INDEX_DB_DIR.exists():
-        for db_file in sorted(INDEX_DB_DIR.glob("*.db")):
+    if index_db_dir.exists():
+        for db_file in sorted(index_db_dir.glob("*.db")):
             tab_name = db_file.stem
             results.extend(search_index(tab_name, query))
     return results
@@ -411,7 +421,7 @@ def delete_tab_index(tab_name):
 
 def ensure_indexes():
     """On startup: delete orphan index files, auto-index new tabs, force-index if requested."""
-    INDEX_DB_DIR.mkdir(exist_ok=True)
+    index_db_dir.mkdir(exist_ok=True)
 
     tabs = set()
     if mybase_dir.exists():
@@ -419,12 +429,12 @@ def ensure_indexes():
             if entry.is_dir() and not entry.name.startswith('.'):
                 tabs.add(entry.name)
 
-    for db_file in list(INDEX_DB_DIR.glob("*.db")):
+    for db_file in list(index_db_dir.glob("*.db")):
         if db_file.stem not in tabs:
             print(f"  Removing orphan index: {db_file.stem}")
             db_file.unlink()
 
-    indexed = {db.stem for db in INDEX_DB_DIR.glob("*.db")}
+    indexed = {db.stem for db in index_db_dir.glob("*.db")}
 
     for tab in sorted(tabs):
         if tab not in indexed:
@@ -449,7 +459,7 @@ def ensure_indexes():
 
 def init_common_db():
     """Create common.db and tab_order table if not exists."""
-    conn = sqlite3.connect(str(COMMON_DB))
+    conn = sqlite3.connect(str(common_db))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
@@ -465,9 +475,9 @@ def init_common_db():
 
 def get_tab_order():
     """Return list of tab names ordered by sort_order."""
-    if not COMMON_DB.exists():
+    if not common_db.exists():
         return []
-    conn = sqlite3.connect(str(COMMON_DB))
+    conn = sqlite3.connect(str(common_db))
     try:
         cursor = conn.execute("SELECT tab_name FROM tab_order ORDER BY sort_order ASC")
         return [row[0] for row in cursor.fetchall()]
@@ -477,7 +487,7 @@ def get_tab_order():
 
 def set_tab_order(tab_names):
     """Replace entire tab_order table with a new ordered list."""
-    conn = sqlite3.connect(str(COMMON_DB))
+    conn = sqlite3.connect(str(common_db))
     try:
         conn.execute("DELETE FROM tab_order")
         for i, name in enumerate(tab_names):
@@ -747,10 +757,10 @@ def upload_image(tab):
     file_path = upload_dir / unique_name
     file.save(str(file_path))
 
-    return jsonify({'url': f'/static/{tab}/images/{unique_name}'}), 201
+    return jsonify({'url': f'/uploads/{tab}/images/{unique_name}'}), 201
 
 
-@app.route('/static/<tab>/images/<filename>')
+@app.route('/uploads/<tab>/images/<filename>')
 def serve_uploaded_image(tab, filename):
     tab_path = get_tab_path(tab)
     if not tab_path:
@@ -907,9 +917,9 @@ def rename_tab_in_index_db(old_name, new_name):
 
 
 def rename_tab_in_common_db(old_name, new_name):
-    if not COMMON_DB.exists():
+    if not common_db.exists():
         return
-    conn = sqlite3.connect(str(COMMON_DB))
+    conn = sqlite3.connect(str(common_db))
     try:
         conn.execute(
             "UPDATE tab_order SET tab_name = ? WHERE tab_name = ?",
@@ -1083,6 +1093,7 @@ if __name__ == '__main__':
     print("=" * 60)
     print("  Web of Mybase Knowledge Server")
     print("=" * 60)
+    print(f"  Data directory: {data_dir}")
     print(f"  MyBase directory: {mybase_dir}")
     if force_index_target:
         print(f"  Force reindex: {force_index_target}")

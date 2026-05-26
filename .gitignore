@@ -1,6 +1,4 @@
 __pycache__/
-mybase/
 .sisyphus/
-index_db/
-common.db
+data/
 
