@@ -583,6 +583,7 @@ body {
   width: 120px;
   min-width: 80px;
   flex-shrink: 0;
+  position: relative;
 }
 
 .col-path {
@@ -595,6 +596,51 @@ body {
   width: 300px;
   min-width: 150px;
   flex-shrink: 0;
+  position: relative;
+  padding-left: 10px;
+}
+
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.col-snippet > .col-resize-handle {
+  right: auto;
+  left: -5px;
+  width: 9px;
+}
+
+.col-snippet > .col-resize-handle::before {
+  left: 4px;
+}
+
+.col-snippet > .col-resize-handle:hover::before,
+.col-snippet > .col-resize-handle.active::before {
+  left: 3px;
+}
+
+.col-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  width: 1px;
+  background: #d0d0d0;
+  transition: background 0.12s;
+}
+
+.col-resize-handle:hover::before,
+.col-resize-handle.active::before {
+  background: #3498db;
+  width: 2px;
+  left: 2px;
 }
 
 /* ─── Search Results Body ────────────────────────────────────────────── */
@@ -678,6 +724,27 @@ body {
 #search-splitter:hover,
 #search-splitter.active {
   background: #b0c4de;
+}
+
+/* ─── Tab Drag and Drop ───────────────────────────────────────────────── */
+
+.tab.dragging {
+  opacity: 0.5;
+  background: #3d566e;
+}
+
+.tab.drag-over {
+  border-left: 3px solid #3498db;
+  background: #3d566e;
+}
+
+.tab.drag-over-right {
+  border-right: 3px solid #3498db;
+  background: #3d566e;
+}
+
+#tabs.drag-over-end {
+  border-right: 3px solid #3498db;
 }
 
 /* ─── Tab Help (Blue Circular) ─────────────────────────────────────────── */

@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).parent
 mybase_dir = BASE_DIR / 'mybase'
 INDEX_DB_DIR = BASE_DIR / 'index_db'
 UPLOAD_DIR_NAME = 'images'
+COMMON_DB = BASE_DIR / 'common.db'
 server_port = 9999
 force_index_target = None
 
@@ -443,7 +444,69 @@ def ensure_indexes():
             print(f"  Warning: Knowledge base '{force_index_target}' not found, skipping.")
 
 
-# ─── End Index Engine ─────────────────────────────────────────────────────
+# ─── Common Database (tab_order, general config) ───────────────────────────
+
+
+def init_common_db():
+    """Create common.db and tab_order table if not exists."""
+    conn = sqlite3.connect(str(COMMON_DB))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tab_order (
+                tab_name TEXT PRIMARY KEY,
+                sort_order INTEGER NOT NULL
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_tab_order():
+    """Return list of tab names ordered by sort_order."""
+    if not COMMON_DB.exists():
+        return []
+    conn = sqlite3.connect(str(COMMON_DB))
+    try:
+        cursor = conn.execute("SELECT tab_name FROM tab_order ORDER BY sort_order ASC")
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def set_tab_order(tab_names):
+    """Replace entire tab_order table with a new ordered list."""
+    conn = sqlite3.connect(str(COMMON_DB))
+    try:
+        conn.execute("DELETE FROM tab_order")
+        for i, name in enumerate(tab_names):
+            conn.execute(
+                "INSERT INTO tab_order (tab_name, sort_order) VALUES (?, ?)",
+                (name, i)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def add_tab_to_order(tab_name):
+    """Append a tab to the end of the order list."""
+    names = get_tab_order()
+    if tab_name not in names:
+        names.append(tab_name)
+        set_tab_order(names)
+
+
+def remove_tab_from_order(tab_name):
+    """Remove a tab from the order list."""
+    names = get_tab_order()
+    if tab_name in names:
+        names.remove(tab_name)
+        set_tab_order(names)
+
+
+# ─── End Common Database ──────────────────────────────────────────────────
 
 
 def save_content(tab_name, item_id, content_html):
@@ -534,12 +597,20 @@ def index():
 
 @app.route('/api/tabs')
 def list_tabs():
-    tabs = []
+    tabs = set()
     if mybase_dir.exists():
-        for entry in sorted(mybase_dir.iterdir()):
+        for entry in mybase_dir.iterdir():
             if entry.is_dir() and not entry.name.startswith('.'):
-                tabs.append(entry.name)
-    return jsonify(tabs)
+                tabs.add(entry.name)
+    if not tabs:
+        return jsonify([])
+    # Return tabs in order from common.db, unknown tabs appended at end
+    ordered = get_tab_order()
+    result = [t for t in ordered if t in tabs]
+    for t in sorted(tabs):
+        if t not in result:
+            result.append(t)
+    return jsonify(result)
 
 
 @app.route('/api/<tab>/menu')
@@ -786,6 +857,20 @@ def generate_standalone_html(tab_name):
 </html>'''
 
 
+@app.route('/api/tab-order')
+def get_tab_order_route():
+    return jsonify(get_tab_order())
+
+
+@app.route('/api/tab-order', methods=['PUT'])
+def set_tab_order_route():
+    data = request.get_json()
+    if not isinstance(data, list):
+        return jsonify({'error': 'Expected a list of tab names'}), 400
+    set_tab_order(data)
+    return jsonify({'success': True})
+
+
 @app.route('/api/tabs', methods=['POST'])
 def create_tab():
     data = request.get_json() or {}
@@ -797,6 +882,7 @@ def create_tab():
         return jsonify({'error': 'Tab already exists'}), 409
     tab_path.mkdir(parents=True)
     save_menu(name, [])
+    add_tab_to_order(name)
     index_html = generate_standalone_html(name)
     with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
         f.write(index_html)
@@ -809,6 +895,7 @@ def delete_tab(tab):
     if not tab_path:
         return jsonify({'error': 'Tab not found'}), 404
     delete_tab_index(tab)
+    remove_tab_from_order(tab)
     shutil.rmtree(str(tab_path))
     return jsonify({'success': True})
 
@@ -921,6 +1008,7 @@ if __name__ == '__main__':
     print("=" * 60)
     print("  Checking indexes...")
     ensure_indexes()
+    init_common_db()
     print("  Done.")
     print("=" * 60)
     app.run(host='0.0.0.0', port=server_port, debug=False)

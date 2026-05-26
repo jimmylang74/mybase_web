@@ -46,6 +46,128 @@
     return data;
   }
 
+  // ─── Tab Drag-and-Drop ─────────────────────────────────────────────────
+
+  let dragSrcTab = null;
+
+  function clearTabDragOver() {
+    tabsEl.querySelectorAll('.tab').forEach((t) => t.classList.remove('drag-over', 'drag-over-right'));
+    tabsEl.classList.remove('drag-over-end');
+  }
+
+  function clearTabDragState() {
+    clearTabDragOver();
+    dragSrcTab = null;
+  }
+
+  async function doTabReorder(targetEl, onRightHalf) {
+    if (!dragSrcTab) return;
+    const tabs = [...tabsEl.querySelectorAll('.tab')].filter((t) => t.dataset.tab);
+    const srcIdx = tabs.indexOf(dragSrcTab);
+    if (srcIdx === -1) return;
+
+    // Determine insertBefore index (position where the item should be inserted)
+    let insertBefore;
+    if (!targetEl) {
+      // Dropped on empty space -> append at end
+      insertBefore = tabs.length;
+    } else {
+      const dstIdx = tabs.indexOf(targetEl);
+      if (dstIdx === -1) return;
+      insertBefore = onRightHalf ? dstIdx + 1 : dstIdx;
+    }
+
+    const names = tabs.map((t) => t.dataset.tab);
+    const draggedName = names[srcIdx];
+    names.splice(srcIdx, 1);
+    if (srcIdx < insertBefore) insertBefore--;
+    names.splice(insertBefore, 0, draggedName);
+
+    try {
+      await api('PUT', '/api/tab-order', names);
+      await loadTabs();
+      // After tabs are rebuilt, switch to the dragged tab
+      const newTabEl = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(draggedName)}"]`);
+      if (newTabEl) {
+        switchTab(draggedName, newTabEl);
+      }
+    } catch (err) {
+      console.error('Failed to save tab order:', err);
+    }
+  }
+
+  function makeTabDraggable(el) {
+    el.draggable = true;
+
+    el.addEventListener('dragstart', (e) => {
+      dragSrcTab = el;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', el.dataset.tab);
+    });
+
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (el === dragSrcTab) return;
+      e.dataTransfer.dropEffect = 'move';
+      clearTabDragOver();
+      const rect = el.getBoundingClientRect();
+      if (e.clientX < rect.left + rect.width / 2) {
+        el.classList.add('drag-over');
+      } else {
+        el.classList.add('drag-over-right');
+      }
+    });
+
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('drag-over', 'drag-over-right');
+    });
+
+    el.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      if (el === dragSrcTab || !dragSrcTab) return;
+      clearTabDragOver();
+      const rect = el.getBoundingClientRect();
+      const onRightHalf = e.clientX >= rect.left + rect.width / 2;
+      await doTabReorder(el, onRightHalf);
+    });
+
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      clearTabDragState();
+    });
+  }
+
+  // ─── Tab Container Drop (for dropping at end of list) ──────────────────
+
+  tabsEl.addEventListener('dragover', (e) => {
+    const tabUnder = e.target.closest('.tab');
+    if (!tabUnder && dragSrcTab) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      clearTabDragOver();
+      tabsEl.classList.add('drag-over-end');
+    }
+  });
+
+  tabsEl.addEventListener('dragleave', (e) => {
+    if (!tabsEl.contains(e.relatedTarget)) {
+      tabsEl.classList.remove('drag-over-end');
+    }
+  });
+
+  tabsEl.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    tabsEl.classList.remove('drag-over-end');
+    // Only handle if not dropping on a specific tab element
+    const tabUnder = e.target.closest('.tab');
+    if (!tabUnder && dragSrcTab) {
+      await doTabReorder(null, false);
+    }
+  });
+
+  // ─── Load Tabs ─────────────────────────────────────────────────────────
+
   async function loadTabs() {
     const tabs = await api('GET', '/api/tabs');
     tabsEl.innerHTML = '';
@@ -65,6 +187,7 @@
         e.stopPropagation();
         showTabContextMenu(e, name);
       });
+      makeTabDraggable(el);
       tabsEl.appendChild(el);
     });
     if (!currentTab || !tabs.includes(currentTab)) {
@@ -982,7 +1105,93 @@
       searchPanel.style.height = h + 'px';
       return;
     }
+    if (colResizing) {
+      const dx = e.clientX - colResizing.startX;
+      if (colResizing.isSnippet) {
+        // Resize both 路径 and 内容简述 so the boundary follows the cursor
+        let newSnippetW = colResizing.startSnippetW - dx;
+        let newPathW = colResizing.startPathW + dx;
+        const total = colResizing.startSnippetW + colResizing.startPathW;
+        const snippetMinW = colResizing.snippetMinW;
+        const pathMinW = colResizing.pathMinW;
+        if (newSnippetW < snippetMinW) {
+          newSnippetW = snippetMinW;
+          newPathW = total - snippetMinW;
+        }
+        if (newPathW < pathMinW) {
+          newPathW = pathMinW;
+          newSnippetW = total - pathMinW;
+        }
+        // Apply to header columns
+        colResizing.snippetCol.style.width = newSnippetW + 'px';
+        colResizing.snippetCol.style.flex = 'none';
+        colResizing.pathCol.style.width = newPathW + 'px';
+        colResizing.pathCol.style.flex = 'none';
+        // Sync to search result items
+        searchResultsBody.querySelectorAll('.col-snippet').forEach((el) => {
+          el.style.width = newSnippetW + 'px';
+          el.style.flex = 'none';
+        });
+        searchResultsBody.querySelectorAll('.col-path').forEach((el) => {
+          el.style.width = newPathW + 'px';
+          el.style.flex = 'none';
+        });
+      } else {
+        // col-tab: simple single-column resize
+        let newW = colResizing.startW + dx;
+        if (newW < colResizing.minW) newW = colResizing.minW;
+        colResizing.col.style.width = newW + 'px';
+        colResizing.col.style.flex = 'none';
+        searchResultsBody.querySelectorAll('.col-tab').forEach((el) => {
+          el.style.width = newW + 'px';
+          el.style.flex = 'none';
+        });
+      }
+      return;
+    }
   });
+
+  // ─── Search Column Resize ──────────────────────────────────────────────
+
+  let colResizing = null; // { col: element, startX: number, startW: number, minW: number }
+
+  document.addEventListener('mousedown', (e) => {
+    const handle = e.target.closest('.col-resize-handle');
+    if (!handle) return;
+    const col = handle.parentElement;
+    if (col.classList.contains('col-snippet')) {
+      // Resize both 路径 and 内容简述 — boundary follows cursor
+      const snippetRect = col.getBoundingClientRect();
+      const pathCol = document.querySelector('#search-results-column-headers .col-path');
+      const pathRect = pathCol.getBoundingClientRect();
+      colResizing = {
+        isSnippet: true,
+        snippetCol: col,
+        pathCol: pathCol,
+        startX: e.clientX,
+        startSnippetW: snippetRect.width,
+        startPathW: pathRect.width,
+        snippetMinW: parseFloat(getComputedStyle(col).minWidth) || 60,
+        pathMinW: parseFloat(getComputedStyle(pathCol).minWidth) || 60
+      };
+    } else {
+      // col-tab: simple resize
+      const rect = col.getBoundingClientRect();
+      colResizing = {
+        isSnippet: false,
+        col: col,
+        startX: e.clientX,
+        startW: rect.width,
+        minW: parseFloat(getComputedStyle(col).minWidth) || 60
+      };
+    }
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  // ─── Global Mouse Up ────────────────────────────────────────────────────
 
   document.addEventListener('mouseup', () => {
     if (isDragging) {
@@ -994,6 +1203,12 @@
     if (searchDragging) {
       searchDragging = false;
       searchSplitter.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    if (colResizing) {
+      document.querySelectorAll('.col-resize-handle.active').forEach((h) => h.classList.remove('active'));
+      colResizing = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     }
