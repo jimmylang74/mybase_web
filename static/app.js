@@ -9,6 +9,7 @@
   let treeCtxItemId = null;
   let treeExpandedState = {}; // { tabName: Set<nodeId> }
   let dirtyTabs = {}; // { tabName: true/false }
+  let lastEditedItem = {}; // { tabName: itemId }
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -74,6 +75,15 @@
 
   async function switchTab(name, el) {
     if (currentTab && currentTab !== name) {
+      // Save unsaved content before leaving
+      if (contentModified && currentItemId) {
+        await saveContent(currentItemId);
+      }
+      // Clear dirty flag when leaving a tab — menu ops (add/rename/delete/move)
+      // already persist to server but set dirtyTabs=true without contentModified=true,
+      // so saveContent won't run and the * would stick.
+      dirtyTabs[currentTab] = false;
+      updateTabLabel(currentTab);
       treeExpandedState[currentTab] = saveExpandedState();
     }
     if (activeTabEl) activeTabEl.classList.remove('active');
@@ -93,8 +103,15 @@
       treeContainer.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Failed to load menu</div>';
     }
 
-    editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
-    editorStatus.textContent = 'No item selected';
+    // Restore last selected item for this tab
+    const lastId = lastEditedItem[currentTab];
+    if (lastId && findNodeById(menuTree, lastId)) {
+      scrollToTreeNode(lastId);
+      selectItem(lastId);
+    } else {
+      editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
+      editorStatus.textContent = 'No item selected';
+    }
   }
 
   async function loadMenu() {
@@ -130,13 +147,17 @@
   }
 
   function renderTree() {
-    if (currentTab) {
-      treeExpandedState[currentTab] = saveExpandedState();
-    }
     treeContainer.innerHTML = '';
     menuTree.forEach((item) => renderTreeNode(item, treeContainer, 0));
     const saved = currentTab ? treeExpandedState[currentTab] : null;
     if (saved) restoreExpandedState(saved);
+  }
+
+  async function reloadMenu() {
+    if (currentTab) {
+      treeExpandedState[currentTab] = saveExpandedState();
+    }
+    await loadMenu();
   }
 
   function renderTreeNode(item, container, depth) {
@@ -219,12 +240,38 @@
     return undefined;
   }
 
+  function scrollToTreeNode(nodeId) {
+    // Expand all ancestors so the node is visible
+    const ancestors = [];
+    let pid = findParentId(menuTree, nodeId, null);
+    while (pid !== undefined && pid !== null) {
+      ancestors.unshift(pid);
+      pid = findParentId(menuTree, pid, null);
+    }
+    for (const aid of ancestors) {
+      const parentEl = treeContainer.querySelector(`.tree-node[data-id="${aid}"]`);
+      if (!parentEl) continue;
+      const childrenDiv = parentEl.querySelector('.tree-children');
+      const toggle = parentEl.querySelector('.toggle');
+      if (childrenDiv && toggle && !toggle.classList.contains('empty') && childrenDiv.style.display === 'none') {
+        childrenDiv.style.display = '';
+        toggle.textContent = '\u25BE';
+      }
+    }
+    // Scroll the new node into view
+    const nodeEl = treeContainer.querySelector(`.tree-node[data-id="${nodeId}"]`);
+    if (nodeEl) {
+      nodeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
   function selectItem(id) {
     if (contentModified && currentItemId) {
       saveContent(currentItemId);
     }
 
     currentItemId = id;
+    lastEditedItem[currentTab] = id;
     contentModified = false;
 
     $$('.tree-node-header').forEach((h) => h.classList.remove('active'));
@@ -276,10 +323,16 @@
       } else {
         body.parent_id = parentId || null;
       }
-      await api('POST', `/api/${encodeURIComponent(currentTab)}/menu`, body);
-      await loadMenu();
+      const result = await api('POST', `/api/${encodeURIComponent(currentTab)}/menu`, body);
+      dirtyTabs[currentTab] = true;
+      updateTabLabel(currentTab);
+      await reloadMenu();
+      if (result && result.id) {
+        scrollToTreeNode(result.id);
+        selectItem(result.id);
+      }
     } catch (e) {
-      alert('Add failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
   }
 
@@ -287,12 +340,14 @@
     if (!currentTab) return;
     try {
       await api('PUT', `/api/${encodeURIComponent(currentTab)}/menu/${itemId}`, { label });
-      await loadMenu();
+      dirtyTabs[currentTab] = true;
+      updateTabLabel(currentTab);
+      await reloadMenu();
       if (currentItemId === itemId) {
         editorStatus.textContent = `Editing: ${label}`;
       }
     } catch (e) {
-      alert('Rename failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
   }
 
@@ -305,9 +360,11 @@
         editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
         editorStatus.textContent = 'No item selected';
       }
-      await loadMenu();
+      dirtyTabs[currentTab] = true;
+      updateTabLabel(currentTab);
+      await reloadMenu();
     } catch (e) {
-      alert('Delete failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
   }
 
@@ -322,7 +379,7 @@
       }
       await loadTabs();
     } catch (e) {
-      alert('Delete tab failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
   }
 
@@ -333,39 +390,17 @@
     el.textContent = dirtyTabs[name] ? '*' + base : base;
   }
 
-  async function saveAllTabs() {
-    if (currentItemId) {
-      await saveContent(currentItemId);
-    }
-    const dirty = Object.keys(dirtyTabs).filter((t) => dirtyTabs[t]);
-    if (dirty.length === 0) {
-      editorStatus.textContent = 'All tabs saved';
-      return;
-    }
-    const current = currentTab;
-    for (const name of dirty) {
-      if (name === current) continue;
-      const el = tabsEl.querySelector(`.tab[data-tab="${name}"]`);
-      if (!el) continue;
-      await switchTab(name, el);
-      if (currentItemId) {
-        await saveContent(currentItemId);
-      }
-    }
-    if (current && current !== currentTab) {
-      const el = tabsEl.querySelector(`.tab[data-tab="${current}"]`);
-      if (el) await switchTab(current, el);
-    }
-    editorStatus.textContent = 'Save All completed';
-  }
+
 
   async function moveMenuItem(itemId, direction) {
     if (!currentTab) return;
     try {
       await api('PUT', `/api/${encodeURIComponent(currentTab)}/menu/${itemId}/move`, { direction });
-      await loadMenu();
+      dirtyTabs[currentTab] = true;
+      updateTabLabel(currentTab);
+      await reloadMenu();
     } catch (e) {
-      alert('Move failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
   }
 
@@ -373,9 +408,11 @@
     if (!currentTab) return;
     try {
       await api('PUT', `/api/${encodeURIComponent(currentTab)}/menu/${itemId}/move`, { target_parent_id: targetParentId });
-      await loadMenu();
+      dirtyTabs[currentTab] = true;
+      updateTabLabel(currentTab);
+      await reloadMenu();
     } catch (e) {
-      alert('Move failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
   }
 
@@ -475,7 +512,7 @@
 
   // ─── New Tab ───────────────────────────────────────────────────────────
 
-  $('#tab-add').addEventListener('click', () => {
+  $('#btn-new-tab').addEventListener('click', () => {
     showDialog(
       'New Tab',
       '<label>Tab name:</label><input type="text" id="dialog-input" placeholder="Enter tab name">',
@@ -487,7 +524,7 @@
           await api('POST', '/api/tabs', { name: val });
           await loadTabs();
         } catch (e) {
-          alert('Create tab failed: ' + e.message);
+          showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
         }
         return true;
       }
@@ -499,6 +536,23 @@
         if (e.key === 'Enter') $('#dialog-ok').click();
       });
     }
+  });
+
+  // ─── Help ──────────────────────────────────────────────────────────────
+
+  $('#tab-help').addEventListener('click', () => {
+    showDialog('Help', `
+      <div style="font-size:13px;line-height:1.8">
+        <p><b>Editor</b></p>
+        <p>Ctrl+S — Save current content</p>
+        <p><b>Tree</b></p>
+        <p>Right-click on any item for context menu</p>
+        <p>Click item name twice to rename inline</p>
+        <p><b>Tabs</b></p>
+        <p>Right-click on a tab to delete it</p>
+        <p>+ Tab button in toolbar creates a new tab</p>
+      </div>
+    `);
   });
 
   // ─── Toolbar Dropdown ──────────────────────────────────────────────────
@@ -613,7 +667,7 @@
     try {
       treeData = await api('GET', `/api/${encodeURIComponent(currentTab)}/tree`);
     } catch (e) {
-      alert('Failed to load tree: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
       return;
     }
 
@@ -716,7 +770,7 @@
       document.execCommand('insertImage', false, result.url);
       markModified();
     } catch (e) {
-      alert('Upload failed: ' + e.message);
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
     this.value = '';
   });
@@ -727,7 +781,7 @@
       document.execCommand('insertText', false, text);
       markModified();
     }).catch(() => {
-      alert('Cannot read clipboard. Please use Ctrl+Shift+V for plain paste.');
+      showDialog('Error', '<p>Cannot read clipboard. Please use Ctrl+Shift+V for plain paste.</p>');
     });
   });
 
@@ -736,8 +790,6 @@
       saveContent(currentItemId);
     }
   });
-
-  $('#btn-save-all').addEventListener('click', saveAllTabs);
 
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {

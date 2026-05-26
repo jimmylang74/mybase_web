@@ -487,19 +487,19 @@ body {
   background: #e8f0fe;
 }
 
-/* ─── Tab Add (Green Circular) ─────────────────────────────────────────── */
-#tab-add {
+/* ─── Tab Help (Blue Circular) ─────────────────────────────────────────── */
+#tab-help {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #27ae60;
+  background: #2980b9;
   color: #fff;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
   user-select: none;
   margin: auto 4px auto 8px;
@@ -507,12 +507,12 @@ body {
   transition: background 0.2s, transform 0.15s;
 }
 
-#tab-add:hover {
-  background: #2ecc71;
+#tab-help:hover {
+  background: #3498db;
   transform: scale(1.1);
 }
 
-#tab-add:active {
+#tab-help:active {
   transform: scale(0.95);
 }
 
