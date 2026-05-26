@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document Center</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <div id="tab-bar">
+    <div id="tabs"></div>
+  </div>
+  <div id="main-content">
+    <div id="sidebar">
+      <div id="tree-toolbar">
+        <button id="btn-add-root" title="Add Root Item">+ Add</button>
+      </div>
+      <div id="tree-container"></div>
+    </div>
+    <div id="editor-area">
+      <div id="editor-toolbar">
+        <select id="font-family" title="Font Family">
+          <option value="Arial">Arial</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Verdana">Verdana</option>
+          <option value="SimSun">SimSun (宋体)</option>
+          <option value="Microsoft YaHei">Microsoft YaHei</option>
+        </select>
+        <select id="font-size" title="Font Size">
+          <option value="1">Small</option>
+          <option value="3" selected>Normal</option>
+          <option value="5">Large</option>
+          <option value="7">X-Large</option>
+        </select>
+        <button class="tool-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button class="tool-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button class="tool-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+        <button class="tool-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+        <input type="color" id="text-color" value="#ff0000" title="Text Color">
+        <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
+        <button class="tool-btn" id="btn-insert-image" title="Insert Image">🖼️</button>
+        <button class="tool-btn" id="btn-upload-image" title="Upload Image">📤</button>
+        <span class="separator"></span>
+        <button class="tool-btn" id="btn-paste-plain" title="Paste as Plain Text">📋 Plain</button>
+        <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
+        <input type="file" id="image-upload-input" accept="image/*" style="display:none">
+      </div>
+      <div id="editor" contenteditable="true">
+        <p>Select a menu item to edit its content...</p>
+      </div>
+      <div id="editor-status">No item selected</div>
+    </div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu">
+  <div class="ctx-item" data-cmd="bold">Bold</div>
+  <div class="ctx-item" data-cmd="italic">Italic</div>
+  <div class="ctx-item" data-cmd="underline">Underline</div>
+  <div class="ctx-item" data-cmd="strikeThrough">Strikethrough</div>
+  <div class="ctx-separator"></div>
+  <div class="ctx-item" id="ctx-font-family">Font Family</div>
+  <div class="ctx-item" id="ctx-font-color">Font Color</div>
+  <div class="ctx-item" id="ctx-remove-format">Remove Format</div>
+  <div class="ctx-separator"></div>
+  <div class="ctx-item" data-cmd="copy">Copy</div>
+  <div class="ctx-item" data-cmd="paste">Paste</div>
+</div>
+
+<!-- Dialog Overlay -->
+<div id="dialog-overlay" style="display:none">
+  <div id="dialog-box">
+    <div id="dialog-title"></div>
+    <div id="dialog-content"></div>
+    <div id="dialog-buttons">
+      <button id="dialog-ok">OK</button>
+      <button id="dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
