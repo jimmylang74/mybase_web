@@ -753,6 +753,11 @@ def _ocr_worker_init():
     os.environ['FLAGS_log_level'] = '3'
 
     from paddleocr import PaddleOCR
+    try:
+        import paddle as _paddle
+        _paddle.disable_signal_handler()
+    except (ImportError, AttributeError):
+        pass
     with suppress_stdout_stderr():
         return PaddleOCR(
             use_textline_orientation=True,
@@ -764,7 +769,16 @@ def _ocr_worker_init():
 
 def _ocr_worker(task_queue, result_queue):
     """Worker entry point: init → loop reading tasks → write results."""
-    _ocr = _ocr_worker_init()
+    # Ignore SIGINT inherited from parent so workers aren't killed by CTRL+C.
+    # Workers exit via sentinel in the task queue, not by signals.
+    import signal as _signal
+    _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
+
+    try:
+        _ocr = _ocr_worker_init()
+    except BaseException:
+        return  # PaddleOCR init failed, nothing we can do
+
     while True:
         try:
             task_id, image_path = task_queue.get()
@@ -773,9 +787,6 @@ def _ocr_worker(task_queue, result_queue):
         if task_id is None:   # shutdown sentinel
             break
         try:
-            # Signal "started" with timestamp BEFORE processing.
-            # The caller uses this to measure per-task processing timeout
-            # independently of mp.Queue waiting time.
             result_queue.put((task_id, None, time.monotonic()))
             result = _ocr.predict(str(image_path))
             texts = []
@@ -787,7 +798,7 @@ def _ocr_worker(task_queue, result_queue):
                     if rec_texts:
                         texts.extend(rec_texts)
             result_queue.put((task_id, ' '.join(texts)))
-        except Exception:
+        except BaseException:
             result_queue.put((task_id, ''))
 
 
@@ -945,8 +956,9 @@ class OCRProcessPool:
             except Exception:
                 pass
         for p in self._processes:
-            p.join(timeout=3)
+            p.join(timeout=20)
             if p.is_alive():
+                print(f"  [WARN] OCR worker (PID {p.pid}) did not exit within 20s, sending terminate()...", flush=True)
                 p.terminate()
 
 
