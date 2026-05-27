@@ -28,6 +28,7 @@ UPLOAD_DIR_NAME = 'images'
 common_db = None
 server_port = 9999
 force_index_target = None
+ocr_disabled = False
 
 
 def parse_args():
@@ -38,11 +39,13 @@ def parse_args():
                         help='Server port (default: 9999)')
     parser.add_argument('--force-index', type=str, nargs='?', const='all', default=None,
                         help='Force reindex a specific knowledge base. If no name given, reindex all.')
+    parser.add_argument('--disable-ocr', action='store_true',
+                        help='Disable OCR image text indexing.')
     return parser.parse_args()
 
 
 def init_config():
-    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target
+    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled
     args = parse_args()
     data_dir = BASE_DIR / args.data
     mybase_dir = data_dir / 'mybase'
@@ -50,6 +53,7 @@ def init_config():
     common_db = data_dir / 'db' / 'common.db'
     server_port = args.port
     force_index_target = args.force_index
+    ocr_disabled = args.disable_ocr
     data_dir.mkdir(exist_ok=True)
     (data_dir / 'db').mkdir(exist_ok=True)
     mybase_dir.mkdir(exist_ok=True)
@@ -665,8 +669,10 @@ def extract_text_from_html_images(html_content, tab_name):
       - URL-referenced images  (/uploads/<tab>/images/<file>)
       - Relative paths         (images/foo.png)
       - Base64 embedded images (data:image/...;base64,...)
+
+    Returns '' immediately when OCR is disabled (--disable-ocr).
     """
-    if not html_content:
+    if ocr_disabled or not html_content:
         return ''
     img_pattern = re.compile(
         r'<img[^>]+src=[\'"]([^\'"]+)[\'"][^>]*>', re.IGNORECASE
@@ -1356,10 +1362,13 @@ if __name__ == '__main__':
     print(f"  MyBase directory: {mybase_dir}")
     if force_index_target:
         print(f"  Force reindex: {force_index_target}")
+    if ocr_disabled:
+        print(f"  OCR disabled via --disable-ocr")
     print(f"  Server URL: http://0.0.0.0:{server_port}")
     print("=" * 60)
-    print("  Initializing OCR...")
-    init_ocr()
+    if not ocr_disabled:
+        print("  Initializing OCR...")
+        init_ocr()
     print("  Checking indexes...")
     ensure_indexes()
     init_common_db()
