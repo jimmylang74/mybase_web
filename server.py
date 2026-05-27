@@ -625,6 +625,22 @@ def update_item_in_index(tab_name, item_id):
         conn.close()
 
 
+def update_item_path_in_index(tab_name, item_id, menu, path):
+    """Update the menu_path for a moved/renamed item without re-running OCR."""
+    db_path = get_index_db_path(tab_name)
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "UPDATE item_index SET menu_path = ? WHERE menu_item_id = ?",
+            (path, item_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def delete_item_from_index(tab_name, item_id):
     """Remove a single item from the index."""
     db_path = get_index_db_path(tab_name)
@@ -1627,7 +1643,9 @@ def move_menu_item_route(tab, item_id):
         return jsonify({'error': 'Specify direction or target_parent_id'}), 400
 
     save_menu(tab, menu)
-    _run_in_background(update_item_in_index, tab, item_id)
+    path = compute_item_path(menu, item_id, tab)
+    if path:
+        update_item_path_in_index(tab, item_id, menu, path)
     return jsonify({'success': True})
 
 
