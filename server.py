@@ -16,6 +16,7 @@ import threading
 import contextlib
 import multiprocessing as mp
 import queue
+from typing import Any
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
@@ -55,32 +56,33 @@ signal.signal(signal.SIGINT, _shutdown_signal_handler)
 signal.signal(signal.SIGTERM, _shutdown_signal_handler)
 
 
-_suppress_lock = threading.Lock()
+BASE_DIR = Path(__file__).parent
 
 
 @contextlib.contextmanager
 def suppress_stdout_stderr():
-    """Suppress all output at file descriptor level (C/C++ printf included)."""
-    with _suppress_lock:
-        with open(os.devnull, 'wb') as devnull:
-            stdout_fd = sys.stdout.fileno()
-            stderr_fd = sys.stderr.fileno()
+    """Context manager to suppress all stdout/stderr output (C printf included).
 
-            old_stdout = os.dup(stdout_fd)
-            old_stderr = os.dup(stderr_fd)
+    Intended for silencing noisy C-level library initialisation
+    (e.g. PaddleOCR model loading).  Restores both FDs on exit.
+    """
+    stdout_fd = sys.stdout.fileno()
+    stderr_fd = sys.stderr.fileno()
 
-            os.dup2(devnull.fileno(), stdout_fd)
-            os.dup2(devnull.fileno(), stderr_fd)
+    old_stdout = os.dup(stdout_fd)
+    old_stderr = os.dup(stderr_fd)
 
-            try:
-                yield
-            finally:
-                os.dup2(old_stdout, stdout_fd)
-                os.dup2(old_stderr, stderr_fd)
-                os.close(old_stdout)
-                os.close(old_stderr)
+    with open(os.devnull, 'wb') as devnull:
+        os.dup2(devnull.fileno(), stdout_fd)
+        os.dup2(devnull.fileno(), stderr_fd)
 
-BASE_DIR = Path(__file__).parent
+        try:
+            yield
+        finally:
+            os.dup2(old_stdout, stdout_fd)
+            os.dup2(old_stderr, stderr_fd)
+            os.close(old_stdout)
+            os.close(old_stderr)
 
 app = Flask(__name__,
     template_folder=str(BASE_DIR / 'web' / 'templates'),
@@ -750,6 +752,7 @@ index_manager = IndexManager()
 OCR_MODEL_DIR = BASE_DIR / 'models' / 'ocr'
 _ocr_available = False
 _ocr_local = threading.local()
+_ocr_instance_queue: queue.Queue[Any] | None = None
 _ocr_pool = None
 _ocr_pool_lock = threading.Lock()
 
@@ -767,8 +770,13 @@ def get_ocr_pool():
 
 
 def init_ocr():
-    """Set up OCR environment; actual PaddleOCR instances are created per-thread on demand."""
-    global _ocr_available
+    """Pre-create PaddleOCR instances for all OCR worker threads.
+
+    During model loading, stdout/stderr are suppressed to hide the
+    verbose C-level logging from PaddlePaddle/PaddleOCR.  The instances
+    are stored in a queue, one per worker thread (``workers_ocr``).
+    """
+    global _ocr_available, _ocr_instance_queue
     try:
         # Redirect PaddleX cache to our models directory so models download there
         OCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -786,8 +794,21 @@ def init_ocr():
         os.environ['FLAGS_log_level'] = '3'
 
         from paddleocr import PaddleOCR
+
+        q = queue.Queue()
+        for i in range(workers_ocr):
+            with suppress_stdout_stderr():
+                instance = PaddleOCR(
+                    use_textline_orientation=True,
+                    lang='ch',
+                    device='cpu',
+                    enable_mkldnn=False,
+                )
+            q.put(instance)
+
+        _ocr_instance_queue = q
         _ocr_available = True
-        print(f"  PaddleOCR enabled (models cached in: {OCR_MODEL_DIR})")
+        print(f"  PaddleOCR enabled ({workers_ocr} instances, models cached in: {OCR_MODEL_DIR})")
         return True
     except ImportError:
         print("  Warning: paddleocr not installed. Image OCR will be unavailable.")
@@ -799,20 +820,15 @@ def init_ocr():
 
 
 def get_ocr():
-    """Get a per-thread PaddleOCR instance, creating lazily if needed."""
+    """Get the pre-allocated PaddleOCR instance for the current thread."""
     if not _ocr_available:
         return None
 
     instance = getattr(_ocr_local, 'ocr', None)
     if instance is None:
-        from paddleocr import PaddleOCR
-        with suppress_stdout_stderr():
-            instance = PaddleOCR(
-                use_textline_orientation=True,
-                lang='ch',
-                device='cpu',
-                enable_mkldnn=False,
-            )
+        q = _ocr_instance_queue
+        assert q is not None, "init_ocr() must succeed before any get_ocr() call"
+        instance = q.get()
         _ocr_local.ocr = instance
     return instance
 
