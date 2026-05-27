@@ -715,6 +715,13 @@ class IndexManager:
         Stays alive for a short grace window after the queue empties so
         that a newly enqueued task doesn't require a process restart.
         """
+        # Reset module-level resources that don't survive fork():
+        #   ThreadPoolExecutor worker threads from the parent process do NOT
+        #   exist in a forked child — only the forking thread survives.
+        #   Creating a fresh pool here ensures OCR tasks actually execute.
+        global _ocr_pool
+        _ocr_pool = None
+
         while True:
             try:
                 task = task_queue.get(timeout=5)
