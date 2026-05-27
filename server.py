@@ -773,6 +773,10 @@ def _ocr_worker(task_queue, result_queue):
         if task_id is None:   # shutdown sentinel
             break
         try:
+            # Signal "started" with timestamp BEFORE processing.
+            # The caller uses this to measure per-task processing timeout
+            # independently of mp.Queue waiting time.
+            result_queue.put((task_id, None, time.monotonic()))
             result = _ocr.predict(str(image_path))
             texts = []
             if result:
@@ -810,7 +814,8 @@ class OCRProcessPool:
 
         # ── Lock-free result dispatch via Condition ──
         self._results: dict[str, str] = {}   # tid → text
-        self._cv = threading.Condition()     # guards _results
+        self._started: dict[str, float] = {} # tid → processing start time (monotonic)
+        self._cv = threading.Condition()     # guards _results & _started
 
         for _ in range(size):
             p = mp.Process(
@@ -830,15 +835,26 @@ class OCRProcessPool:
     # ── Background collector ─────────────────────────────────────────────
 
     def _collect_loop(self) -> None:
-        """Daemon: drain ``result_queue`` forever, dispatch by task-id."""
+        """Daemon: drain ``result_queue`` forever, dispatch by task-id.
+
+        Handles two message formats:
+          - ``(tid, None, start_time)`` → "started" signal (store in _started)
+          - ``(tid, text)``             → result (store in _results)
+        """
         while True:
             try:
-                tid, text = self._result_queue.get()
+                msg = self._result_queue.get()
             except (EOFError, OSError):
                 break
             with self._cv:
-                self._results[tid] = text
-                self._cv.notify_all()
+                if len(msg) == 3:
+                    # "started" signal: carry start_time for per-task timeout
+                    tid, _, start_time = msg
+                    self._started[tid] = start_time
+                else:
+                    tid, text = msg
+                    self._results[tid] = text
+                    self._cv.notify_all()
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -847,10 +863,11 @@ class OCRProcessPool:
         image_paths: list[Path],
         batch_timeout: float = 300.0,
     ) -> list[str]:
-        """Submit images, wait up to *batch_timeout* seconds, return texts.
+        """Submit images, return texts.
 
-        Results preserve the order of *image_paths*.  Images that time
-        out or cause an error yield an empty string.
+        Results preserve the order of *image_paths*.  Images that exceed
+        *batch_timeout* seconds of actual *processing* time (not counting
+        mp.Queue waiting) yield an empty string.
 
         Multiple threads may call this concurrently — the background
         collector dispatches results by task-id so there is no race on
@@ -866,32 +883,38 @@ class OCRProcessPool:
             self._task_queue.put((tid, str(path)))
             ocr_log(f"[OCR] 推理中: {path.name}")
 
-        # ── Collect via Condition ──
+        # ── Collect with per-task processing timeout ──
         remaining_ids = set(task_ids)
         results: dict[str, str] = {}
-        deadline = time.monotonic() + batch_timeout
 
         with self._cv:
-            while remaining_ids and time.monotonic() < deadline:
-                # Drain any already-arrived results for our task_ids
+            while remaining_ids:
+                now = time.monotonic()
+
+                # Timeout check — only tasks that have STARTED processing
+                # are subject to the deadline; queue-waiting tasks are exempt.
+                for tid in list(remaining_ids):
+                    if tid in self._started:
+                        if now - self._started[tid] > batch_timeout:
+                            self._started.pop(tid)
+                            remaining_ids.discard(tid)
+
                 for tid in list(remaining_ids):
                     if tid in self._results:
                         results[tid] = self._results.pop(tid)
+                        self._started.pop(tid, None)
                         remaining_ids.discard(tid)
 
                 if not remaining_ids:
                     break
 
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-                self._cv.wait(timeout=remaining)
+                self._cv.wait(timeout=1.0)
 
-            # Final drain after timeout
             for tid in list(remaining_ids):
                 if tid in self._results:
                     results[tid] = self._results.pop(tid)
                     remaining_ids.discard(tid)
+                self._started.pop(tid, None)
 
         # ── Map back to input order ──
         output: list[str] = []
