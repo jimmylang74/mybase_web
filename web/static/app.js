@@ -1548,19 +1548,19 @@
   let scrollInterval = null;
 
   function updateTabScrollButtons() {
-    const hasOverflow = tabsContainer.scrollWidth > tabsContainer.clientWidth + 2;
-    const atStart = tabsContainer.scrollLeft <= 4;
-    const atEnd = tabsContainer.scrollLeft >= tabsContainer.scrollWidth - tabsContainer.clientWidth - 4;
+    const hasOverflow = tabsEl.scrollWidth > tabsEl.clientWidth + 2;
+    const atStart = tabsEl.scrollLeft <= 4;
+    const atEnd = tabsEl.scrollLeft >= tabsEl.scrollWidth - tabsEl.clientWidth - 4;
 
     scrollLeftBtn.classList.toggle('visible', hasOverflow && !atStart);
     scrollRightBtn.classList.toggle('visible', hasOverflow && !atEnd);
   }
 
-  tabsContainer.addEventListener('scroll', updateTabScrollButtons);
+  tabsEl.addEventListener('scroll', updateTabScrollButtons);
   window.addEventListener('resize', updateTabScrollButtons);
 
   function scrollTabs(direction, smooth) {
-    tabsContainer.scrollBy({
+    tabsEl.scrollBy({
       left: direction * SCROLL_STEP,
       behavior: smooth ? 'smooth' : 'auto',
     });
@@ -1589,11 +1589,11 @@
   scrollRightBtn.addEventListener('mouseleave', stopScroll);
 
   // Wheel → horizontal scroll on tabs
-  tabsContainer.addEventListener('wheel', (e) => {
+  tabsEl.addEventListener('wheel', (e) => {
     const absX = Math.abs(e.deltaX);
     const absY = Math.abs(e.deltaY);
     if (absY > absX && absY > 0) {
-      tabsContainer.scrollBy({ left: e.deltaY, behavior: 'auto' });
+      tabsEl.scrollBy({ left: e.deltaY, behavior: 'auto' });
       e.preventDefault();
     }
   }, { passive: false });

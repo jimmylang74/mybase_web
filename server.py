@@ -18,6 +18,7 @@ import uuid
 import sqlite3
 import argparse
 import shutil
+import stat
 import base64
 import tempfile
 import threading
@@ -42,7 +43,7 @@ os.environ.setdefault("GLOG_v", "0")
 os.environ.setdefault("GLOG_minloglevel", "3")
 os.environ.setdefault("GLOG_logtostderr", "0")
 os.environ.setdefault("FLAGS_logtostderr", "0")
-os.environ.setdefault("FLAGS_log_dir", "/tmp")
+os.environ.setdefault("FLAGS_log_dir", tempfile.gettempdir())
 os.environ.setdefault("FLAGS_v", "-1")
 
 # Suppress PaddleX model creation prints
@@ -61,7 +62,8 @@ def _shutdown_signal_handler(signum, frame):
 
 # Register signal handlers for main process
 signal.signal(signal.SIGINT, _shutdown_signal_handler)
-signal.signal(signal.SIGTERM, _shutdown_signal_handler)
+if hasattr(signal, 'SIGTERM'):
+    signal.signal(signal.SIGTERM, _shutdown_signal_handler)
 
 
 BASE_DIR = Path(__file__).parent
@@ -69,16 +71,26 @@ BASE_DIR = Path(__file__).parent
 
 @contextlib.contextmanager
 def suppress_stdout_stderr():
-    """Context manager to suppress all stdout/stderr output (C printf included).
+    """Context manager to suppress stdout/stderr output.
 
-    Intended for silencing noisy C-level library initialisation
-    (e.g. PaddleOCR model loading).  Restores both FDs on exit.
+    On POSIX this redirects at the OS FD level (os.dup/dup2) to also silence
+    C-level output (e.g. PaddlePaddle model loading).  On Windows the
+    fileno/dup calls may fail in environments without real FDs (pythonw.exe,
+    IDLE, py.exe redirect); in that case a Python-level
+    ``contextlib.redirect_stdout`` fallback is used.
     """
-    stdout_fd = sys.stdout.fileno()
-    stderr_fd = sys.stderr.fileno()
-
-    old_stdout = os.dup(stdout_fd)
-    old_stderr = os.dup(stderr_fd)
+    try:
+        stdout_fd = sys.stdout.fileno()
+        stderr_fd = sys.stderr.fileno()
+        old_stdout = os.dup(stdout_fd)
+        old_stderr = os.dup(stderr_fd)
+    except (OSError, AttributeError):
+        # Windows / non-FD environment: Python-level redirect only
+        with open(os.devnull, 'w', encoding='utf-8') as null:
+            with contextlib.redirect_stdout(null), \
+                 contextlib.redirect_stderr(null):
+                yield
+        return
 
     with open(os.devnull, 'wb') as devnull:
         os.dup2(devnull.fileno(), stdout_fd)
@@ -97,11 +109,11 @@ app = Flask(__name__,
     static_folder=str(BASE_DIR / 'web' / 'static'),
     static_url_path='/static')
 
-data_dir = None
-mybase_dir = None
-index_db_dir = None
 UPLOAD_DIR_NAME = 'images'
-common_db = None
+data_dir: Path = BASE_DIR / 'data'
+mybase_dir: Path = data_dir / 'mybase'
+index_db_dir: Path = data_dir / 'db' / 'index_db'
+common_db: Path = data_dir / 'db' / 'common.db'
 server_port = 9999
 force_index_target = None
 ocr_disabled = False
@@ -732,6 +744,13 @@ class IndexManager:
         global _ocr_pool
         _ocr_pool = None
 
+        # Re-initialise config globals (mybase_dir, index_db_dir, common_db
+        # etc.).  On POSIX the child inherits them via fork(), but on Windows
+        # multiprocessing uses spawn which starts a fresh interpreter — the
+        # ``if __name__ == '__main__':`` block never runs, so every global
+        # stays at its module-level ``None`` default.
+        init_config()
+
         while True:
             try:
                 task = task_queue.get(timeout=5)
@@ -795,7 +814,7 @@ def init_ocr():
         os.environ.setdefault('GLOG_v', '3')
         os.environ.setdefault('GLOG_logtostderr', '0')
         os.environ.setdefault('FLAGS_logtostderr', '0')
-        os.environ.setdefault('FLAGS_log_dir', '/tmp')
+        os.environ.setdefault('FLAGS_log_dir', tempfile.gettempdir())
 
         # Suppress PIR (Paddle IR) debug program printing during inference
         os.environ['FLAGS_print_ir'] = '0'
@@ -977,6 +996,7 @@ def extract_text_from_html_images(html_content, tab_name):
         for tp in temp_files:
             try:
                 if os.path.exists(tp):
+                    os.chmod(tp, stat.S_IWRITE)
                     os.unlink(tp)
             except Exception:
                 pass
@@ -986,6 +1006,7 @@ def extract_text_from_html_images(html_content, tab_name):
     for tp in temp_files:
         try:
             if os.path.exists(tp):
+                os.chmod(tp, stat.S_IWRITE)
                 os.unlink(tp)
         except Exception as e:
             print(f"  Temp file cleanup error: {e}")
@@ -1282,7 +1303,7 @@ def upload_image(tab):
         return jsonify({'error': 'No image file provided'}), 400
 
     file = request.files['image']
-    if file.filename == '':
+    if not file.filename:
         return jsonify({'error': 'No file selected'}), 400
 
     orig_filename = secure_filename(file.filename)
@@ -1293,6 +1314,7 @@ def upload_image(tab):
     unique_name = f"{name_part}_{uuid.uuid4().hex[:4]}{ext_part}"
 
     upload_dir = get_upload_dir(tab)
+    assert upload_dir is not None, "tab verified above"
     file_path = upload_dir / unique_name
     file.save(str(file_path))
 
@@ -1532,7 +1554,13 @@ def delete_tab(tab):
         return jsonify({'error': 'Tab not found'}), 404
     delete_tab_index(tab)
     remove_tab_from_order(tab)
-    shutil.rmtree(str(tab_path))
+
+    def _remove_readonly(func, path, _):
+        """Clear read-only flag and retry (required on Windows)."""
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    shutil.rmtree(str(tab_path), onerror=_remove_readonly)
     return jsonify({'success': True})
 
 
