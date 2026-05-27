@@ -25,9 +25,10 @@ import threading
 import contextlib
 import multiprocessing as mp
 import queue
-from typing import Any
+
+
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
 from werkzeug.utils import secure_filename
 
@@ -52,12 +53,34 @@ os.environ.setdefault("PADDLEX_DISABLE_MODEL_PRINT", "1")
 # Global shutdown flag for CTRL+C handling
 _shutdown_requested = threading.Event()
 
+# Background indexing tracking (for /api/indexing-status)
+_indexing_counter = 0
+_indexing_lock = threading.Lock()
+
 
 def _shutdown_signal_handler(signum, frame):
     """Handle SIGINT (CTRL+C) by setting shutdown flag and raising KeyboardInterrupt."""
     _shutdown_requested.set()
     print("\n  [CTRL+C] Shutdown requested. Stopping worker threads...", flush=True)
     raise KeyboardInterrupt()
+
+
+def _run_in_background(func, *args, **kwargs):
+    """Run *func(*args, **kwargs)* in a background daemon thread (fire-and-forget).
+
+    Tracks the running count so the frontend can show indexing status.
+    """
+    def _wrapped():
+        global _indexing_counter
+        with _indexing_lock:
+            _indexing_counter += 1
+        try:
+            func(*args, **kwargs)
+        finally:
+            with _indexing_lock:
+                _indexing_counter -= 1
+    thread = threading.Thread(target=_wrapped, args=(), kwargs={}, daemon=True)
+    thread.start()
 
 
 # Register signal handlers for main process
@@ -148,7 +171,7 @@ def parse_args():
     parser.add_argument('--disable-ocr', action='store_true',
                         help='Disable OCR image text indexing.')
     parser.add_argument('--workers-ocr', type=int, default=8,
-                        help='Number of parallel OCR worker threads (default: 8)')
+                        help='Number of OCR worker processes (default: 8, each owns 1 PaddleOCR instance)')
     parser.add_argument('--workers-menu', type=int, default=8,
                         help='Number of parallel menu item indexing workers (default: 8)')
     parser.add_argument('--debug', action='store_true',
@@ -685,224 +708,163 @@ def ensure_indexes():
             print(f"  Warning: Knowledge base '{force_index_target}' not found, skipping.")
 
 
-# ─── Background Index Manager (separate process to avoid GIL contention) ──
+
+# ─── OCR Process Pool ───────────────────────────────────────────────────
+# Each worker process owns exactly 1 PaddleOCR instance, avoiding both
+# the GIL contention of threads and the fork-safety issues of sharing
+# instances across processes.
+
+OCR_MODEL_DIR = BASE_DIR / 'models' / 'ocr'
+ocr_process_pool: 'OCRProcessPool | None' = None
 
 
-class IndexManager:
-    """Background indexer that processes indexing tasks in a separate process.
+def _ocr_worker_init():
+    """Initialize env + 1 PaddleOCR instance inside a worker process."""
+    OCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault('PADDLE_PDX_CACHE_HOME', str(OCR_MODEL_DIR))
+    os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
+    os.environ.setdefault('GLOG_v', '3')
+    os.environ.setdefault('GLOG_logtostderr', '0')
+    os.environ.setdefault('FLAGS_logtostderr', '0')
+    os.environ.setdefault('FLAGS_log_dir', tempfile.gettempdir())
+    os.environ['FLAGS_print_ir'] = '0'
+    os.environ['FLAGS_log_level'] = '3'
 
-    Uses ``multiprocessing.Process`` so CPU-heavy OCR runs in its own
-    process with its own GIL — the Flask request thread is never blocked.
+    from paddleocr import PaddleOCR
+    with suppress_stdout_stderr():
+        return PaddleOCR(
+            use_textline_orientation=True,
+            lang='ch',
+            device='cpu',
+            enable_mkldnn=False,
+        )
+
+
+def _ocr_worker(task_queue, result_queue):
+    """Worker entry point: init → loop reading tasks → write results."""
+    _ocr = _ocr_worker_init()
+    while True:
+        try:
+            task_id, image_path = task_queue.get()
+        except (EOFError, OSError):
+            break
+        if task_id is None:   # shutdown sentinel
+            break
+        try:
+            result = _ocr.predict(str(image_path))
+            texts = []
+            if result:
+                for page_result in result:
+                    if page_result is None:
+                        continue
+                    rec_texts = page_result.get('rec_texts', [])
+                    if rec_texts:
+                        texts.extend(rec_texts)
+            result_queue.put((task_id, ' '.join(texts)))
+        except Exception:
+            result_queue.put((task_id, ''))
+
+
+class OCRProcessPool:
+    """Fixed-size pool of dedicated OCR worker processes.
+
+    Each process holds 1 PaddleOCR instance.  Tasks are dispatched via
+    ``predict_batch()`` which submits all images, waits with a deadline,
+    and returns a list of recognised text strings (same order as input).
+
+    Individual process hangs are tolerated — the deadline bounds the
+    worst-case wait.
     """
 
-    def __init__(self):
+    def __init__(self, size: int):
+        self._size = size
         self._task_queue = mp.Queue()
-        self._busy = mp.Event()
-        self._status_queue = mp.Queue()
-        self._process = None
+        self._result_queue = mp.Queue()
+        self._processes: list[mp.Process] = []
+        # Serialises predict_batch() calls so that callers never race on
+        # the shared result_queue (each call submits its own batch then
+        # waits for its own results; without the lock, another thread can
+        # consume those results first, leaving the original caller with
+        # an incomplete set → all images appear to time out).
+        self._lock = threading.Lock()
+
+        for _ in range(size):
+            p = mp.Process(
+                target=_ocr_worker,
+                args=(self._task_queue, self._result_queue),
+                daemon=True,
+            )
+            p.start()
+            self._processes.append(p)
+
+        ocr_log(f"[OCR] 进程池启动: {size} 个进程")
 
     # ── Public API ──────────────────────────────────────────────────────
 
-    def index_item(self, tab_name, item_id):
-        self._task_queue.put(('item', tab_name, item_id))
-        self._ensure_worker()
+    def predict_batch(
+        self,
+        image_paths: list[Path],
+        batch_timeout: float = 300.0,
+    ) -> list[str]:
+        """Submit images, wait up to *batch_timeout* seconds, return texts.
 
-    def index_tab(self, tab_name):
-        self._task_queue.put(('tab', tab_name, None))
-        self._ensure_worker()
-
-    def get_status(self):
-        # Drain latest status message from the worker
-        status_text = 'idle'
-        while not self._status_queue.empty():
-            try:
-                status_text = self._status_queue.get_nowait()
-            except queue.Empty:
-                break
-        return {
-            'busy': self._busy.is_set(),
-            'status': status_text,
-        }
-
-    # ── Internals ───────────────────────────────────────────────────────
-
-    def _ensure_worker(self):
-        if not self._process or not self._process.is_alive():
-            self._process = mp.Process(
-                target=self._worker_loop,
-                args=(self._task_queue, self._busy, self._status_queue),
-                daemon=True,
-            )
-            self._process.start()
-
-    @staticmethod
-    def _worker_loop(task_queue, busy, status_queue):
-        """Pull tasks from the queue and process them.
-
-        Stays alive for a short grace window after the queue empties so
-        that a newly enqueued task doesn't require a process restart.
+        Results preserve the order of *image_paths*.  Images that time
+        out or cause an error yield an empty string.
         """
-        # Reset module-level resources that don't survive fork():
-        #   ThreadPoolExecutor worker threads from the parent process do NOT
-        #   exist in a forked child — only the forking thread survives.
-        #   Creating a fresh pool here ensures OCR tasks actually execute.
-        global _ocr_pool
-        _ocr_pool = None
+        if not image_paths:
+            return []
 
-        # Re-initialise config globals (mybase_dir, index_db_dir, common_db
-        # etc.).  On POSIX the child inherits them via fork(), but on Windows
-        # multiprocessing uses spawn which starts a fresh interpreter — the
-        # ``if __name__ == '__main__':`` block never runs, so every global
-        # stays at its module-level ``None`` default.
-        init_config()
+        with self._lock:
+            task_ids = [str(uuid.uuid4()) for _ in image_paths]
 
-        # On Windows force single-threaded OCR — PaddleOCR predict()
-        # is known to hang under concurrent threads on this platform.
-        if os.name == 'nt':
-            workers_ocr = 1
+            for tid, path in zip(task_ids, image_paths):
+                self._task_queue.put((tid, str(path)))
+                ocr_log(f"[OCR] 推理中: {path.name}")
 
-        # On Windows spawn the child is a fresh process — OCR instances
-        # (PaddleOCR) created in the parent's ``init_ocr()`` do not exist
-        # here.  Re-initialize so that ``get_ocr()`` works for background
-        # indexing tasks that need to extract text from images.
-        # On Linux fork the child inherits all globals, including the
-        # pre-allocated OCR instances — skip re-init to avoid wasting
-        # ~100 MB × workers_ocr of memory.
-        if not ocr_disabled and not _ocr_available:
-            init_ocr()
+            # ── Collect results ──
+            results: dict[str, str] = {}
+            deadline = time.monotonic() + batch_timeout
 
-        while True:
+            while len(results) < len(task_ids) and time.monotonic() < deadline:
+                try:
+                    remaining = max(0.1, deadline - time.monotonic())
+                    tid, text = self._result_queue.get(timeout=remaining)
+                    results[tid] = text
+                except queue.Empty:
+                    break
+
+            # ── Map back to input order ──
+            output: list[str] = []
+            for tid, path in zip(task_ids, image_paths):
+                text = results.get(tid, None)
+                if text is not None:
+                    output.append(text)
+                    if text:
+                        ocr_log(f"[OCR] 完成: {path.name}")
+                    else:
+                        ocr_log(f"[OCR] 完成(无文本): {path.name}")
+                else:
+                    output.append('')
+                    ocr_log(f"[OCR] 跳过(超时): {path.name}")
+                    print(f"  OCR timeout on {path.name}, skipping", flush=True)
+
+            skipped = len(task_ids) - len(results)
+            if skipped:
+                print(f"  OCR batch: {skipped}/{len(task_ids)} timed out", flush=True)
+
+            return output
+
+    def shutdown(self) -> None:
+        """Send sentinel tasks and wait for workers to exit cleanly."""
+        for _ in range(self._size):
             try:
-                task = task_queue.get(timeout=5)
-            except queue.Empty:
-                busy.clear()
-                break
-
-            busy.set()
-            task_type, tab_name, item_id = task
-            try:
-                if task_type == 'item':
-                    status_queue.put(f'正在索引: {tab_name}')
-                    update_item_in_index(tab_name, item_id)
-                elif task_type == 'tab':
-                    status_queue.put(f'正在重建索引: {tab_name}')
-                    index_tab(tab_name)
-            except Exception as e:
-                print(f"  Background indexing error ({tab_name}): {e}")
-
-
-index_manager = IndexManager()
-
-
-# ─── OCR Integration (PaddleOCR) ──────────────────────────────────────────
-
-OCR_MODEL_DIR = BASE_DIR / 'models' / 'ocr'
-_ocr_available = False
-_ocr_local = threading.local()
-_ocr_instance_queue: queue.Queue[Any] | None = None
-_ocr_pool = None
-_ocr_pool_lock = threading.Lock()
-
-
-def get_ocr_pool():
-    global _ocr_pool
-    if _ocr_pool is None:
-        with _ocr_pool_lock:
-            if _ocr_pool is None:
-                _ocr_pool = ThreadPoolExecutor(
-                    max_workers=workers_ocr,
-                    thread_name_prefix='ocr'
-                )
-    return _ocr_pool
-
-
-def init_ocr():
-    """Pre-create PaddleOCR instances for all OCR worker threads.
-
-    During model loading, stdout/stderr are suppressed to hide the
-    verbose C-level logging from PaddlePaddle/PaddleOCR.  The instances
-    are stored in a queue, one per worker thread (``workers_ocr``).
-    """
-    global _ocr_available, _ocr_instance_queue
-    try:
-        # Redirect PaddleX cache to our models directory so models download there
-        OCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-        os.environ.setdefault('PADDLE_PDX_CACHE_HOME', str(OCR_MODEL_DIR))
-        os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
-
-        # Suppress Paddle/PaddleOCR verbose logging
-        os.environ.setdefault('GLOG_v', '3')
-        os.environ.setdefault('GLOG_logtostderr', '0')
-        os.environ.setdefault('FLAGS_logtostderr', '0')
-        os.environ.setdefault('FLAGS_log_dir', tempfile.gettempdir())
-
-        # Suppress PIR (Paddle IR) debug program printing during inference
-        os.environ['FLAGS_print_ir'] = '0'
-        os.environ['FLAGS_log_level'] = '3'
-
-        from paddleocr import PaddleOCR
-
-        q = queue.Queue()
-        for i in range(workers_ocr):
-            with suppress_stdout_stderr():
-                instance = PaddleOCR(
-                    use_textline_orientation=True,
-                    lang='ch',
-                    device='cpu',
-                    enable_mkldnn=False,
-                )
-            q.put(instance)
-
-        _ocr_instance_queue = q
-        _ocr_available = True
-        print(f"  PaddleOCR enabled ({workers_ocr} instances, models cached in: {OCR_MODEL_DIR})")
-        return True
-    except ImportError:
-        print("  Warning: paddleocr not installed. Image OCR will be unavailable.")
-        print("    Install: pip install paddleocr paddlepaddle")
-        return False
-    except Exception as e:
-        print(f"  Warning: PaddleOCR init failed: {e}")
-        return False
-
-
-def get_ocr():
-    """Get the pre-allocated PaddleOCR instance for the current thread."""
-    if not _ocr_available:
-        return None
-
-    instance = getattr(_ocr_local, 'ocr', None)
-    if instance is None:
-        q = _ocr_instance_queue
-        assert q is not None, "init_ocr() must succeed before any get_ocr() call"
-        instance = q.get()
-        _ocr_local.ocr = instance
-    return instance
-
-
-def ocr_image(image_path):
-    """Run OCR on an image file and return recognized text string.
-
-    Each thread has its own PaddleOCR instance, so predict() is called
-    without any lock — full parallel CPU inference across workers.
-    """
-    ocr = get_ocr()
-    if ocr is None:
-        return ''
-    try:
-        results = ocr.predict(str(image_path))
-        texts = []
-        if results:
-            for page_result in results:
-                if page_result is None:
-                    continue
-                rec_texts = page_result.get('rec_texts', [])
-                if rec_texts:
-                    texts.extend(rec_texts)
-        return ' '.join(texts)
-    except Exception as e:
-        print(f"  OCR error on {image_path}: {e}")
-        return ''
+                self._task_queue.put((None, None))
+            except Exception:
+                pass
+        for p in self._processes:
+            p.join(timeout=3)
+            if p.is_alive():
+                p.terminate()
 
 
 def resolve_image_path(img_src, tab_name):
@@ -983,55 +945,14 @@ def extract_text_from_html_images(html_content, tab_name):
     if not image_paths:
         return ''
 
-    # ── Phase 2: OCR all images in parallel ──
-    all_text = []
-    _result_lock = threading.Lock()
+    # ── Phase 2: OCR via process pool ──
+    # The pool handles parallelism across processes, each with its own
+    # PaddleOCR instance — no GIL contention, no fork-safety issues.
+    pool = ocr_process_pool
+    if pool is None:
+        return ''
 
-    def _ocr_one(p: Path) -> None:
-        if _shutdown_requested.is_set():
-            return
-        ocr_log(f"[OCR] 推理中: {p.name}")
-        text = ocr_image(p)
-        if text and not _shutdown_requested.is_set():
-            with _result_lock:
-                all_text.append(text)
-            ocr_log(f"[OCR] 完成: {p.name}")
-        else:
-            status = "跳过(请求关闭)" if _shutdown_requested.is_set() else "无文本识别结果"
-            ocr_log(f"[OCR] 完成({status}): {p.name}")
-
-    pool = get_ocr_pool()
-    image_map = {pool.submit(_ocr_one, p): p for p in image_paths}
-    remaining = set(image_map)
-    # Total deadline prevents infinite hang when PaddleOCR.predict()
-    # blocks on Windows (a known issue in native inference code).
-    ocr_deadline = time.monotonic() + 300  # 5 min total for all images in this batch
-    while remaining and not _shutdown_requested.is_set():
-        now = time.monotonic()
-        if now >= ocr_deadline:
-            for f in remaining:
-                p = image_map[f]
-                ocr_log(f"[OCR] 跳过(超时): {p.name}")
-                print(f"  OCR timeout on {p.name}, skipping", flush=True)
-            break
-        wait_secs = max(0.1, min(0.5, ocr_deadline - now))
-        done, remaining = wait(remaining, timeout=wait_secs, return_when=FIRST_COMPLETED)
-        for future in done:
-            try:
-                future.result()
-            except Exception as e:
-                print(f"  OCR thread error: {e}", flush=True)
-
-    if _shutdown_requested.is_set():
-        # Cleanup before raising
-        for tp in temp_files:
-            try:
-                if os.path.exists(tp):
-                    os.chmod(tp, stat.S_IWRITE)
-                    os.unlink(tp)
-            except Exception:
-                pass
-        raise KeyboardInterrupt()
+    texts = pool.predict_batch(image_paths, batch_timeout=300.0)
 
     # ── Phase 3: clean up temp files from base64 decoding ──
     for tp in temp_files:
@@ -1042,7 +963,7 @@ def extract_text_from_html_images(html_content, tab_name):
         except Exception as e:
             print(f"  Temp file cleanup error: {e}")
 
-    return ' '.join(all_text)
+    return ' '.join(t for t in texts if t).strip()
 
 
 # ─── Common Database (tab_order, general config) ───────────────────────────
@@ -1277,7 +1198,7 @@ def update_menu_item_route(tab, item_id):
         return jsonify({'error': 'Item not found'}), 404
 
     save_menu(tab, menu)
-    index_manager.index_tab(tab)
+    _run_in_background(update_item_in_index, tab, item_id)
     return jsonify({'success': True})
 
 
@@ -1301,7 +1222,8 @@ def delete_menu_item_route(tab, item_id):
             if content_file.exists():
                 content_file.unlink()
 
-    index_manager.index_tab(tab)
+    for did in deleted_ids:
+        delete_item_from_index(tab, did)
     return jsonify({'deleted_ids': deleted_ids})
 
 
@@ -1322,7 +1244,7 @@ def save_content_route(tab, item_id):
         return jsonify({'error': 'Content is required'}, 400)
 
     save_content(tab, item_id, data['content'])
-    index_manager.index_item(tab, item_id)
+    _run_in_background(update_item_in_index, tab, item_id)
     return jsonify({'success': True})
 
 
@@ -1376,7 +1298,12 @@ def search():
 
 @app.route('/api/indexing-status')
 def get_indexing_status():
-    return jsonify(index_manager.get_status())
+    busy = _indexing_counter > 0
+    return jsonify({
+        'busy': busy,
+        'status': '正在建立索引...' if busy else 'idle',
+    })
+
 
 
 def generate_standalone_html(tab_name):
@@ -1663,7 +1590,7 @@ def move_menu_item_route(tab, item_id):
         return jsonify({'error': 'Specify direction or target_parent_id'}), 400
 
     save_menu(tab, menu)
-    index_manager.index_tab(tab)
+    _run_in_background(update_item_in_index, tab, item_id)
     return jsonify({'success': True})
 
 
@@ -1705,9 +1632,11 @@ if __name__ == '__main__':
             print(f"  OCR disabled via --disable-ocr")
         print(f"  Server URL: http://0.0.0.0:{server_port}")
         print("=" * 60)
+
+        # Start OCR process pool
         if not ocr_disabled:
-            print("  Initializing OCR...")
-            init_ocr()
+            ocr_process_pool = OCRProcessPool(workers_ocr)
+
         print("  Checking indexes...")
         ensure_indexes()
         init_common_db()
@@ -1716,7 +1645,7 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=server_port, debug=False)
     except KeyboardInterrupt:
         _shutdown_requested.set()
-        if _ocr_pool is not None:
-            _ocr_pool.shutdown(wait=False)
+        if ocr_process_pool is not None:
+            ocr_process_pool.shutdown()
         print("\n  [EXIT] Shutdown complete. Bye.")
         sys.exit(1)
