@@ -194,6 +194,7 @@
       const first = tabsEl.querySelector('.tab');
       if (first) switchTab(tabs[0], first);
     }
+    updateTabScrollButtons();
   }
 
   async function switchTab(name, el) {
@@ -1538,6 +1539,64 @@
     searchPanel.style.display = 'none';
     searchSplitter.style.display = 'none';
   });
+
+  // ─── Tab Scrolling (overflow arrows) ────────────────────────────────────
+
+  const scrollLeftBtn = $('#tab-scroll-left');
+  const scrollRightBtn = $('#tab-scroll-right');
+  const SCROLL_STEP = 200;
+  let scrollInterval = null;
+
+  function updateTabScrollButtons() {
+    const hasOverflow = tabsContainer.scrollWidth > tabsContainer.clientWidth + 2;
+    const atStart = tabsContainer.scrollLeft <= 4;
+    const atEnd = tabsContainer.scrollLeft >= tabsContainer.scrollWidth - tabsContainer.clientWidth - 4;
+
+    scrollLeftBtn.classList.toggle('visible', hasOverflow && !atStart);
+    scrollRightBtn.classList.toggle('visible', hasOverflow && !atEnd);
+  }
+
+  tabsContainer.addEventListener('scroll', updateTabScrollButtons);
+  window.addEventListener('resize', updateTabScrollButtons);
+
+  function scrollTabs(direction, smooth) {
+    tabsContainer.scrollBy({
+      left: direction * SCROLL_STEP,
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+  }
+
+  scrollLeftBtn.addEventListener('click', () => scrollTabs(-1, true));
+  scrollRightBtn.addEventListener('click', () => scrollTabs(1, true));
+
+  function startScroll(direction) {
+    scrollTabs(direction, false);
+    if (scrollInterval) clearInterval(scrollInterval);
+    scrollInterval = setInterval(() => scrollTabs(direction, false), 120);
+  }
+
+  function stopScroll() {
+    if (scrollInterval) {
+      clearInterval(scrollInterval);
+      scrollInterval = null;
+    }
+  }
+
+  scrollLeftBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startScroll(-1); });
+  scrollRightBtn.addEventListener('mousedown', (e) => { e.preventDefault(); startScroll(1); });
+  document.addEventListener('mouseup', stopScroll);
+  scrollLeftBtn.addEventListener('mouseleave', stopScroll);
+  scrollRightBtn.addEventListener('mouseleave', stopScroll);
+
+  // Wheel → horizontal scroll on tabs
+  tabsContainer.addEventListener('wheel', (e) => {
+    const absX = Math.abs(e.deltaX);
+    const absY = Math.abs(e.deltaY);
+    if (absY > absX && absY > 0) {
+      tabsContainer.scrollBy({ left: e.deltaY, behavior: 'auto' });
+      e.preventDefault();
+    }
+  }, { passive: false });
 
   // ─── Init ──────────────────────────────────────────────────────────────
 

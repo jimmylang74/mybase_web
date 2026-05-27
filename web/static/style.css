@@ -33,6 +33,52 @@ body {
   gap: 2px;
   overflow-x: auto;
   flex: 1;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+#tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Tab Scroll Buttons ───────────────────────────────────────────── */
+#tab-bar {
+  position: relative;
+}
+
+.tab-scroll-btn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  color: #95a5a6;
+  font-size: 16px;
+  user-select: none;
+}
+
+.tab-scroll-btn:hover {
+  color: #ecf0f1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tab-scroll-btn.visible {
+  display: flex;
+}
+
+#tab-scroll-left {
+  left: 0;
+  background: linear-gradient(90deg, #2c3e50 50%, transparent);
+  padding-right: 8px;
+}
+
+#tab-scroll-right {
+  right: 40px;
+  background: linear-gradient(270deg, #2c3e50 50%, transparent);
+  padding-left: 8px;
 }
 
 .tab {

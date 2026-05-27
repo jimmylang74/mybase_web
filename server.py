@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 import os
+import logging
+
+logging.raiseExceptions = False
+#only for windows
+if os.name == "nt":
+    import click
+    click.echo = print
+
 import re
 import sys
 import time
