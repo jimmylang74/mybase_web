@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 import os
 import re
+import sys
+import time
+import logging
+import signal
 import json
 import uuid
 import sqlite3
@@ -8,11 +12,73 @@ import argparse
 import shutil
 import base64
 import tempfile
+import threading
+import contextlib
 import multiprocessing as mp
 import queue
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from flask import Flask, jsonify, request, render_template, send_from_directory, abort
 from werkzeug.utils import secure_filename
+
+
+# Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
+logging.getLogger("paddlex").setLevel(logging.ERROR)
+logging.getLogger("paddleocr").setLevel(logging.ERROR)
+logging.getLogger("ppocr").setLevel(logging.ERROR)
+os.environ.setdefault("PADDLEOCR_DISABLE_AUTO_LOGGING_CONFIG", "1")
+
+# Additional Paddle/PaddleX environment variables to suppress C++ logs
+os.environ.setdefault("GLOG_v", "0")
+os.environ.setdefault("GLOG_minloglevel", "3")
+os.environ.setdefault("GLOG_logtostderr", "0")
+os.environ.setdefault("FLAGS_logtostderr", "0")
+os.environ.setdefault("FLAGS_log_dir", "/tmp")
+os.environ.setdefault("FLAGS_v", "-1")
+
+# Suppress PaddleX model creation prints
+os.environ.setdefault("PADDLEX_DISABLE_MODEL_PRINT", "1")
+
+# Global shutdown flag for CTRL+C handling
+_shutdown_requested = threading.Event()
+
+
+def _shutdown_signal_handler(signum, frame):
+    """Handle SIGINT (CTRL+C) by setting shutdown flag and raising KeyboardInterrupt."""
+    _shutdown_requested.set()
+    print("\n  [CTRL+C] Shutdown requested. Stopping worker threads...", flush=True)
+    raise KeyboardInterrupt()
+
+
+# Register signal handlers for main process
+signal.signal(signal.SIGINT, _shutdown_signal_handler)
+signal.signal(signal.SIGTERM, _shutdown_signal_handler)
+
+
+_suppress_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def suppress_stdout_stderr():
+    """Suppress all output at file descriptor level (C/C++ printf included)."""
+    with _suppress_lock:
+        with open(os.devnull, 'wb') as devnull:
+            stdout_fd = sys.stdout.fileno()
+            stderr_fd = sys.stderr.fileno()
+
+            old_stdout = os.dup(stdout_fd)
+            old_stderr = os.dup(stderr_fd)
+
+            os.dup2(devnull.fileno(), stdout_fd)
+            os.dup2(devnull.fileno(), stderr_fd)
+
+            try:
+                yield
+            finally:
+                os.dup2(old_stdout, stdout_fd)
+                os.dup2(old_stderr, stderr_fd)
+                os.close(old_stdout)
+                os.close(old_stderr)
 
 BASE_DIR = Path(__file__).parent
 
@@ -29,6 +95,19 @@ common_db = None
 server_port = 9999
 force_index_target = None
 ocr_disabled = False
+ocr_debug = False
+workers_ocr = 8
+workers_menu = 1
+_ocr_logger = None
+
+
+def ocr_log(msg: str):
+    """Write a timestamped OCR debug message to mybase.log.
+    No-op unless --debug is enabled at startup.
+    Thread-safe via logging.FileHandler.
+    """
+    if _ocr_logger is not None:
+        _ocr_logger.info(msg)
 
 
 def parse_args():
@@ -41,11 +120,17 @@ def parse_args():
                         help='Force reindex a specific knowledge base. If no name given, reindex all.')
     parser.add_argument('--disable-ocr', action='store_true',
                         help='Disable OCR image text indexing.')
+    parser.add_argument('--workers-ocr', type=int, default=8,
+                        help='Number of parallel OCR worker threads (default: 8)')
+    parser.add_argument('--workers-menu', type=int, default=1,
+                        help='Number of parallel menu item indexing workers (default: 1, sequential)')
+    parser.add_argument('--debug', action='store_true',
+                        help='Enable debug mode: write OCR inference logs to mybase.log with timestamps.')
     return parser.parse_args()
 
 
 def init_config():
-    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled
+    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, workers_ocr, workers_menu, ocr_debug, _ocr_logger
     args = parse_args()
     data_dir = BASE_DIR / args.data
     mybase_dir = data_dir / 'mybase'
@@ -54,9 +139,22 @@ def init_config():
     server_port = args.port
     force_index_target = args.force_index
     ocr_disabled = args.disable_ocr
+    workers_ocr = args.workers_ocr
+    workers_menu = args.workers_menu
+    ocr_debug = args.debug
     data_dir.mkdir(exist_ok=True)
     (data_dir / 'db').mkdir(exist_ok=True)
     mybase_dir.mkdir(exist_ok=True)
+    if ocr_debug:
+        _ocr_logger = logging.getLogger('ocr_debug')
+        _ocr_logger.setLevel(logging.DEBUG)
+        _ocr_logger.handlers.clear()
+        log_path = BASE_DIR / 'mybase.log'
+        handler = logging.FileHandler(str(log_path), mode='a', encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+        _ocr_logger.addHandler(handler)
+        _ocr_logger.info(f"========== OCR Session Start (workers-ocr={workers_ocr}, workers-menu={workers_menu}) ==========")
+        print(f"  Debug log: {log_path}")
 
 
 def get_tab_path(tab_name):
@@ -292,13 +390,18 @@ def compute_item_path(menu, item_id, tab_name):
 
 
 def index_tab(tab_name):
-    """Full reindex of a single knowledge base tab."""
+    """Full reindex of a single knowledge base tab.
+
+    Menu items are indexed in parallel controlled by --workers-menu;
+    OCR within each item uses the shared OCR thread pool (--workers-ocr).
+    Results are collected in memory and batch-inserted at the end to avoid
+    SQLite write contention between threads.
+    """
     if not get_tab_path(tab_name):
         return
+    _t_start = time.perf_counter()
     init_index_db(tab_name)
     menu = load_menu(tab_name)
-    conn = sqlite3.connect(str(get_index_db_path(tab_name)))
-    conn.execute("DELETE FROM item_index")
 
     def _flatten(items, parent_path):
         rows = []
@@ -311,20 +414,72 @@ def index_tab(tab_name):
 
     flat = _flatten(menu, tab_name)
     total = len(flat)
-    for idx, (item, path) in enumerate(flat, 1):
-        label = item['label'][:40]
-        print(f"    [{idx}/{total}] {label}")
-        content = load_content(tab_name, item['id'])
-        text = strip_html_tags(content)
-        ocr_text = extract_text_from_html_images(content, tab_name)
-        if ocr_text:
-            text = (text + ' ' + ocr_text) if text else ocr_text
-        conn.execute(
-            "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, ?, ?)",
-            (item['id'], item['label'], text, path)
-        )
+    if total == 0:
+        return
+
+    # ── Process menu items (sequential or parallel per --workers-menu) ──
+    # OCR within each item runs in parallel via the shared OCR thread pool.
+    results = []
+    _lock = threading.Lock()
+    _progress = [0]
+
+    def _process(item_path):
+        if _shutdown_requested.is_set():
+            return
+        item, path = item_path
+        try:
+            content = load_content(tab_name, item['id'])
+            text = strip_html_tags(content)
+            ocr_text = extract_text_from_html_images(content, tab_name)
+            if ocr_text:
+                text = (text + ' ' + ocr_text) if text else ocr_text
+            with _lock:
+                results.append((item['id'], item['label'], text, path))
+                _progress[0] += 1
+                print(f"    [{_progress[0]}/{total}] {item['label'][:40]}", flush=True)
+        except Exception as e:
+            print(f"  ERROR indexing item '{item['label']}': {e}")
+
+    if workers_menu <= 1:
+        # ── Sequential ──
+        for item_path in flat:
+            if _shutdown_requested.is_set():
+                print("  Indexing interrupted.")
+                raise KeyboardInterrupt()
+            _process(item_path)
+    else:
+        # ── Parallel via thread pool ──
+        executor = ThreadPoolExecutor(max_workers=workers_menu)
+        try:
+            futures = [executor.submit(_process, t) for t in flat]
+            remaining = set(futures)
+            while remaining and not _shutdown_requested.is_set():
+                done, remaining = wait(remaining, timeout=0.2, return_when=FIRST_COMPLETED)
+                for future in done:
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"  ERROR in menu indexing thread: {e}")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    if _shutdown_requested.is_set():
+        print("  Indexing interrupted.")
+        raise KeyboardInterrupt()
+
+    # ── Single-threaded batch insert ──
+    conn = sqlite3.connect(str(get_index_db_path(tab_name)))
+    conn.execute("DELETE FROM item_index")
+    conn.executemany(
+        "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, ?, ?)",
+        results
+    )
     conn.commit()
     conn.close()
+
+    _t_elapsed = time.perf_counter() - _t_start
+    ocr_log(f"  索引完成: {tab_name} ({total} 项), 耗时: {_t_elapsed:.2f}s")
+    print(f"  索引完成: {tab_name} ({total} 项), 耗时: {_t_elapsed:.2f}s")
 
 
 def index_all_tabs():
@@ -575,26 +730,46 @@ index_manager = IndexManager()
 # ─── OCR Integration (PaddleOCR) ──────────────────────────────────────────
 
 OCR_MODEL_DIR = BASE_DIR / 'models' / 'ocr'
-_ocr = None
+_ocr_available = False
+_ocr_local = threading.local()
+_ocr_pool = None
+_ocr_pool_lock = threading.Lock()
+
+
+def get_ocr_pool():
+    global _ocr_pool
+    if _ocr_pool is None:
+        with _ocr_pool_lock:
+            if _ocr_pool is None:
+                _ocr_pool = ThreadPoolExecutor(
+                    max_workers=workers_ocr,
+                    thread_name_prefix='ocr'
+                )
+    return _ocr_pool
 
 
 def init_ocr():
-    """Initialize PaddleOCR, downloading models to ./models/ocr/ if not cached."""
-    global _ocr
+    """Set up OCR environment; actual PaddleOCR instances are created per-thread on demand."""
+    global _ocr_available
     try:
         # Redirect PaddleX cache to our models directory so models download there
         OCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault('PADDLE_PDX_CACHE_HOME', str(OCR_MODEL_DIR))
         os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
 
+        # Suppress Paddle/PaddleOCR verbose logging
+        os.environ.setdefault('GLOG_v', '3')
+        os.environ.setdefault('GLOG_logtostderr', '0')
+        os.environ.setdefault('FLAGS_logtostderr', '0')
+        os.environ.setdefault('FLAGS_log_dir', '/tmp')
+
+        # Suppress PIR (Paddle IR) debug program printing during inference
+        os.environ['FLAGS_print_ir'] = '0'
+        os.environ['FLAGS_log_level'] = '3'
+
         from paddleocr import PaddleOCR
-        _ocr = PaddleOCR(
-            use_textline_orientation=True,
-            lang='ch',
-            device='cpu',
-            enable_mkldnn=False,
-        )
-        print(f"  PaddleOCR initialized (models cached in: {OCR_MODEL_DIR})")
+        _ocr_available = True
+        print(f"  PaddleOCR enabled (models cached in: {OCR_MODEL_DIR})")
         return True
     except ImportError:
         print("  Warning: paddleocr not installed. Image OCR will be unavailable.")
@@ -606,15 +781,30 @@ def init_ocr():
 
 
 def get_ocr():
-    """Get the OCR instance, initializing lazily if needed."""
-    global _ocr
-    if _ocr is None:
-        init_ocr()
-    return _ocr
+    """Get a per-thread PaddleOCR instance, creating lazily if needed."""
+    if not _ocr_available:
+        return None
+
+    instance = getattr(_ocr_local, 'ocr', None)
+    if instance is None:
+        from paddleocr import PaddleOCR
+        with suppress_stdout_stderr():
+            instance = PaddleOCR(
+                use_textline_orientation=True,
+                lang='ch',
+                device='cpu',
+                enable_mkldnn=False,
+            )
+        _ocr_local.ocr = instance
+    return instance
 
 
 def ocr_image(image_path):
-    """Run OCR on an image file and return recognized text string."""
+    """Run OCR on an image file and return recognized text string.
+
+    Each thread has its own PaddleOCR instance, so predict() is called
+    without any lock — full parallel CPU inference across workers.
+    """
     ocr = get_ocr()
     if ocr is None:
         return ''
@@ -671,46 +861,93 @@ def extract_text_from_html_images(html_content, tab_name):
       - Base64 embedded images (data:image/...;base64,...)
 
     Returns '' immediately when OCR is disabled (--disable-ocr).
+    OCR runs in parallel across all images in the HTML using a thread pool.
     """
     if ocr_disabled or not html_content:
         return ''
     img_pattern = re.compile(
         r'<img[^>]+src=[\'"]([^\'"]+)[\'"][^>]*>', re.IGNORECASE
     )
-    all_text = []
+
+    # ── Phase 1: collect all image Paths, decode base64 to temp files ──
+    image_paths = []   # list[Path]  — what to OCR
+    temp_files = []    # list[str]   — temp files to clean up afterwards
+
     for match in img_pattern.finditer(html_content):
         img_src = match.group(1)
         if not img_src:
             continue
 
-        # --- Base64 embedded image ---
+        # Base64 embedded image  →  decode to temp file
         if img_src.startswith('data:'):
             m = re.match(r'^data:image/[^;]+;base64,(.+)$', img_src)
             if not m:
                 continue
-            temp_path = None
             try:
                 img_data = base64.b64decode(m.group(1))
-                suffix = '.png'
-                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
                     f.write(img_data)
                     temp_path = f.name
-                text = ocr_image(temp_path)
-                if text:
-                    all_text.append(text)
+                image_paths.append(Path(temp_path))
+                temp_files.append(temp_path)
             except Exception as e:
-                print(f"  OCR base64 error: {e}")
-            finally:
-                if temp_path and os.path.exists(temp_path):
-                    os.unlink(temp_path)
+                print(f"  Base64 decode error: {e}")
             continue
 
-        # --- File-based image ---
+        # File-based image
         image_path = resolve_image_path(img_src, tab_name)
         if image_path and image_path.exists():
-            text = ocr_image(image_path)
-            if text:
+            image_paths.append(image_path)
+
+    if not image_paths:
+        return ''
+
+    # ── Phase 2: OCR all images in parallel ──
+    all_text = []
+    _result_lock = threading.Lock()
+
+    def _ocr_one(p: Path) -> None:
+        if _shutdown_requested.is_set():
+            return
+        ocr_log(f"[OCR] 推理中: {p.name}")
+        text = ocr_image(p)
+        if text and not _shutdown_requested.is_set():
+            with _result_lock:
                 all_text.append(text)
+            ocr_log(f"[OCR] 完成: {p.name}")
+        else:
+            status = "跳过(请求关闭)" if _shutdown_requested.is_set() else "无文本识别结果"
+            ocr_log(f"[OCR] 完成({status}): {p.name}")
+
+    pool = get_ocr_pool()
+    futures = [pool.submit(_ocr_one, p) for p in image_paths]
+    remaining = set(futures)
+    while remaining and not _shutdown_requested.is_set():
+        done, remaining = wait(remaining, timeout=0.2, return_when=FIRST_COMPLETED)
+        for future in done:
+            try:
+                future.result()
+            except Exception as e:
+                print(f"  OCR thread error: {e}")
+
+    if _shutdown_requested.is_set():
+        # Cleanup before raising
+        for tp in temp_files:
+            try:
+                if os.path.exists(tp):
+                    os.unlink(tp)
+            except Exception:
+                pass
+        raise KeyboardInterrupt()
+
+    # ── Phase 3: clean up temp files from base64 decoding ──
+    for tp in temp_files:
+        try:
+            if os.path.exists(tp):
+                os.unlink(tp)
+        except Exception as e:
+            print(f"  Temp file cleanup error: {e}")
+
     return ' '.join(all_text)
 
 
@@ -1354,24 +1591,31 @@ def get_tree(tab):
 
 
 if __name__ == '__main__':
-    init_config()
-    print("=" * 60)
-    print("  Web of Mybase Knowledge Server")
-    print("=" * 60)
-    print(f"  Data directory: {data_dir}")
-    print(f"  MyBase directory: {mybase_dir}")
-    if force_index_target:
-        print(f"  Force reindex: {force_index_target}")
-    if ocr_disabled:
-        print(f"  OCR disabled via --disable-ocr")
-    print(f"  Server URL: http://0.0.0.0:{server_port}")
-    print("=" * 60)
-    if not ocr_disabled:
-        print("  Initializing OCR...")
-        init_ocr()
-    print("  Checking indexes...")
-    ensure_indexes()
-    init_common_db()
-    print("  Done.")
-    print("=" * 60)
-    app.run(host='0.0.0.0', port=server_port, debug=False)
+    try:
+        init_config()
+        print("=" * 60)
+        print("  Web of Mybase Knowledge Server")
+        print("=" * 60)
+        print(f"  Data directory: {data_dir}")
+        print(f"  MyBase directory: {mybase_dir}")
+        if force_index_target:
+            print(f"  Force reindex: {force_index_target}")
+        if ocr_disabled:
+            print(f"  OCR disabled via --disable-ocr")
+        print(f"  Server URL: http://0.0.0.0:{server_port}")
+        print("=" * 60)
+        if not ocr_disabled:
+            print("  Initializing OCR...")
+            init_ocr()
+        print("  Checking indexes...")
+        ensure_indexes()
+        init_common_db()
+        print("  Done.")
+        print("=" * 60)
+        app.run(host='0.0.0.0', port=server_port, debug=False)
+    except KeyboardInterrupt:
+        _shutdown_requested.set()
+        if _ocr_pool is not None:
+            _ocr_pool.shutdown(wait=False)
+        print("\n  [EXIT] Shutdown complete. Bye.")
+        sys.exit(1)
