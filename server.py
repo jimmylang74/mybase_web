@@ -130,6 +130,11 @@ def ocr_log(msg: str):
     """
     if _ocr_logger is not None:
         _ocr_logger.info(msg)
+        # Flush immediately so the log is visible in real time
+        # (especially important on Windows where the default file
+        # buffering delays writes until process exit).
+        for h in _ocr_logger.handlers:
+            h.flush()
 
 
 def parse_args():
@@ -751,6 +756,21 @@ class IndexManager:
         # stays at its module-level ``None`` default.
         init_config()
 
+        # On Windows force single-threaded OCR — PaddleOCR predict()
+        # is known to hang under concurrent threads on this platform.
+        if os.name == 'nt':
+            workers_ocr = 1
+
+        # On Windows spawn the child is a fresh process — OCR instances
+        # (PaddleOCR) created in the parent's ``init_ocr()`` do not exist
+        # here.  Re-initialize so that ``get_ocr()`` works for background
+        # indexing tasks that need to extract text from images.
+        # On Linux fork the child inherits all globals, including the
+        # pre-allocated OCR instances — skip re-init to avoid wasting
+        # ~100 MB × workers_ocr of memory.
+        if not ocr_disabled and not _ocr_available:
+            init_ocr()
+
         while True:
             try:
                 task = task_queue.get(timeout=5)
@@ -981,15 +1001,26 @@ def extract_text_from_html_images(html_content, tab_name):
             ocr_log(f"[OCR] 完成({status}): {p.name}")
 
     pool = get_ocr_pool()
-    futures = [pool.submit(_ocr_one, p) for p in image_paths]
-    remaining = set(futures)
+    image_map = {pool.submit(_ocr_one, p): p for p in image_paths}
+    remaining = set(image_map)
+    # Total deadline prevents infinite hang when PaddleOCR.predict()
+    # blocks on Windows (a known issue in native inference code).
+    ocr_deadline = time.monotonic() + 300  # 5 min total for all images in this batch
     while remaining and not _shutdown_requested.is_set():
-        done, remaining = wait(remaining, timeout=0.2, return_when=FIRST_COMPLETED)
+        now = time.monotonic()
+        if now >= ocr_deadline:
+            for f in remaining:
+                p = image_map[f]
+                ocr_log(f"[OCR] 跳过(超时): {p.name}")
+                print(f"  OCR timeout on {p.name}, skipping", flush=True)
+            break
+        wait_secs = max(0.1, min(0.5, ocr_deadline - now))
+        done, remaining = wait(remaining, timeout=wait_secs, return_when=FIRST_COMPLETED)
         for future in done:
             try:
                 future.result()
             except Exception as e:
-                print(f"  OCR thread error: {e}")
+                print(f"  OCR thread error: {e}", flush=True)
 
     if _shutdown_requested.is_set():
         # Cleanup before raising
