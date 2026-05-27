@@ -97,7 +97,7 @@ force_index_target = None
 ocr_disabled = False
 ocr_debug = False
 workers_ocr = 8
-workers_menu = 1
+workers_menu = 8
 _ocr_logger = None
 
 
@@ -122,8 +122,8 @@ def parse_args():
                         help='Disable OCR image text indexing.')
     parser.add_argument('--workers-ocr', type=int, default=8,
                         help='Number of parallel OCR worker threads (default: 8)')
-    parser.add_argument('--workers-menu', type=int, default=1,
-                        help='Number of parallel menu item indexing workers (default: 1, sequential)')
+    parser.add_argument('--workers-menu', type=int, default=8,
+                        help='Number of parallel menu item indexing workers (default: 8)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode: write OCR inference logs to mybase.log with timestamps.')
     return parser.parse_args()
@@ -419,13 +419,16 @@ def index_tab(tab_name):
 
     # ── Process menu items (sequential or parallel per --workers-menu) ──
     # OCR within each item runs in parallel via the shared OCR thread pool.
+    # All progress printing is done from the main thread to avoid multi-threaded
+    # stdout interleaving that can swallow progress lines.
     results = []
     _lock = threading.Lock()
     _progress = [0]
 
     def _process(item_path):
+        """Index one item and return its label (or None on error/shutdown)."""
         if _shutdown_requested.is_set():
-            return
+            return None
         item, path = item_path
         try:
             content = load_content(tab_name, item['id'])
@@ -435,10 +438,10 @@ def index_tab(tab_name):
                 text = (text + ' ' + ocr_text) if text else ocr_text
             with _lock:
                 results.append((item['id'], item['label'], text, path))
-                _progress[0] += 1
-                print(f"    [{_progress[0]}/{total}] {item['label'][:40]}", flush=True)
+            return item['label']
         except Exception as e:
-            print(f"  ERROR indexing item '{item['label']}': {e}")
+            print(f"  ERROR indexing item '{item['label']}': {e}", flush=True)
+            return None
 
     if workers_menu <= 1:
         # ── Sequential ──
@@ -446,20 +449,28 @@ def index_tab(tab_name):
             if _shutdown_requested.is_set():
                 print("  Indexing interrupted.")
                 raise KeyboardInterrupt()
-            _process(item_path)
+            label = _process(item_path)
+            if label is not None:
+                _progress[0] += 1
+                print(f"    [{_progress[0]}/{total}] {label[:40]}", flush=True)
     else:
         # ── Parallel via thread pool ──
+        # Use as_completed instead of wait() to avoid timeout-based batching
+        # that can make progress output appear discontinuous.
         executor = ThreadPoolExecutor(max_workers=workers_menu)
         try:
-            futures = [executor.submit(_process, t) for t in flat]
-            remaining = set(futures)
-            while remaining and not _shutdown_requested.is_set():
-                done, remaining = wait(remaining, timeout=0.2, return_when=FIRST_COMPLETED)
-                for future in done:
-                    try:
-                        future.result()
-                    except Exception as e:
-                        print(f"  ERROR in menu indexing thread: {e}")
+            fut_map = {executor.submit(_process, t): t for t in flat}
+            for future in as_completed(fut_map):
+                if _shutdown_requested.is_set():
+                    break
+                try:
+                    label = future.result()
+                except Exception as e:
+                    print(f"  ERROR in menu indexing thread: {e}", flush=True)
+                    continue
+                if label is not None:
+                    _progress[0] += 1
+                    print(f"    [{_progress[0]}/{total}] {label[:40]}", flush=True)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
