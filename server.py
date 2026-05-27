@@ -6,6 +6,8 @@ import uuid
 import sqlite3
 import argparse
 import shutil
+import base64
+import tempfile
 import multiprocessing as mp
 import queue
 from pathlib import Path
@@ -304,7 +306,10 @@ def index_tab(tab_name):
         return rows
 
     flat = _flatten(menu, tab_name)
-    for item, path in flat:
+    total = len(flat)
+    for idx, (item, path) in enumerate(flat, 1):
+        label = item['label'][:40]
+        print(f"    [{idx}/{total}] {label}")
         content = load_content(tab_name, item['id'])
         text = strip_html_tags(content)
         ocr_text = extract_text_from_html_images(content, tab_name)
@@ -444,20 +449,41 @@ def ensure_indexes():
 
     indexed = {db.stem for db in index_db_dir.glob("*.db")}
 
-    for tab in sorted(tabs):
-        if tab not in indexed:
-            print(f"  Creating index for tab: {tab}")
-            index_tab(tab)
-
     global force_index_target
+
+    # ── Auto-index (for tabs that will NOT be force-indexed later) ──
+    # Build set of tabs that force-index will handle, so we skip them here
+    skip_auto = set()
+    if force_index_target == 'all':
+        skip_auto = tabs
+    elif force_index_target and force_index_target in tabs:
+        skip_auto = {force_index_target}
+
+    for tab in sorted(tabs):
+        if tab not in indexed and tab not in skip_auto:
+            print(f"  Creating index for tab: {tab}")
+            try:
+                index_tab(tab)
+            except Exception as e:
+                print(f"  ERROR creating index for {tab}: {e}")
+
+    # ── Force-index (if requested) ──
     if force_index_target:
         if force_index_target == 'all':
-            for tab in sorted(tabs):
-                print(f"  Force reindexing: {tab}")
-                index_tab(tab)
+            tab_list = sorted(tabs)
+            total = len(tab_list)
+            for tab_idx, tab in enumerate(tab_list, 1):
+                print(f"  [{tab_idx}/{total}] Force reindexing: {tab}")
+                try:
+                    index_tab(tab)
+                except Exception as e:
+                    print(f"  ERROR reindexing {tab}: {e}")
         elif force_index_target in tabs:
             print(f"  Force reindexing: {force_index_target}")
-            index_tab(force_index_target)
+            try:
+                index_tab(force_index_target)
+            except Exception as e:
+                print(f"  ERROR reindexing {force_index_target}: {e}")
         else:
             print(f"  Warning: Knowledge base '{force_index_target}' not found, skipping.")
 
@@ -633,7 +659,13 @@ def resolve_image_path(img_src, tab_name):
 
 
 def extract_text_from_html_images(html_content, tab_name):
-    """Find all <img> tags in HTML, run OCR on each, return combined text."""
+    """Find all <img> tags in HTML, run OCR on each, return combined text.
+
+    Supports:
+      - URL-referenced images  (/uploads/<tab>/images/<file>)
+      - Relative paths         (images/foo.png)
+      - Base64 embedded images (data:image/...;base64,...)
+    """
     if not html_content:
         return ''
     img_pattern = re.compile(
@@ -642,6 +674,32 @@ def extract_text_from_html_images(html_content, tab_name):
     all_text = []
     for match in img_pattern.finditer(html_content):
         img_src = match.group(1)
+        if not img_src:
+            continue
+
+        # --- Base64 embedded image ---
+        if img_src.startswith('data:'):
+            m = re.match(r'^data:image/[^;]+;base64,(.+)$', img_src)
+            if not m:
+                continue
+            temp_path = None
+            try:
+                img_data = base64.b64decode(m.group(1))
+                suffix = '.png'
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+                    f.write(img_data)
+                    temp_path = f.name
+                text = ocr_image(temp_path)
+                if text:
+                    all_text.append(text)
+            except Exception as e:
+                print(f"  OCR base64 error: {e}")
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            continue
+
+        # --- File-based image ---
         image_path = resolve_image_path(img_src, tab_name)
         if image_path and image_path.exists():
             text = ocr_image(image_path)
