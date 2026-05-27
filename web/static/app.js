@@ -1391,16 +1391,28 @@
         '<p>系统正在后台建立索引，请等待索引完成后重试搜索。</p>' +
         '<p class="indexing-wait-status" id="indexing-wait-status">' + escapeHtml(initialStatus) + '</p>' +
         '<div class="indexing-progress-track"><div class="indexing-progress-bar"></div></div>';
+
+      // Save original buttons so showDialog still works afterwards
+      const savedButtonsHtml = $('#dialog-buttons').innerHTML;
       $('#dialog-buttons').innerHTML = '<button id="dialog-cancel">取消</button>';
       overlay.style.display = 'flex';
 
       const cancelBtn = $('#dialog-cancel');
       let cancelled = false;
+      let cleanupDone = false;
+
+      function cleanup(returnValue) {
+        if (cleanupDone) return;
+        cleanupDone = true;
+        overlay.style.display = 'none';
+        $('#dialog-buttons').innerHTML = savedButtonsHtml;
+        resolve(returnValue);
+      }
 
       cancelBtn.onclick = () => {
         cancelled = true;
-        overlay.style.display = 'none';
-        resolve(false);
+        clearInterval(timer);
+        cleanup(false);
       };
 
       // Poll every second until indexing finishes or user cancels
@@ -1417,8 +1429,7 @@
           }
           if (!state.busy) {
             clearInterval(timer);
-            overlay.style.display = 'none';
-            resolve(true);
+            cleanup(true);
           }
         } catch (e) {
           // ignore polling errors

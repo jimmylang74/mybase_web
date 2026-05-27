@@ -170,9 +170,9 @@ def parse_args():
     parser.add_argument('--disable-ocr', action='store_true',
                         help='Disable OCR image text indexing.')
     parser.add_argument('--workers-ocr', type=int, default=8,
-                        help='Number of OCR worker processes (default: 8, each owns 1 PaddleOCR instance)')
+                        help='Number of OCR worker processes (default: 8, each owns 1 PaddleOCR instance; Windows limited to 1)')
     parser.add_argument('--workers-menu', type=int, default=8,
-                        help='Number of parallel menu item indexing workers (default: 8)')
+                        help='Number of parallel menu item indexing workers (default: 8; Windows limited to 1)')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode: write OCR inference logs to mybase.log with timestamps.')
     return parser.parse_args()
@@ -191,6 +191,13 @@ def init_config():
     workers_ocr = args.workers_ocr
     workers_menu = args.workers_menu
     ocr_debug = args.debug
+
+    # Windows: limit workers to 1 to avoid multiprocessing & thread-pool issues
+    if os.name == "nt":
+        if workers_ocr > 1:
+            workers_ocr = 1
+        if workers_menu > 1:
+            workers_menu = 1
     data_dir.mkdir(exist_ok=True)
     (data_dir / 'db').mkdir(exist_ok=True)
     mybase_dir.mkdir(exist_ok=True)
