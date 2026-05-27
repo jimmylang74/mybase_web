@@ -24,7 +24,6 @@ import tempfile
 import threading
 import contextlib
 import multiprocessing as mp
-import queue
 
 
 from pathlib import Path
@@ -774,6 +773,10 @@ class OCRProcessPool:
 
     Individual process hangs are tolerated — the deadline bounds the
     worst-case wait.
+
+    A background collector thread continuously drains ``result_queue``
+    and dispatches results by task-id, so multiple callers can submit
+    batches concurrently without a global lock.
     """
 
     def __init__(self, size: int):
@@ -781,12 +784,10 @@ class OCRProcessPool:
         self._task_queue = mp.Queue()
         self._result_queue = mp.Queue()
         self._processes: list[mp.Process] = []
-        # Serialises predict_batch() calls so that callers never race on
-        # the shared result_queue (each call submits its own batch then
-        # waits for its own results; without the lock, another thread can
-        # consume those results first, leaving the original caller with
-        # an incomplete set → all images appear to time out).
-        self._lock = threading.Lock()
+
+        # ── Lock-free result dispatch via Condition ──
+        self._results: dict[str, str] = {}   # tid → text
+        self._cv = threading.Condition()     # guards _results
 
         for _ in range(size):
             p = mp.Process(
@@ -797,7 +798,24 @@ class OCRProcessPool:
             p.start()
             self._processes.append(p)
 
+        # Background collector: drains result_queue → _results
+        self._collector = threading.Thread(target=self._collect_loop, daemon=True)
+        self._collector.start()
+
         ocr_log(f"[OCR] 进程池启动: {size} 个进程")
+
+    # ── Background collector ─────────────────────────────────────────────
+
+    def _collect_loop(self) -> None:
+        """Daemon: drain ``result_queue`` forever, dispatch by task-id."""
+        while True:
+            try:
+                tid, text = self._result_queue.get()
+            except (EOFError, OSError):
+                break
+            with self._cv:
+                self._results[tid] = text
+                self._cv.notify_all()
 
     # ── Public API ──────────────────────────────────────────────────────
 
@@ -810,49 +828,68 @@ class OCRProcessPool:
 
         Results preserve the order of *image_paths*.  Images that time
         out or cause an error yield an empty string.
+
+        Multiple threads may call this concurrently — the background
+        collector dispatches results by task-id so there is no race on
+        ``result_queue``.
         """
         if not image_paths:
             return []
 
-        with self._lock:
-            task_ids = [str(uuid.uuid4()) for _ in image_paths]
+        task_ids = [str(uuid.uuid4()) for _ in image_paths]
 
-            for tid, path in zip(task_ids, image_paths):
-                self._task_queue.put((tid, str(path)))
-                ocr_log(f"[OCR] 推理中: {path.name}")
+        # ── Submit (no lock needed — mp.Queue is thread-safe) ──
+        for tid, path in zip(task_ids, image_paths):
+            self._task_queue.put((tid, str(path)))
+            ocr_log(f"[OCR] 推理中: {path.name}")
 
-            # ── Collect results ──
-            results: dict[str, str] = {}
-            deadline = time.monotonic() + batch_timeout
+        # ── Collect via Condition ──
+        remaining_ids = set(task_ids)
+        results: dict[str, str] = {}
+        deadline = time.monotonic() + batch_timeout
 
-            while len(results) < len(task_ids) and time.monotonic() < deadline:
-                try:
-                    remaining = max(0.1, deadline - time.monotonic())
-                    tid, text = self._result_queue.get(timeout=remaining)
-                    results[tid] = text
-                except queue.Empty:
+        with self._cv:
+            while remaining_ids and time.monotonic() < deadline:
+                # Drain any already-arrived results for our task_ids
+                for tid in list(remaining_ids):
+                    if tid in self._results:
+                        results[tid] = self._results.pop(tid)
+                        remaining_ids.discard(tid)
+
+                if not remaining_ids:
                     break
 
-            # ── Map back to input order ──
-            output: list[str] = []
-            for tid, path in zip(task_ids, image_paths):
-                text = results.get(tid, None)
-                if text is not None:
-                    output.append(text)
-                    if text:
-                        ocr_log(f"[OCR] 完成: {path.name}")
-                    else:
-                        ocr_log(f"[OCR] 完成(无文本): {path.name}")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._cv.wait(timeout=remaining)
+
+            # Final drain after timeout
+            for tid in list(remaining_ids):
+                if tid in self._results:
+                    results[tid] = self._results.pop(tid)
+                    remaining_ids.discard(tid)
+
+        # ── Map back to input order ──
+        output: list[str] = []
+        for tid, path in zip(task_ids, image_paths):
+            text = results.get(tid, None)
+            if text is not None:
+                output.append(text)
+                if text:
+                    ocr_log(f"[OCR] 完成: {path.name}")
                 else:
-                    output.append('')
-                    ocr_log(f"[OCR] 跳过(超时): {path.name}")
-                    print(f"  OCR timeout on {path.name}, skipping", flush=True)
+                    ocr_log(f"[OCR] 完成(无文本): {path.name}")
+            else:
+                output.append('')
+                ocr_log(f"[OCR] 跳过(超时): {path.name}")
+                print(f"  OCR timeout on {path.name}, skipping", flush=True)
 
-            skipped = len(task_ids) - len(results)
-            if skipped:
-                print(f"  OCR batch: {skipped}/{len(task_ids)} timed out", flush=True)
+        skipped = len(task_ids) - len(results)
+        if skipped:
+            print(f"  OCR batch: {skipped}/{len(task_ids)} timed out", flush=True)
 
-            return output
+        return output
 
     def shutdown(self) -> None:
         """Send sentinel tasks and wait for workers to exit cleanly."""
