@@ -1065,7 +1065,7 @@ def extract_text_from_html_images(html_content, tab_name):
 
 
 def init_common_db():
-    """Create common.db and tab_order table if not exists."""
+    """Create common.db and tab_order / tab_kb_visibility tables if not exists."""
     conn = sqlite3.connect(str(common_db))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
@@ -1073,6 +1073,18 @@ def init_common_db():
             CREATE TABLE IF NOT EXISTS tab_order (
                 tab_name TEXT PRIMARY KEY,
                 sort_order INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tab_kb_visibility (
+                tab_name TEXT PRIMARY KEY,
+                visible INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tab_current_item (
+                tab_name TEXT PRIMARY KEY,
+                current_item_id TEXT NOT NULL
             )
         """)
         conn.commit()
@@ -1121,6 +1133,122 @@ def remove_tab_from_order(tab_name):
     if tab_name in names:
         names.remove(tab_name)
         set_tab_order(names)
+
+
+# ─── Tab Knowledge Base Visibility ─────────────────────────────────────────
+
+
+def init_tab_visibility(tab_name):
+    """Ensure a tab has a visibility entry (default: visible)."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO tab_kb_visibility (tab_name, visible) VALUES (?, 1)",
+            (tab_name,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_tab_visibility():
+    """Return dict of {tab_name: bool} for all known tabs."""
+    if not common_db.exists():
+        return {}
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name, visible FROM tab_kb_visibility")
+        return {row[0]: bool(row[1]) for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def set_tab_visibility(tab_name, visible):
+    """Set visibility for a single tab."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO tab_kb_visibility (tab_name, visible) VALUES (?, ?)",
+            (tab_name, 1 if visible else 0)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_tab_visibility_batch(visibility_dict):
+    """Replace all visibility entries with a new dict {tab_name: bool}."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("DELETE FROM tab_kb_visibility")
+        for name, visible in visibility_dict.items():
+            conn.execute(
+                "INSERT INTO tab_kb_visibility (tab_name, visible) VALUES (?, ?)",
+                (name, 1 if visible else 0)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_tab_visibility(tab_name):
+    """Remove visibility entry for a deleted tab."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("DELETE FROM tab_kb_visibility WHERE tab_name = ?", (tab_name,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ─── Tab Current Item (reading position) ────────────────────────────────────
+
+
+def get_tab_current_items():
+    """Return dict of {tab_name: current_item_id}."""
+    if not common_db.exists():
+        return {}
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name, current_item_id FROM tab_current_item")
+        return {row[0]: row[1] for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def set_tab_current_item(tab_name, item_id):
+    """Upsert the current item for a single tab."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO tab_current_item (tab_name, current_item_id) VALUES (?, ?)",
+            (tab_name, item_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_tab_current_item(tab_name):
+    """Remove current item entry for a deleted tab."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("DELETE FROM tab_current_item WHERE tab_name = ?", (tab_name,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ─── End Common Database ──────────────────────────────────────────────────
@@ -1486,6 +1614,48 @@ def generate_standalone_html(tab_name):
 </html>'''
 
 
+@app.route('/api/tab-visibility')
+def get_tab_visibility_route():
+    """Return visibility dict for all tabs."""
+    tabs = set()
+    if mybase_dir.exists():
+        for entry in mybase_dir.iterdir():
+            if entry.is_dir() and not entry.name.startswith('.'):
+                tabs.add(entry.name)
+    vis = get_tab_visibility()
+    # Ensure all existing tabs have an entry; default visible=True
+    result = {}
+    for t in tabs:
+        result[t] = vis.get(t, True)
+    return jsonify(result)
+
+
+@app.route('/api/tab-visibility', methods=['PUT'])
+def set_tab_visibility_route():
+    """Set visibility for all tabs at once. Expects {tab_name: bool, ...}."""
+    data = request.get_json()
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected a dict of {tab_name: visible}'}), 400
+    set_tab_visibility_batch(data)
+    return jsonify({'success': True})
+
+
+@app.route('/api/tab-current-items')
+def get_tab_current_items_route():
+    """Return dict of {tab_name: current_item_id}."""
+    return jsonify(get_tab_current_items())
+
+
+@app.route('/api/tab-current-item', methods=['PUT'])
+def set_tab_current_item_route():
+    """Set current item for a tab. Expects {tab_name, current_item_id}."""
+    data = request.get_json()
+    if not data or 'tab_name' not in data or 'current_item_id' not in data:
+        return jsonify({'error': 'Expected {tab_name, current_item_id}'}), 400
+    set_tab_current_item(data['tab_name'], data['current_item_id'])
+    return jsonify({'success': True})
+
+
 @app.route('/api/tab-order')
 def get_tab_order_route():
     return jsonify(get_tab_order())
@@ -1512,6 +1682,7 @@ def create_tab():
     tab_path.mkdir(parents=True)
     save_menu(name, [])
     add_tab_to_order(name)
+    init_tab_visibility(name)
     index_html = generate_standalone_html(name)
     with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
         f.write(index_html)
@@ -1542,6 +1713,14 @@ def rename_tab_in_common_db(old_name, new_name):
     try:
         conn.execute(
             "UPDATE tab_order SET tab_name = ? WHERE tab_name = ?",
+            (new_name, old_name)
+        )
+        conn.execute(
+            "UPDATE tab_kb_visibility SET tab_name = ? WHERE tab_name = ?",
+            (new_name, old_name)
+        )
+        conn.execute(
+            "UPDATE tab_current_item SET tab_name = ? WHERE tab_name = ?",
             (new_name, old_name)
         )
         conn.commit()
@@ -1607,6 +1786,8 @@ def delete_tab(tab):
         return jsonify({'error': 'Tab not found'}), 404
     delete_tab_index(tab)
     remove_tab_from_order(tab)
+    delete_tab_visibility(tab)
+    delete_tab_current_item(tab)
 
     def _remove_readonly(func, path, _):
         """Clear read-only flag and retry (required on Windows)."""

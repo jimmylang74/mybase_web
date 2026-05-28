@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>知识库管理KnowledgeBase1.0</title>
+<title>知识库KBase v2.0</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -66,6 +66,14 @@
         <span id="indexing-status" style="display:none"></span>
         <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
         <button class="tool-btn" id="btn-new-tab" title="New Tab">+ Tab</button>
+        <div class="kb-selector-wrap">
+          <label class="kb-all-checkbox-label" id="kb-all-label" title="全部知识库">
+            <input type="checkbox" id="kb-all-checkbox">
+            <span class="kb-all-text">全部知识库</span>
+          </label>
+          <span class="kb-dropdown-arrow" id="kb-dropdown-arrow">▾</span>
+          <div id="kb-dropdown" style="display:none"></div>
+        </div>
         <input type="file" id="image-upload-input" accept="image/*" style="display:none">
       </div>
       <div id="editor" contenteditable="true">
@@ -120,6 +128,8 @@
 <!-- Tab Right-Click Context Menu -->
 <div id="tab-context-menu" style="display:none">
   <div class="tab-ctx-item" data-action="edit-tab">编辑</div>
+  <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item" data-action="close-tab">关闭</div>
   <div class="tab-ctx-sep"></div>
   <div class="tab-ctx-item" data-action="delete-tab">删除</div>
 </div>

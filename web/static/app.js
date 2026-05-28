@@ -10,6 +10,8 @@
   let treeExpandedState = {}; // { tabName: Set<nodeId> }
   let dirtyTabs = {}; // { tabName: true/false }
   let lastEditedItem = {}; // { tabName: itemId }
+  let kbVisibility = {}; // { tabName: true/false }
+  let kbTabNames = []; // full list of all tab names
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -170,12 +172,45 @@
 
   async function loadTabs() {
     const tabs = await api('GET', '/api/tabs');
+    kbTabNames = tabs.slice();
+    // Load visibility state
+    try {
+      kbVisibility = await api('GET', '/api/tab-visibility');
+    } catch (e) {
+      kbVisibility = {};
+    }
+    // Load saved current items (reading position) from server.
+    // Only populate tabs not yet tracked in this session, so in-memory
+    // selections (from selectItem) take priority over stale server data.
+    try {
+      const savedItems = await api('GET', '/api/tab-current-items');
+      for (const [tab, itemId] of Object.entries(savedItems)) {
+        if (lastEditedItem[tab] === undefined) {
+          lastEditedItem[tab] = itemId;
+        }
+      }
+    } catch (e) {
+      // non-critical
+    }
+    // Ensure all tabs have a visibility entry
+    kbTabNames.forEach((name) => {
+      if (kbVisibility[name] === undefined) kbVisibility[name] = true;
+    });
+    // Filter to only show visible tabs
+    const visibleTabs = tabs.filter((name) => kbVisibility[name] !== false);
     tabsEl.innerHTML = '';
-    if (tabs.length === 0) {
+    if (visibleTabs.length === 0) {
       tabsEl.innerHTML = '<div class="tab" style="color:#888">No document centers found</div>';
+      treeContainer.innerHTML = '';
+      editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
+      editorStatus.textContent = 'No item selected';
+      currentTab = null;
+      currentItemId = null;
+      updateKbCheckbox();
+      rebuildKbDropdown();
       return;
     }
-    tabs.forEach((name) => {
+    visibleTabs.forEach((name) => {
       const el = document.createElement('div');
       el.className = 'tab';
       el.dataset.tab = name;
@@ -190,11 +225,13 @@
       makeTabDraggable(el);
       tabsEl.appendChild(el);
     });
-    if (!currentTab || !tabs.includes(currentTab)) {
+    if (!currentTab || !visibleTabs.includes(currentTab)) {
       const first = tabsEl.querySelector('.tab');
-      if (first) switchTab(tabs[0], first);
+      if (first) switchTab(visibleTabs[0], first);
     }
     updateTabScrollButtons();
+    updateKbCheckbox();
+    rebuildKbDropdown();
   }
 
   async function switchTab(name, el) {
@@ -398,6 +435,11 @@
     lastEditedItem[currentTab] = id;
     contentModified = false;
 
+    // Persist reading position to server (fire-and-forget)
+    if (currentTab) {
+      api('PUT', '/api/tab-current-item', { tab_name: currentTab, current_item_id: id }).catch(() => {});
+    }
+
     $$('.tree-node-header').forEach((h) => h.classList.remove('active'));
     const header = treeContainer.querySelector(`.tree-node[data-id="${id}"] .tree-node-header`);
     if (header) header.classList.add('active');
@@ -544,7 +586,99 @@
     el.textContent = dirtyTabs[name] ? '*' + base : base;
   }
 
+  // ─── KB Selector (全部知识库) ────────────────────────────────────────────
 
+  function updateKbCheckbox() {
+    const cb = $('#kb-all-checkbox');
+    if (!cb) return;
+    const visibleCount = kbTabNames.filter((name) => kbVisibility[name] !== false).length;
+    const totalCount = kbTabNames.length;
+    if (totalCount === 0) {
+      cb.checked = false;
+      cb.indeterminate = false;
+      return;
+    }
+    if (visibleCount === 0) {
+      cb.checked = false;
+      cb.indeterminate = false;
+    } else if (visibleCount === totalCount) {
+      cb.checked = true;
+      cb.indeterminate = false;
+    } else {
+      cb.checked = false;
+      cb.indeterminate = true;
+    }
+  }
+
+  function rebuildKbDropdown() {
+    const dd = $('#kb-dropdown');
+    if (!dd) return;
+    dd.innerHTML = '';
+    kbTabNames.forEach((name) => {
+      const item = document.createElement('div');
+      item.className = 'kb-dropdown-item';
+      const subCb = document.createElement('input');
+      subCb.type = 'checkbox';
+      subCb.checked = kbVisibility[name] !== false;
+      const label = document.createElement('span');
+      label.className = 'kb-item-label';
+      label.textContent = name;
+      item.appendChild(subCb);
+      item.appendChild(label);
+      item.addEventListener('click', (e) => {
+        if (e.target === subCb) return; // let the native checkbox click handle it
+        subCb.checked = !subCb.checked;
+        onKbItemToggle(name, subCb.checked);
+      });
+      subCb.addEventListener('change', () => {
+        onKbItemToggle(name, subCb.checked);
+      });
+      dd.appendChild(item);
+    });
+  }
+
+  async function onKbItemToggle(tabName, visible) {
+    kbVisibility[tabName] = visible;
+    // Sync to server
+    try {
+      await api('PUT', '/api/tab-visibility', kbVisibility);
+    } catch (e) {
+      console.error('Failed to save visibility:', e);
+    }
+    // Reload tabs to reflect changes
+    await loadTabs();
+    // If current tab was hidden, switch to first visible tab
+    if (currentTab && kbVisibility[currentTab] === false) {
+      const firstVisible = tabsEl.querySelector('.tab');
+      if (firstVisible && firstVisible.dataset.tab) {
+        switchTab(firstVisible.dataset.tab, firstVisible);
+      }
+    }
+  }
+
+  async function onKbAllToggle() {
+    // Use actual visibility state, not checkbox state (browser already toggled it)
+    const allVisible = kbTabNames.length > 0 && kbTabNames.every((name) => kbVisibility[name] !== false);
+    const newState = !allVisible;
+    kbTabNames.forEach((name) => {
+      kbVisibility[name] = newState;
+    });
+    try {
+      await api('PUT', '/api/tab-visibility', kbVisibility);
+    } catch (e) {
+      console.error('Failed to save visibility:', e);
+    }
+    await loadTabs();
+  }
+
+  function toggleKbDropdown(e) {
+    e.stopPropagation();
+    const dd = $('#kb-dropdown');
+    if (!dd) return;
+    dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+  }
+
+  // ─── End KB Selector ───────────────────────────────────────────────────
 
   async function moveMenuItem(itemId, direction) {
     if (!currentTab) return;
@@ -1332,6 +1466,15 @@
         case 'edit-tab':
           promptRenameTab(name);
           break;
+        case 'close-tab':
+          // Hide this tab and sync to server
+          kbVisibility[name] = false;
+          api('PUT', '/api/tab-visibility', kbVisibility).then(() => {
+            loadTabs();
+          }).catch((e) => {
+            console.error('Failed to save visibility:', e);
+          });
+          break;
         case 'delete-tab':
           showDialog(
             '删除 Tab',
@@ -1355,6 +1498,14 @@
     }
     if (!ctxMenu.contains(e.target)) {
       ctxMenu.style.display = 'none';
+    }
+    // Close KB dropdown when clicking outside
+    const kbDropdown = $('#kb-dropdown');
+    const kbLabel = $('#kb-all-label');
+    if (kbDropdown && kbDropdown.style.display !== 'none') {
+      if (!kbDropdown.contains(e.target) && !kbLabel.contains(e.target)) {
+        kbDropdown.style.display = 'none';
+      }
     }
   });
 
@@ -1608,6 +1759,11 @@
       e.preventDefault();
     }
   }, { passive: false });
+
+  // ─── KB Selector Event Handlers ──────────────────────────────────────
+
+  $('#kb-all-checkbox').addEventListener('change', onKbAllToggle);
+  $('#kb-dropdown-arrow').addEventListener('click', toggleKbDropdown);
 
   // ─── Init ──────────────────────────────────────────────────────────────
 
