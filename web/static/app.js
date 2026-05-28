@@ -454,6 +454,7 @@
       const html = data.content.trim();
       if (html) {
         editor.innerHTML = html;
+        constrainEditorImages();
       } else {
         editor.innerHTML = '<p></p>';
       }
@@ -1061,6 +1062,7 @@
         if (url) {
           editor.focus();
           document.execCommand('insertImage', false, url);
+          constrainEditorImages();
           markModified();
         }
         return true;
@@ -1079,6 +1081,7 @@
       const result = await apiUpload(`/api/${encodeURIComponent(currentTab)}/upload`, file);
       editor.focus();
       document.execCommand('insertImage', false, result.url);
+      constrainEditorImages();
       markModified();
     } catch (e) {
       showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
@@ -1169,6 +1172,7 @@
       const result = await apiUpload(`/api/${encodeURIComponent(currentTab)}/upload`, file);
       editor.focus();
       document.execCommand('insertImage', false, result.url);
+      constrainEditorImages();
       markModified();
     } catch (e) {
       console.error('Image paste upload failed:', e);
@@ -1408,6 +1412,29 @@
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  // ─── Image Sizing (80% of original) ────────────────────────────────────
+
+  function constrainEditorImages() {
+    editor.querySelectorAll('img').forEach((img) => {
+      if (img.complete && img.naturalWidth) {
+        setImage50(img);
+      } else {
+        img.addEventListener('load', function onLoad() {
+          setImage50(img);
+          img.removeEventListener('load', onLoad);
+        });
+      }
+    });
+  }
+
+  function setImage50(img) {
+    if (img.naturalWidth) {
+      const w = Math.round(img.naturalWidth * 0.5);
+      img.style.width = w + 'px';
+      img.style.height = 'auto';
+    }
   }
 
   // ─── Inline Rename ────────────────────────────────────────────────────
