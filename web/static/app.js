@@ -1027,16 +1027,47 @@
     });
   });
 
+  async function saveFontConfig() {
+    try {
+      await api('PUT', '/api/font-config', {
+        font_family: $('#font-family').value,
+        font_size: $('#font-size').value,
+      });
+    } catch (e) {
+      // non-critical
+    }
+  }
+
+  const FONT_SIZE_MAP = { '1': '12px', '2': '14px', '3': '16px', '4': '20px', '5': '24px', '6': '32px', '7': '48px' };
+
+  async function loadFontConfig() {
+    try {
+      const cfg = await api('GET', '/api/font-config');
+      if (cfg.font_family) {
+        $('#font-family').value = cfg.font_family;
+        document.execCommand('fontName', false, cfg.font_family);
+      }
+      if (cfg.font_size) {
+        $('#font-size').value = cfg.font_size;
+        editor.style.fontSize = FONT_SIZE_MAP[cfg.font_size] || '16px';
+      }
+    } catch (e) {
+      // non-critical, use defaults
+    }
+  }
+
   $('#font-family').addEventListener('change', function() {
     editor.focus();
     document.execCommand('fontName', false, this.value);
     markModified();
+    saveFontConfig();
   });
 
   $('#font-size').addEventListener('change', function() {
     editor.focus();
     document.execCommand('fontSize', false, this.value);
     markModified();
+    saveFontConfig();
   });
 
   $('#text-color').addEventListener('input', function() {
@@ -1556,66 +1587,6 @@
   // Periodic status polling (every 2 s, inexpensive)
   setInterval(checkIndexingStatus, 2000);
 
-  /**
-   * Show a modal dialog that auto-polls indexing status.
-   * Resolves `true` when indexing finishes (dialog auto-closes).
-   * Resolves `false` if the user clicks Cancel.
-   */
-  function waitForIndexing(initialStatus) {
-    return new Promise((resolve) => {
-      const overlay = $('#dialog-overlay');
-      $('#dialog-title').textContent = '索引建立中';
-      $('#dialog-content').innerHTML =
-        '<p>系统正在后台建立索引，请等待索引完成后重试搜索。</p>' +
-        '<p class="indexing-wait-status" id="indexing-wait-status">' + escapeHtml(initialStatus) + '</p>' +
-        '<div class="indexing-progress-track"><div class="indexing-progress-bar"></div></div>';
-
-      // Save original buttons so showDialog still works afterwards
-      const savedButtonsHtml = $('#dialog-buttons').innerHTML;
-      $('#dialog-buttons').innerHTML = '<button id="dialog-cancel">取消</button>';
-      overlay.style.display = 'flex';
-
-      const cancelBtn = $('#dialog-cancel');
-      let cancelled = false;
-      let cleanupDone = false;
-
-      function cleanup(returnValue) {
-        if (cleanupDone) return;
-        cleanupDone = true;
-        overlay.style.display = 'none';
-        $('#dialog-buttons').innerHTML = savedButtonsHtml;
-        resolve(returnValue);
-      }
-
-      cancelBtn.onclick = () => {
-        cancelled = true;
-        clearInterval(timer);
-        cleanup(false);
-      };
-
-      // Poll every second until indexing finishes or user cancels
-      const timer = setInterval(async () => {
-        if (cancelled) {
-          clearInterval(timer);
-          return;
-        }
-        try {
-          const state = await api('GET', '/api/indexing-status');
-          const statusEl = $('#indexing-wait-status');
-          if (statusEl) {
-            statusEl.textContent = state.status || '索引中...';
-          }
-          if (!state.busy) {
-            clearInterval(timer);
-            cleanup(true);
-          }
-        } catch (e) {
-          // ignore polling errors
-        }
-      }, 1000);
-    });
-  }
-
   // ─── Search ────────────────────────────────────────────────────────────
 
   const searchInput = $('#search-input');
@@ -1630,18 +1601,6 @@
   async function performSearch() {
     const query = searchInput.value.trim();
     if (!query) return;
-
-    // Check if background indexing is in progress — if so, wait
-    try {
-      const state = await api('GET', '/api/indexing-status');
-      if (state.busy) {
-        const proceed = await waitForIndexing(state.status);
-        if (!proceed) return; // user cancelled
-        // Indexing done — proceed with search below
-      }
-    } catch (e) {
-      // If status check fails, proceed anyway
-    }
 
     const globalMode = searchGlobal.checked;
     const tabParam = globalMode ? '' : (currentTab || '');
@@ -1795,5 +1754,6 @@
   // ─── Init ──────────────────────────────────────────────────────────────
 
   loadTabs();
+  loadFontConfig();
 
 })();

@@ -1087,6 +1087,18 @@ def init_common_db():
                 current_item_id TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS font_config (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                font_family TEXT NOT NULL DEFAULT 'Arial',
+                font_size TEXT NOT NULL DEFAULT '5',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            )
+        """)
+        conn.execute("""
+            INSERT OR IGNORE INTO font_config (id, font_family, font_size)
+            VALUES (1, 'Arial', '5')
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -1246,6 +1258,47 @@ def delete_tab_current_item(tab_name):
     conn = sqlite3.connect(str(common_db))
     try:
         conn.execute("DELETE FROM tab_current_item WHERE tab_name = ?", (tab_name,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+
+
+# ─── Font Config ───────────────────────────────────────────────────────────
+
+
+def get_font_config():
+    """Return font config dict from common.db."""
+    if not common_db.exists():
+        return {'font_family': 'Arial', 'font_size': '5'}
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT font_family, font_size FROM font_config WHERE id = 1"
+        )
+        row = cursor.fetchone()
+        if row:
+            return {
+                'font_family': row[0],
+                'font_size': row[1],
+            }
+        return {'font_family': 'Arial', 'font_size': '5'}
+    finally:
+        conn.close()
+
+
+def set_font_config(font_family, font_size):
+    """Upsert font config row in common.db."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO font_config (id, font_family, font_size, updated_at) "
+            "VALUES (1, ?, ?, datetime('now', 'localtime'))",
+            (font_family, font_size)
+        )
         conn.commit()
     finally:
         conn.close()
@@ -1667,6 +1720,24 @@ def set_tab_order_route():
     if not isinstance(data, list):
         return jsonify({'error': 'Expected a list of tab names'}), 400
     set_tab_order(data)
+    return jsonify({'success': True})
+
+
+@app.route('/api/font-config')
+def get_font_config_route():
+    """Return font configuration (font_family, font_size)."""
+    return jsonify(get_font_config())
+
+
+@app.route('/api/font-config', methods=['PUT'])
+def set_font_config_route():
+    """Save font configuration."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    font_family = data.get('font_family', 'Arial')
+    font_size = data.get('font_size', '5')
+    set_font_config(font_family, font_size)
     return jsonify({'success': True})
 
 
