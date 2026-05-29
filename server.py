@@ -1605,16 +1605,38 @@ def serve_uploaded_image(tab, filename):
     return send_from_directory(str(upload_dir), filename)
 
 
+def _get_visible_tab_names():
+    """Return set of visible tab names from tab_kb_visibility.
+    Returns None if the DB doesn't exist (all tabs visible by default)."""
+    if not common_db.exists():
+        return None
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name, visible FROM tab_kb_visibility")
+        result = {row[0] for row in cursor.fetchall() if row[1]}
+        return result
+    finally:
+        conn.close()
+
+
 @app.route('/api/search')
 def search():
     query = request.args.get('q', '').strip()
     tab = request.args.get('tab', '').strip()
     if not query:
         return jsonify([])
+
+    visible_tabs = _get_visible_tab_names()
+
     if tab:
-        results = search_index(tab, query)
+        results = search_index(tab, query) if visible_tabs is None or tab in visible_tabs else []
     else:
-        results = search_all_tabs(query)
+        if visible_tabs is None:
+            results = search_all_tabs(query)
+        else:
+            results = []
+            for t in sorted(visible_tabs):
+                results.extend(search_index(t, query))
     return jsonify(results)
 
 
