@@ -1065,7 +1065,7 @@ def extract_text_from_html_images(html_content, tab_name):
 
 
 def init_common_db():
-    """Create common.db and tab_order / tab_kb_visibility tables if not exists."""
+    """Create common.db and tables if not exists."""
     conn = sqlite3.connect(str(common_db))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
@@ -1078,13 +1078,15 @@ def init_common_db():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tab_kb_visibility (
                 tab_name TEXT PRIMARY KEY,
-                visible INTEGER NOT NULL DEFAULT 1
+                visible INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tab_current_item (
                 tab_name TEXT PRIMARY KEY,
-                current_item_id TEXT NOT NULL
+                current_item_id TEXT NOT NULL,
+                scroll_top INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.execute("""
@@ -1098,6 +1100,17 @@ def init_common_db():
         conn.execute("""
             INSERT OR IGNORE INTO font_config (id, font_family, font_size)
             VALUES (1, 'Arial', '5')
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS system_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                value TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            INSERT OR IGNORE INTO system_config (name, value)
+            VALUES ('version', 'v2.0')
         """)
         conn.commit()
     finally:
@@ -1157,7 +1170,7 @@ def init_tab_visibility(tab_name):
     conn = sqlite3.connect(str(common_db))
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO tab_kb_visibility (tab_name, visible) VALUES (?, 1)",
+            "INSERT OR IGNORE INTO tab_kb_visibility (tab_name, visible, is_active) VALUES (?, 1, 0)",
             (tab_name,)
         )
         conn.commit()
@@ -1184,8 +1197,9 @@ def set_tab_visibility(tab_name, visible):
     conn = sqlite3.connect(str(common_db))
     try:
         conn.execute(
-            "INSERT OR REPLACE INTO tab_kb_visibility (tab_name, visible) VALUES (?, ?)",
-            (tab_name, 1 if visible else 0)
+            "INSERT OR REPLACE INTO tab_kb_visibility (tab_name, visible, is_active) "
+            "VALUES (?, ?, COALESCE((SELECT is_active FROM tab_kb_visibility WHERE tab_name = ?), 0))",
+            (tab_name, 1 if visible else 0, tab_name)
         )
         conn.commit()
     finally:
@@ -1198,11 +1212,17 @@ def set_tab_visibility_batch(visibility_dict):
         return
     conn = sqlite3.connect(str(common_db))
     try:
+        # Preserve the currently selected tab across the batch replace
+        cursor = conn.execute("SELECT tab_name FROM tab_kb_visibility WHERE is_active = 1")
+        row = cursor.fetchone()
+        selected_tab = row[0] if row else None
+
         conn.execute("DELETE FROM tab_kb_visibility")
         for name, visible in visibility_dict.items():
+            is_active = 1 if name == selected_tab else 0
             conn.execute(
-                "INSERT INTO tab_kb_visibility (tab_name, visible) VALUES (?, ?)",
-                (name, 1 if visible else 0)
+                "INSERT INTO tab_kb_visibility (tab_name, visible, is_active) VALUES (?, ?, ?)",
+                (name, 1 if visible else 0, is_active)
             )
         conn.commit()
     finally:
@@ -1216,6 +1236,32 @@ def delete_tab_visibility(tab_name):
     conn = sqlite3.connect(str(common_db))
     try:
         conn.execute("DELETE FROM tab_kb_visibility WHERE tab_name = ?", (tab_name,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_selected_tab():
+    """Return the tab_name that is currently selected (last active), or None."""
+    if not common_db.exists():
+        return None
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name FROM tab_kb_visibility WHERE is_active = 1")
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def set_selected_tab(tab_name):
+    """Mark a single tab as the currently selected tab, deselect others."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("UPDATE tab_kb_visibility SET is_active = 0")
+        conn.execute("UPDATE tab_kb_visibility SET is_active = 1 WHERE tab_name = ?", (tab_name,))
         conn.commit()
     finally:
         conn.close()
@@ -1669,7 +1715,7 @@ def generate_standalone_html(tab_name):
 
 @app.route('/api/tab-visibility')
 def get_tab_visibility_route():
-    """Return visibility dict for all tabs."""
+    """Return visibility dict for all tabs, plus the currently selected tab."""
     tabs = set()
     if mybase_dir.exists():
         for entry in mybase_dir.iterdir():
@@ -1680,6 +1726,7 @@ def get_tab_visibility_route():
     result = {}
     for t in tabs:
         result[t] = vis.get(t, True)
+    result['_selected_tab'] = get_selected_tab()
     return jsonify(result)
 
 
@@ -1701,11 +1748,12 @@ def get_tab_current_items_route():
 
 @app.route('/api/tab-current-item', methods=['PUT'])
 def set_tab_current_item_route():
-    """Set current item for a tab. Expects {tab_name, current_item_id}."""
+    """Set current item for a tab. Expects {tab_name, current_item_id}. Also marks the tab as the currently selected tab."""
     data = request.get_json()
     if not data or 'tab_name' not in data or 'current_item_id' not in data:
         return jsonify({'error': 'Expected {tab_name, current_item_id}'}), 400
     set_tab_current_item(data['tab_name'], data['current_item_id'])
+    set_selected_tab(data['tab_name'])
     return jsonify({'success': True})
 
 

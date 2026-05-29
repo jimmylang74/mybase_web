@@ -174,8 +174,17 @@
     const tabs = await api('GET', '/api/tabs');
     kbTabNames = tabs.slice();
     // Load visibility state
+    let selectedTabFromServer = null;
     try {
-      kbVisibility = await api('GET', '/api/tab-visibility');
+      const visData = await api('GET', '/api/tab-visibility');
+      kbVisibility = {};
+      for (const [key, val] of Object.entries(visData)) {
+        if (key === '_selected_tab') {
+          selectedTabFromServer = val;
+        } else {
+          kbVisibility[key] = val;
+        }
+      }
     } catch (e) {
       kbVisibility = {};
     }
@@ -225,7 +234,14 @@
       makeTabDraggable(el);
       tabsEl.appendChild(el);
     });
-    if (!currentTab || !visibleTabs.includes(currentTab)) {
+    // Restore the previously selected tab (saved in tab_kb_visibility.is_active)
+    const restoreTab = selectedTabFromServer && visibleTabs.includes(selectedTabFromServer)
+      ? selectedTabFromServer
+      : null;
+    if (restoreTab) {
+      const el = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(restoreTab)}"]`);
+      if (el) switchTab(restoreTab, el);
+    } else if (!currentTab || !visibleTabs.includes(currentTab)) {
       const first = tabsEl.querySelector('.tab');
       if (first) switchTab(visibleTabs[0], first);
     }
