@@ -1567,6 +1567,11 @@ def save_content_route(tab, item_id):
 
     save_content(tab, item_id, data['content'])
     _run_in_background(update_item_in_index, tab, item_id)
+    tab_path = get_tab_path(tab)
+    if tab_path:
+        index_html = generate_standalone_html(tab)
+        with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
+            f.write(index_html)
     return jsonify({'success': True})
 
 
@@ -1651,29 +1656,55 @@ def get_indexing_status():
 
 
 def generate_standalone_html(tab_name):
-    return '''<!DOCTYPE html>
+    content_data = {}
+    img_pattern = re.compile(r'/uploads/' + re.escape(tab_name) + r'/images/')
+    tab_path = get_tab_path(tab_name)
+
+    # Read content/ files (new-style web editor)
+    content_dir = get_content_dir(tab_name)
+    if content_dir and content_dir.exists():
+        for f in sorted(content_dir.glob('*.html')):
+            html = f.read_text(encoding='utf-8')
+            html = img_pattern.sub('images/', html)
+            content_data[f.stem] = html
+
+    # Read .qrich.html files (legacy frameset tabs)
+    if tab_path:
+        for f in sorted(tab_path.glob('*.qrich.html')):
+            html = f.read_text(encoding='utf-8')
+            body_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL)
+            if body_match:
+                html = body_match.group(1)
+                html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
+                html = re.sub(r'<nav[^>]*>.*?</nav>', '', html, flags=re.DOTALL)
+            html = img_pattern.sub('images/', html)
+            content_data[f.name] = html.strip()
+
+    content_json = json.dumps(content_data, ensure_ascii=False)
+    title_escaped = tab_name.replace('&', '&amp;').replace('<', '&lt;').replace('"', '&quot;')
+
+    return f'''<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>''' + tab_name + '''</title>
+<title>{title_escaped}</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; height:100vh; display:flex; color:#333; }
-  #sidebar { width:300px; min-width:200px; display:flex; flex-direction:column; border-right:1px solid #ddd; background:#fff; }
-  #tree { flex:1; overflow:auto; padding:8px 0; }
-  #main { flex:1; display:flex; flex-direction:column; }
-  #content { flex:1; position:relative; }
-  #content iframe { width:100%; height:100%; border:none; display:block; }
-  #placeholder { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#999; font-size:14px; }
-  .node { user-select:none; }
-  .node-header { display:flex; align-items:center; padding:4px 8px; cursor:pointer; border-radius:3px; margin:1px 4px; }
-  .node-header:hover { background:#e8f0fe; }
-  .node-header.active { background:#d4e4fc; font-weight:600; }
-  .toggle { width:18px; font-size:10px; color:#888; flex-shrink:0; cursor:pointer; }
-  .toggle.empty { visibility:hidden; }
-  .label { flex:1; font-size:13px; padding:2px 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .children { padding-left:20px; }
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; height:100vh; display:flex; color:#333; }}
+  #sidebar {{ width:300px; min-width:200px; display:flex; flex-direction:column; border-right:1px solid #ddd; background:#fff; }}
+  #tree {{ flex:1; overflow:auto; padding:8px 0; }}
+  #main {{ flex:1; display:flex; flex-direction:column; }}
+  #content {{ flex:1; overflow:auto; padding:20px; position:relative; }}
+  #placeholder {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#999; font-size:14px; }}
+  .node {{ user-select:none; }}
+  .node-header {{ display:flex; align-items:center; padding:4px 8px; cursor:pointer; border-radius:3px; margin:1px 4px; }}
+  .node-header:hover {{ background:#e8f0fe; }}
+  .node-header.active {{ background:#d4e4fc; font-weight:600; }}
+  .toggle {{ width:18px; font-size:10px; color:#888; flex-shrink:0; cursor:pointer; }}
+  .toggle.empty {{ visibility:hidden; }}
+  .label {{ flex:1; font-size:13px; padding:2px 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .children {{ padding-left:20px; }}
 </style>
 </head>
 <body>
@@ -1683,18 +1714,20 @@ def generate_standalone_html(tab_name):
 <div id="main">
   <div id="content">
     <div id="placeholder">Select an item</div>
-    <iframe id="content-frame" name="content-frame" style="display:none"></iframe>
+    <div id="content-area"></div>
   </div>
 </div>
 <script src="menu.js"></script>
 <script>
-(function() {
+var CONTENT_DATA = {content_json};
+
+(function() {{
   var treeEl = document.getElementById('tree');
-  var frame = document.getElementById('content-frame');
+  var contentArea = document.getElementById('content-area');
   var placeholder = document.getElementById('placeholder');
 
-  function render(items, container) {
-    items.forEach(function(item) {
+  function render(items, container) {{
+    items.forEach(function(item) {{
       var div = document.createElement('div');
       div.className = 'node';
       var hdr = document.createElement('div');
@@ -1709,27 +1742,30 @@ def generate_standalone_html(tab_name):
       hdr.appendChild(tgl);
       hdr.appendChild(lbl);
       div.appendChild(hdr);
-      if (hasKids) {
+      if (hasKids) {{
         var ch = document.createElement('div');
         ch.className = 'children';
         render(item.children, ch);
         div.appendChild(ch);
-        tgl.addEventListener('click', function(e) { e.stopPropagation(); var d = ch.style.display; ch.style.display = d==='none'?'':'none'; this.textContent = d==='none'?'\\u25BE':'\\u25B8'; });
-      }
-      hdr.addEventListener('click', function() {
+        tgl.addEventListener('click', function(e) {{ e.stopPropagation(); var d = ch.style.display; ch.style.display = d==='none'?'':'none'; this.textContent = d==='none'?'\\u25BE':'\\u25B8'; }});
+      }}
+      hdr.addEventListener('click', function() {{
         var act = document.querySelectorAll('.node-header');
         for (var i = 0; i < act.length; i++) act[i].classList.remove('active');
         this.classList.add('active');
-        frame.style.display = 'block';
-        placeholder.style.display = 'none';
-        frame.src = 'content/' + item.id + '.html';
-      });
+        var html = CONTENT_DATA[item.id] || (item.href && CONTENT_DATA[item.href]);
+        if (html) {{
+          contentArea.innerHTML = html;
+          contentArea.style.display = 'block';
+          placeholder.style.display = 'none';
+        }}
+      }});
       container.appendChild(div);
-    });
-  }
+    }});
+  }}
 
   render(MENU_DATA, treeEl);
-})();
+}})();
 </script>
 </body>
 </html>'''
@@ -1827,6 +1863,7 @@ def create_tab():
     index_html = generate_standalone_html(name)
     with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
         f.write(index_html)
+    _run_in_background(index_tab, name)
     return jsonify({'name': name}), 201
 
 
