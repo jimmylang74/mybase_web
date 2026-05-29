@@ -648,6 +648,22 @@ def update_item_path_in_index(tab_name, item_id, menu, path):
         conn.close()
 
 
+def update_item_meta_in_index(tab_name, item_id, label, path):
+    """Update only label and menu_path for a menu item (no content/OCR)."""
+    db_path = get_index_db_path(tab_name)
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "UPDATE item_index SET label = ?, menu_path = ? WHERE menu_item_id = ?",
+            (label, path, item_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def delete_item_from_index(tab_name, item_id):
     """Remove a single item from the index."""
     db_path = get_index_db_path(tab_name)
@@ -1520,7 +1536,11 @@ def update_menu_item_route(tab, item_id):
         return jsonify({'error': 'Item not found'}), 404
 
     save_menu(tab, menu)
-    _run_in_background(update_item_in_index, tab, item_id)
+    # Only update label and path in index — content hasn't changed, no OCR needed
+    path = compute_item_path(menu, item_id, tab)
+    item = find_menu_item(menu, item_id)
+    if path and item:
+        _run_in_background(update_item_meta_in_index, tab, item_id, item['label'], path)
     return jsonify({'success': True})
 
 
