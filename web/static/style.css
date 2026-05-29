@@ -304,13 +304,54 @@ body {
   margin: 0 4px;
 }
 
-#text-color {
-  width: 28px;
-  height: 28px;
-  padding: 0;
+.color-btn-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.color-btn-wrap .tool-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+  padding: 3px 5px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.color-arrow {
+  padding: 0 4px;
   border: 1px solid #ccc;
-  border-radius: 3px;
+  border-left: none;
+  border-radius: 0 3px 3px 0;
+  background: #fff;
   cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  color: #666;
+  transition: background 0.15s;
+}
+
+.color-arrow:hover {
+  background: #e8e8e8;
+}
+
+.color-input-hidden {
+  position: fixed;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.color-input-hidden--active {
+  width: 1px;
+  height: 1px;
+  pointer-events: auto;
 }
 
 #editor {

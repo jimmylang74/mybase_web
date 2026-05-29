@@ -823,16 +823,56 @@
   }
 
   function promptInsertLink() {
+    // Save selection before dialog steals focus
+    const savedRange = (() => {
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+        return sel.getRangeAt(0).cloneRange();
+      }
+      return null;
+    })();
+
     showDialog(
       'Insert Link',
       '<label>URL:</label><input type="text" id="dialog-link-url" placeholder="https://..."><label>Text:</label><input type="text" id="dialog-link-text" placeholder="Link text">',
       () => {
         const url = $('#dialog-link-url').value.trim();
-        const text = $('#dialog-link-text').value.trim() || url;
-        if (url) {
-          document.execCommand('insertHTML', false, `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(text)}</a>`);
-          editor.focus();
+        const text = $('#dialog-link-text').value.trim();
+        if (!url) return true;
+        editor.focus();
+
+        // Restore saved selection
+        if (savedRange) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
         }
+
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          if (sel.toString().length > 0 && !text) {
+            document.execCommand('createLink', false, url);
+            const newSel = window.getSelection();
+            if (newSel.rangeCount > 0) {
+              let node = newSel.getRangeAt(0).startContainer;
+              while (node && node.nodeName !== 'A') node = node.parentNode;
+              if (node && node.nodeName === 'A') node.setAttribute('target', '_blank');
+            }
+          } else {
+            range.deleteContents();
+            const a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.textContent = text || url;
+            range.insertNode(a);
+            range.setStartAfter(a);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        }
+        markModified();
         return true;
       }
     );
@@ -941,13 +981,27 @@
     }
   }
 
+  function positionMenuAtEvent(menuEl, e) {
+    menuEl.style.display = 'block';
+    const menuW = menuEl.offsetWidth;
+    const menuH = menuEl.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = e.clientX;
+    let top = e.clientY;
+    if (left + menuW > vw) left = vw - menuW - 8;
+    if (top + menuH > vh) top = vh - menuH - 8;
+    if (left < 0) left = 8;
+    if (top < 0) top = 8;
+    menuEl.style.left = left + 'px';
+    menuEl.style.top = top + 'px';
+  }
+
   // ─── Tree Right-Click Context Menu ─────────────────────────────────────
 
   function showTreeContextMenu(e, itemId) {
     treeCtxItemId = itemId;
-    treeCtxMenu.style.left = e.clientX + 'px';
-    treeCtxMenu.style.top = e.clientY + 'px';
-    treeCtxMenu.style.display = 'block';
+    positionMenuAtEvent(treeCtxMenu, e);
   }
 
   $$('#tree-context-menu .tree-ctx-item').forEach((item) => {
@@ -1087,9 +1141,28 @@
   });
 
   $('#text-color').addEventListener('input', function() {
+    const swatch = $('#color-swatch');
+    if (swatch) swatch.style.background = this.value;
+    this.classList.remove('color-input-hidden--active');
+    this.style.left = '';
+    this.style.top = '';
+  });
+
+  $('#btn-apply-color').addEventListener('click', () => {
     editor.focus();
-    document.execCommand('foreColor', false, this.value);
+    const color = $('#text-color').value;
+    document.execCommand('foreColor', false, color);
     markModified();
+  });
+
+  $('#btn-color-arrow').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const input = $('#text-color');
+    const rect = e.currentTarget.getBoundingClientRect();
+    input.classList.add('color-input-hidden--active');
+    input.style.left = rect.left + 'px';
+    input.style.top = (rect.top + rect.height) + 'px';
+    input.click();
   });
 
   $('#btn-insert-link').addEventListener('click', () => {
@@ -1098,52 +1171,6 @@
       $('#dialog-link-text').value = sel;
     }
     promptInsertLink();
-  });
-
-  $('#btn-insert-image').addEventListener('click', () => {
-    showDialog(
-      'Insert Image',
-      '<label>Image URL:</label><input type="text" id="dialog-img-url" placeholder="https://...">',
-      () => {
-        const url = $('#dialog-img-url').value.trim();
-        if (url) {
-          editor.focus();
-          document.execCommand('insertImage', false, url);
-          constrainEditorImages();
-          markModified();
-        }
-        return true;
-      }
-    );
-  });
-
-  $('#btn-upload-image').addEventListener('click', () => {
-    $('#image-upload-input').click();
-  });
-
-  $('#image-upload-input').addEventListener('change', async function() {
-    if (!this.files || !this.files[0]) return;
-    const file = this.files[0];
-    try {
-      const result = await apiUpload(`/api/${encodeURIComponent(currentTab)}/upload`, file);
-      editor.focus();
-      document.execCommand('insertImage', false, result.url);
-      constrainEditorImages();
-      markModified();
-    } catch (e) {
-      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
-    }
-    this.value = '';
-  });
-
-  $('#btn-paste-plain').addEventListener('click', () => {
-    navigator.clipboard.readText().then((text) => {
-      editor.focus();
-      document.execCommand('insertText', false, text);
-      markModified();
-    }).catch(() => {
-      showDialog('Error', '<p>Cannot read clipboard. Please use Ctrl+Shift+V for plain paste.</p>');
-    });
   });
 
   $('#btn-save').addEventListener('click', () => {
@@ -1180,6 +1207,18 @@
 
   editor.addEventListener('input', markModified);
   editor.addEventListener('paste', handlePaste);
+  editor.addEventListener('click', (e) => {
+    let node = e.target;
+    while (node && node !== editor) {
+      if (node.nodeName === 'A' && node.href) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(node.href, '_blank');
+        return;
+      }
+      node = node.parentNode;
+    }
+  });
 
   function handlePaste(e) {
     const clipboardData = e.clipboardData || window.clipboardData;
@@ -1231,9 +1270,7 @@
   editor.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const selection = window.getSelection();
-    ctxMenu.style.left = e.clientX + 'px';
-    ctxMenu.style.top = e.clientY + 'px';
-    ctxMenu.style.display = 'block';
+    positionMenuAtEvent(ctxMenu, e);
     ctxMenu.dataset.hasSelection = selection.toString().length > 0 ? 'true' : 'false';
   });
 
@@ -1524,9 +1561,7 @@
 
   function showTabContextMenu(e, name) {
     tabCtxName = name;
-    tabCtxMenu.style.left = e.clientX + 'px';
-    tabCtxMenu.style.top = e.clientY + 'px';
-    tabCtxMenu.style.display = 'block';
+    positionMenuAtEvent(tabCtxMenu, e);
   }
 
   $$('#tab-context-menu .tab-ctx-item').forEach((item) => {
