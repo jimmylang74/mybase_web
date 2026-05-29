@@ -365,10 +365,23 @@
 
     const label = document.createElement('span');
     label.className = 'label';
-    label.textContent = item.label;
+    const style = item.style || {};
+    label.textContent = (style.icon || '') + item.label;
 
     header.appendChild(toggle);
     header.appendChild(label);
+    if (style.fontFamily) label.style.fontFamily = style.fontFamily;
+    if (style.fontSize) label.style.fontSize = style.fontSize;
+    if (style.color) label.style.color = style.color;
+    if (style.bgColor) header.style.backgroundColor = style.bgColor;
+    if (style.bold) label.style.fontWeight = 'bold';
+    if (style.underline && style.strikethrough) {
+      label.style.textDecoration = 'underline line-through';
+    } else if (style.underline) {
+      label.style.textDecoration = 'underline';
+    } else if (style.strikethrough) {
+      label.style.textDecoration = 'line-through';
+    }
     header.addEventListener('click', () => {
       if (currentItemId === item.id && !item._editing) {
         startInlineEdit(item, label);
@@ -1039,8 +1052,133 @@
           if (node) promptDelete(id, node.label);
           break;
         }
+        case 'custom-style': {
+          showCustomStyleDialog(id);
+          break;
+        }
       }
     });
+  });
+
+  // ─── Custom Style Dialog ────────────────────────────────────────────
+
+  const styleDialog = $('#style-dialog');
+  const styleIcon = $('#style-icon');
+  const styleFontFamily = $('#style-font-family');
+  const styleFontSize = $('#style-font-size');
+  const styleColor = $('#style-color');
+  const styleBgColor = $('#style-bg-color');
+  const styleBold = $('#style-bold');
+  const styleUnderline = $('#style-underline');
+  const styleStrikethrough = $('#style-strikethrough');
+  let styleItemId = null;
+
+  function showCustomStyleDialog(itemId) {
+    styleItemId = itemId;
+    const item = findNodeById(menuTree, itemId);
+    if (!item) return;
+
+    const s = item.style || {};
+    styleIcon.value = s.icon || '';
+    styleFontFamily.value = s.fontFamily || '';
+    styleFontSize.value = s.fontSize || '';
+    styleColor.value = s.color || '#000000';
+    styleBgColor.value = s.bgColor || '#ffffff';
+    styleBold.checked = !!s.bold;
+    styleUnderline.checked = !!s.underline;
+    styleStrikethrough.checked = !!s.strikethrough;
+
+    styleDialog.style.display = 'flex';
+  }
+
+  function collectStyleData() {
+    return {
+      icon: styleIcon.value.trim(),
+      fontFamily: styleFontFamily.value,
+      fontSize: styleFontSize.value,
+      color: styleColor.value === '#000000' ? '' : styleColor.value,
+      bgColor: styleBgColor.value === '#ffffff' ? '' : styleBgColor.value,
+      bold: styleBold.checked,
+      underline: styleUnderline.checked,
+      strikethrough: styleStrikethrough.checked,
+    };
+  }
+
+  function getEffectiveStyle(s) {
+    const out = {};
+    if (s.icon) out.icon = s.icon;
+    if (s.fontFamily) out.fontFamily = s.fontFamily;
+    if (s.fontSize) out.fontSize = s.fontSize;
+    if (s.color) out.color = s.color;
+    if (s.bgColor) out.bgColor = s.bgColor;
+    if (s.bold) out.bold = true;
+    if (s.underline) out.underline = true;
+    if (s.strikethrough) out.strikethrough = true;
+    return out;
+  }
+
+  async function saveCustomStyle(itemId, styleData) {
+    if (!currentTab) return;
+    try {
+      await api('PUT', `/api/${encodeURIComponent(currentTab)}/menu/${itemId}`, { style: styleData });
+      const item = findNodeById(menuTree, itemId);
+      if (item) {
+        if (Object.keys(styleData).length === 0) {
+          delete item.style;
+        } else {
+          item.style = styleData;
+        }
+      }
+      await reloadMenu();
+    } catch (e) {
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
+    }
+  }
+
+  function resetStyleFields() {
+    styleIcon.value = '';
+    styleFontFamily.value = '';
+    styleFontSize.value = '';
+    styleColor.value = '#000000';
+    styleBgColor.value = '#ffffff';
+    styleBold.checked = false;
+    styleUnderline.checked = false;
+    styleStrikethrough.checked = false;
+  }
+
+  $('#style-btn-ok').addEventListener('click', () => {
+    if (!styleItemId) return;
+    const data = collectStyleData();
+    const effective = getEffectiveStyle(data);
+    styleDialog.style.display = 'none';
+    saveCustomStyle(styleItemId, effective);
+  });
+
+  $('#style-btn-cancel').addEventListener('click', () => {
+    styleDialog.style.display = 'none';
+  });
+
+  $('#style-btn-reset').addEventListener('click', () => {
+    if (!styleItemId) return;
+    styleDialog.style.display = 'none';
+    saveCustomStyle(styleItemId, {});
+  });
+
+  styleDialog.querySelectorAll('.style-reset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.target;
+      if (target === 'color') {
+        styleColor.value = '#000000';
+      } else if (target === 'bg-color') {
+        styleBgColor.value = '#ffffff';
+      }
+    });
+  });
+
+  styleDialog.addEventListener('click', (e) => {
+    if (e.target === styleDialog) {
+      styleDialog.style.display = 'none';
+    }
   });
 
   async function showMoveToDialog(itemId) {

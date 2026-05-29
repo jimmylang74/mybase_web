@@ -124,6 +124,7 @@
   <div class="tree-ctx-item" data-action="move-to">移动到...</div>
   <div class="tree-ctx-sep"></div>
   <div class="tree-ctx-item" data-action="edit">编辑</div>
+  <div class="tree-ctx-item" data-action="custom-style">定制样式</div>
   <div class="tree-ctx-item" data-action="delete">删除</div>
 </div>
 
@@ -144,6 +145,68 @@
     <div id="dialog-buttons">
       <button id="dialog-ok">OK</button>
       <button id="dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Style Dialog -->
+<div id="style-dialog" style="display:none">
+  <div id="style-dialog-content">
+    <div id="style-dialog-header">定制样式</div>
+    <div id="style-dialog-body">
+      <div class="style-row">
+        <label>图标 (Emoji):</label>
+        <input type="text" id="style-icon" class="style-input-short" placeholder="如: 📁 🔖">
+      </div>
+      <div class="style-row">
+        <label>字体:</label>
+        <select id="style-font-family">
+          <option value="">默认</option>
+          <option value="Arial">Arial</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Verdana">Verdana</option>
+          <option value="SimSun">SimSun (宋体)</option>
+          <option value="Microsoft YaHei">Microsoft YaHei (微软雅黑)</option>
+          <option value="KaiTi">KaiTi (楷体)</option>
+        </select>
+      </div>
+      <div class="style-row">
+        <label>字号:</label>
+        <select id="style-font-size">
+          <option value="">默认</option>
+          <option value="12px">12px</option>
+          <option value="13px">13px</option>
+          <option value="14px">14px</option>
+          <option value="15px">15px</option>
+          <option value="16px">16px</option>
+          <option value="18px">18px</option>
+          <option value="20px">20px</option>
+          <option value="24px">24px</option>
+        </select>
+      </div>
+      <div class="style-row">
+        <label>文字颜色:</label>
+        <input type="color" id="style-color" value="#000000">
+        <button class="style-reset-btn" data-target="color">重置</button>
+      </div>
+      <div class="style-row">
+        <label>背景颜色:</label>
+        <input type="color" id="style-bg-color" value="#ffffff">
+        <button class="style-reset-btn" data-target="bg-color">重置</button>
+      </div>
+      <div class="style-row style-row-checkboxes">
+        <label>字体样式:</label>
+        <label class="style-check-label"><input type="checkbox" id="style-bold"> 加粗</label>
+        <label class="style-check-label"><input type="checkbox" id="style-underline"> 下划线</label>
+        <label class="style-check-label"><input type="checkbox" id="style-strikethrough"> 删除线</label>
+      </div>
+    </div>
+    <div id="style-dialog-footer">
+      <button id="style-btn-ok" class="style-btn style-btn-primary">确定</button>
+      <button id="style-btn-cancel" class="style-btn">取消</button>
+      <button id="style-btn-reset" class="style-btn style-btn-danger" style="margin-left:auto">重置样式</button>
     </div>
   </div>
 </div>
