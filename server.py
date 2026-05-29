@@ -557,11 +557,19 @@ def index_all_tabs():
                 index_tab(entry.name)
 
 
-def search_index(tab_name, query):
-    """Search within a single tab's index. Returns list of result dicts."""
+def search_index(tab_name, query, use_regex=False):
+    """Search within a single tab's index. Returns list of result dicts.
+
+    When *use_regex* is True, *query* is treated as a regular expression
+    pattern (``re.IGNORECASE``).  Raises ``ValueError`` on invalid regex.
+    """
     db_path = get_index_db_path(tab_name)
     if not db_path.exists():
         return []
+
+    if use_regex:
+        return _search_index_regex(tab_name, query, db_path)
+
     conn = sqlite3.connect(str(db_path))
     try:
         like_pattern = f'%{query}%'
@@ -593,13 +601,67 @@ def search_index(tab_name, query):
         conn.close()
 
 
-def search_all_tabs(query):
+def _search_index_regex(tab_name, pattern, db_path):
+    # Preprocess: split by unescaped |, trim whitespace on each sub-expression.
+    # This lets users type "abc | def" naturally instead of needing "abc|def".
+    parts = re.split(r'(?<!\\)\|', pattern)
+    if len(parts) > 1:
+        pattern = '|'.join(p.strip() for p in parts)
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        raise ValueError(f"无效的正则表达式: {e}")
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.execute(
+            "SELECT menu_item_id, label, content_text, menu_path FROM item_index "
+            "ORDER BY menu_path"
+        )
+        results = []
+        for row in cursor.fetchall():
+            content_text = row[2] or ''
+            label_match = regex.search(row[1])
+            content_match = regex.search(content_text) if content_text else None
+
+            if not label_match and not content_match:
+                continue
+
+            if label_match:
+                snippet = row[1]
+            elif content_match:
+                start = max(0, content_match.start() - 40)
+                end = min(len(content_text), content_match.end() + 40)
+                snippet = content_text[start:end]
+                if start > 0:
+                    snippet = '...' + snippet
+                if end < len(content_text):
+                    snippet = snippet + '...'
+            else:
+                snippet = content_text[:80]
+
+            results.append({
+                'menu_item_id': row[0],
+                'label': row[1],
+                'menu_path': row[3],
+                'snippet': snippet,
+                'tab': tab_name,
+            })
+            if len(results) >= 50:
+                break
+
+        return results
+    finally:
+        conn.close()
+
+
+def search_all_tabs(query, use_regex=False):
     """Search across all indexed knowledge bases."""
     results = []
     if index_db_dir.exists():
         for db_file in sorted(index_db_dir.glob("*.db")):
             tab_name = db_file.stem
-            results.extend(search_index(tab_name, query))
+            results.extend(search_index(tab_name, query, use_regex=use_regex))
     return results
 
 
@@ -1648,21 +1710,25 @@ def _get_visible_tab_names():
 def search():
     query = request.args.get('q', '').strip()
     tab = request.args.get('tab', '').strip()
+    use_regex = request.args.get('regex', '').lower() in ('true', '1', 'yes')
     if not query:
         return jsonify([])
 
     visible_tabs = _get_visible_tab_names()
 
-    if tab:
-        results = search_index(tab, query) if visible_tabs is None or tab in visible_tabs else []
-    else:
-        if visible_tabs is None:
-            results = search_all_tabs(query)
+    try:
+        if tab:
+            results = search_index(tab, query, use_regex=use_regex) if visible_tabs is None or tab in visible_tabs else []
         else:
-            results = []
-            for t in sorted(visible_tabs):
-                results.extend(search_index(t, query))
-    return jsonify(results)
+            if visible_tabs is None:
+                results = search_all_tabs(query, use_regex=use_regex)
+            else:
+                results = []
+                for t in sorted(visible_tabs):
+                    results.extend(search_index(t, query, use_regex=use_regex))
+        return jsonify(results)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/api/indexing-status')

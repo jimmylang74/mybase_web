@@ -1781,6 +1781,7 @@
   const searchInput = $('#search-input');
   const searchBtn = $('#btn-search');
   const searchGlobal = $('#search-global');
+  const searchRegex = $('#search-regex');
   const searchPanel = $('#search-results-panel');
   const searchSplitter = $('#search-splitter');
   const searchResultsBody = $('#search-results-body');
@@ -1799,10 +1800,15 @@
     searchSplitter.style.display = 'block';
     $('#search-results-column-headers').style.display = 'none';
 
+    const regexMode = searchRegex.checked;
+
     try {
       let url = `/api/search?q=${encodeURIComponent(query)}`;
       if (tabParam) {
         url += `&tab=${encodeURIComponent(tabParam)}`;
+      }
+      if (regexMode) {
+        url += '&regex=true';
       }
       const results = await api('GET', url);
 
@@ -1870,6 +1876,11 @@
       e.preventDefault();
       performSearch();
     }
+  });
+  searchRegex.addEventListener('change', () => {
+    searchInput.placeholder = searchRegex.checked
+      ? '输入正则表达式...'
+      : '输入搜索关键词...';
   });
 
   searchResultsClose.addEventListener('click', () => {
