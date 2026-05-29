@@ -23,7 +23,7 @@
             <div class="dropdown-item" id="dd-collapse-all">全部收起</div>
             <div class="dropdown-item" id="dd-expand-all">全部展开</div>
             <div class="dropdown-sep"></div>
-            <div class="dropdown-item" id="dd-add-root">新增 Root Item</div>
+            <div class="dropdown-item" id="dd-add-root">新增根菜单项</div>
           </div>
         </div>
       </div>
@@ -69,7 +69,8 @@
         <input type="text" id="search-input" class="search-input" placeholder="输入搜索关键词..." title="Search">
         <button class="tool-btn" id="btn-search" title="Search">🔍 搜索</button>
         <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
-        <button class="tool-btn" id="btn-new-tab" title="New Tab">+ Tab</button>
+        <button class="tool-btn" id="btn-new-tab" title="New Tab">新增知识库</button>
+        <button class="tool-btn" id="btn-backup" title="备份知识库">📦 备份知识库</button>
         <div class="kb-selector-wrap">
           <label class="kb-all-checkbox-label" id="kb-all-label" title="全部知识库">
             <input type="checkbox" id="kb-all-checkbox">
@@ -119,8 +120,8 @@
 
 <!-- Tree Right-Click Context Menu -->
 <div id="tree-context-menu" style="display:none">
-  <div class="tree-ctx-item" data-action="add-child">Add Child</div>
-  <div class="tree-ctx-item" data-action="add-sibling">Add</div>
+  <div class="tree-ctx-item" data-action="add-child">新增子菜单项</div>
+  <div class="tree-ctx-item" data-action="add-sibling">新增菜单项</div>
   <div class="tree-ctx-sep"></div>
   <div class="tree-ctx-item" data-action="move-up">上移</div>
   <div class="tree-ctx-item" data-action="move-down">下移</div>

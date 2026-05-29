@@ -24,6 +24,8 @@ import tempfile
 import threading
 import contextlib
 import multiprocessing as mp
+import zipfile
+from datetime import datetime
 
 
 from pathlib import Path
@@ -2158,6 +2160,156 @@ def get_tree(tab):
         return result
 
     return jsonify(flatten(menu))
+
+
+# ─── Backup Knowledge Base ───────────────────────────────────────────────
+
+_backup_tasks: dict = {}
+_backup_lock = threading.Lock()
+
+_BACKUP_EXCLUDE_DIRS = {'__pycache__', '.sisyphus'}
+_BACKUP_ROOT_EXCLUDE_DIRS = {'backups', 'data'}
+_BACKUP_ROOT_EXCLUDE_FILES = {'.gitignore', 'mybase.log'}
+
+
+def _get_backup_dir() -> Path:
+    backup_dir = Path(tempfile.gettempdir()) / 'mybase_backups'
+    backup_dir.mkdir(exist_ok=True)
+    return backup_dir
+
+
+def _walk_real_files(start_dir, arc_prefix, seen, root_skip_dirs, root_skip_files, skip_real_dir=None):
+    start = Path(start_dir)
+    for root, dirs, files in os.walk(start, followlinks=True):
+        root_path = Path(root)
+        rel = os.path.relpath(root, start)
+        kept = []
+        for d in dirs:
+            if d in _BACKUP_EXCLUDE_DIRS:
+                continue
+            real = (root_path / d).resolve()
+            if rel == '.' and d in root_skip_dirs:
+                continue
+            if skip_real_dir is not None and real == skip_real_dir:
+                continue
+            if real in seen:
+                continue
+            seen.add(real)
+            kept.append(d)
+        dirs[:] = kept
+        for f in files:
+            if rel == '.' and f in root_skip_files:
+                continue
+            if rel == '.':
+                arc = os.path.join(arc_prefix, f) if arc_prefix else f
+            else:
+                arc = os.path.join(arc_prefix, rel, f) if arc_prefix else os.path.join(rel, f)
+            yield str(root_path / f), arc
+
+
+def _iter_backup_files():
+    seen: set = set()
+    base_real = BASE_DIR.resolve()
+    data_real = data_dir.resolve()
+
+    yield from _walk_real_files(
+        BASE_DIR, '', seen,
+        root_skip_dirs=_BACKUP_ROOT_EXCLUDE_DIRS,
+        root_skip_files=_BACKUP_ROOT_EXCLUDE_FILES,
+        skip_real_dir=data_real,
+    )
+
+    if data_real.exists() and data_real != base_real:
+        yield from _walk_real_files(
+            data_dir, 'data', seen,
+            root_skip_dirs=set(),
+            root_skip_files=set(),
+        )
+
+
+def _cleanup_old_backups(backup_dir: Path, max_age_seconds: int = 3600):
+    now = time.time()
+    if backup_dir.exists():
+        for f in backup_dir.iterdir():
+            if f.suffix == '.zip' and f.name.startswith('mybase-'):
+                if now - f.stat().st_mtime > max_age_seconds:
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+
+
+@app.route('/api/backup', methods=['POST'])
+def start_backup():
+    task_id = str(uuid.uuid4())
+    backup_dir = _get_backup_dir()
+    _cleanup_old_backups(backup_dir)
+
+    total = sum(1 for _ in _iter_backup_files())
+
+    with _backup_lock:
+        _backup_tasks[task_id] = {
+            'total': total,
+            'current': 0,
+            'done': False,
+            'filename': None,
+            'error': None,
+        }
+
+    def _do_backup():
+        try:
+            now = datetime.now()
+            filename = f"mybase-{now.strftime('%Y%m%d-%H%M%S')}.zip"
+            zip_path = backup_dir / filename
+            with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
+                for file_path, arcname in _iter_backup_files():
+                    try:
+                        zf.write(file_path, arcname)
+                    except Exception:
+                        pass
+                    with _backup_lock:
+                        _backup_tasks[task_id]['current'] += 1
+            with _backup_lock:
+                _backup_tasks[task_id]['done'] = True
+                _backup_tasks[task_id]['filename'] = filename
+        except Exception as e:
+            with _backup_lock:
+                _backup_tasks[task_id]['error'] = str(e)
+                _backup_tasks[task_id]['done'] = True
+
+    thread = threading.Thread(target=_do_backup, daemon=True)
+    thread.start()
+
+    return jsonify({'task_id': task_id, 'total': total})
+
+
+@app.route('/api/backup/status/<task_id>')
+def get_backup_status(task_id):
+    with _backup_lock:
+        task = _backup_tasks.get(task_id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+    return jsonify({
+        'done': task['done'],
+        'total': task['total'],
+        'current': task['current'],
+        'filename': task['filename'],
+        'error': task['error'],
+    })
+
+
+@app.route('/api/backup/download/<task_id>')
+def download_backup(task_id):
+    with _backup_lock:
+        task = _backup_tasks.get(task_id)
+    if not task or not task['done']:
+        return jsonify({'error': '备份未就绪'}), 404
+    if task['error']:
+        return jsonify({'error': task['error']}), 500
+    filename = task['filename']
+    if not filename:
+        return jsonify({'error': '备份文件不存在'}), 404
+    return send_from_directory(str(_get_backup_dir()), filename, as_attachment=True)
 
 
 if __name__ == '__main__':

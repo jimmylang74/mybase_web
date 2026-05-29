@@ -936,6 +936,70 @@
     `);
   });
 
+  // ─── Backup Knowledge Base ────────────────────────────────────────────
+
+  $('#btn-backup').addEventListener('click', async () => {
+    const overlay = $('#dialog-overlay');
+    $('#dialog-title').textContent = '备份知识库';
+    $('#dialog-content').innerHTML = `
+      <div id="backup-progress" style="text-align:center;padding:20px">
+        <div style="margin-bottom:12px;font-size:14px;color:#555">正在备份知识库，请稍候...</div>
+        <div style="background:#eee;border-radius:4px;height:20px;overflow:hidden">
+          <div id="backup-progress-bar" style="background:#3498db;height:100%;width:0%;transition:width 0.3s"></div>
+        </div>
+        <div id="backup-progress-text" style="margin-top:8px;font-size:12px;color:#888">正在扫描文件...</div>
+      </div>
+    `;
+    $('#dialog-ok').style.display = 'none';
+    $('#dialog-cancel').textContent = '后台运行';
+    overlay.style.display = 'flex';
+
+    try {
+      const { task_id, total } = await api('POST', '/api/backup');
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await api('GET', `/api/backup/status/${task_id}`);
+          const pct = total > 0 ? Math.min(100, Math.round(status.current / total * 100)) : 0;
+          const bar = $('#backup-progress-bar');
+          const txt = $('#backup-progress-text');
+          if (bar) bar.style.width = pct + '%';
+          if (txt) txt.textContent = `正在打包... (${status.current}/${total} 个文件)`;
+
+          if (status.done) {
+            clearInterval(pollInterval);
+            overlay.style.display = 'none';
+            $('#dialog-ok').style.display = '';
+            $('#dialog-cancel').textContent = 'Cancel';
+
+            if (status.error) {
+              showDialog('备份失败', `<p>${escapeHtml(status.error)}</p>`);
+              return;
+            }
+
+            const a = document.createElement('a');
+            a.href = `/api/backup/download/${task_id}`;
+            a.download = status.filename || 'mybase-backup.zip';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
+        } catch (e) {
+          clearInterval(pollInterval);
+          overlay.style.display = 'none';
+          $('#dialog-ok').style.display = '';
+          $('#dialog-cancel').textContent = 'Cancel';
+          showDialog('备份失败', `<p>${escapeHtml(e.message)}</p>`);
+        }
+      }, 300);
+    } catch (e) {
+      overlay.style.display = 'none';
+      $('#dialog-ok').style.display = '';
+      $('#dialog-cancel').textContent = 'Cancel';
+      showDialog('备份失败', `<p>${escapeHtml(e.message)}</p>`);
+    }
+  });
+
   // ─── Toolbar Dropdown ──────────────────────────────────────────────────
 
   $('#btn-toolbar-menu').addEventListener('click', (e) => {
