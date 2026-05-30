@@ -1539,6 +1539,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/help')
+def help_page():
+    """Serve the comprehensive help documentation page."""
+    return render_template('help.html')
+
+
 @app.route('/api/tabs')
 def list_tabs():
     tabs = set()
@@ -2356,7 +2362,7 @@ if __name__ == '__main__':
         init_common_db()
         print("  Done.")
         print("=" * 60)
-        app.run(host='0.0.0.0', port=server_port, debug=False)
+        app.run(host='0.0.0.0', port=server_port, debug=False, threaded=True)
     except KeyboardInterrupt:
         _shutdown_requested.set()
         if ocr_process_pool is not None:

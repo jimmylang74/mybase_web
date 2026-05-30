@@ -922,18 +922,7 @@
   // ─── Help ──────────────────────────────────────────────────────────────
 
   $('#tab-help').addEventListener('click', () => {
-    showDialog('Help', `
-      <div style="font-size:13px;line-height:1.8">
-        <p><b>Editor</b></p>
-        <p>Ctrl+S — Save current content</p>
-        <p><b>Tree</b></p>
-        <p>Right-click on any item for context menu</p>
-        <p>Click item name twice to rename inline</p>
-        <p><b>Tabs</b></p>
-        <p>Right-click on a tab to delete it</p>
-        <p>+ Tab button in toolbar creates a new tab</p>
-      </div>
-    `);
+    window.open('/help', '_blank');
   });
 
   // ─── Backup Knowledge Base ────────────────────────────────────────────
@@ -1863,6 +1852,7 @@
     searchPanel.style.display = 'flex';
     searchSplitter.style.display = 'block';
     $('#search-results-column-headers').style.display = 'none';
+    $('#search-results-title').textContent = '搜索结果';
 
     const regexMode = searchRegex.checked;
 
@@ -1876,6 +1866,7 @@
       }
       const results = await api('GET', url);
 
+      $('#search-results-title').textContent = `搜索结果 (${results.length})`;
       if (results.length === 0) {
         searchResultsBody.innerHTML = '<div class="search-empty">未找到匹配结果</div>';
         return;
