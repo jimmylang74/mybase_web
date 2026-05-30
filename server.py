@@ -144,20 +144,35 @@ ocr_disabled = False
 ocr_debug = False
 workers_ocr = 8
 workers_menu = 8
-_ocr_logger = None
+_file_logger = None
 
 
 def ocr_log(msg: str):
-    """Write a timestamped OCR debug message to mybase.log.
-    No-op unless --debug is enabled at startup.
+    """Write a timestamped debug message to mybase.log.
+    No-op when --no-debug is active.
     Thread-safe via logging.FileHandler.
     """
-    if _ocr_logger is not None:
-        _ocr_logger.info(msg)
+    if _file_logger is not None and ocr_debug:
+        _file_logger.info(msg)
         # Flush immediately so the log is visible in real time
         # (especially important on Windows where the default file
         # buffering delays writes until process exit).
-        for h in _ocr_logger.handlers:
+        for h in _file_logger.handlers:
+            h.flush()
+
+
+def log_error(func_name: str, error: Exception, extra: str = ""):
+    """Log an exception with function name to screen **and** mybase.log.
+    Always writes to both screen and log file regardless of --no-debug.
+    """
+    err_msg = f"{func_name}: {error}"
+    if extra:
+        err_msg += f" ({extra})"
+    print(f"  [ERROR] {err_msg}", flush=True)
+    # Write directly to file (bypasses ocr_log's debug guard)
+    if _file_logger is not None:
+        _file_logger.info(f"[ERROR] {err_msg}")
+        for h in _file_logger.handlers:
             h.flush()
 
 
@@ -175,13 +190,13 @@ def parse_args():
                         help='Number of OCR worker processes (default: 8, each owns 1 PaddleOCR instance; Windows limited to 1)')
     parser.add_argument('--workers-menu', type=int, default=8,
                         help='Number of parallel menu item indexing workers (default: 8; Windows limited to 1)')
-    parser.add_argument('--debug', action='store_true',
-                        help='Enable debug mode: write OCR inference logs to mybase.log with timestamps.')
+    parser.add_argument('--no-debug', action='store_false', dest='debug', default=True,
+                        help='Disable verbose debug logging to mybase.log.')
     return parser.parse_args()
 
 
 def init_config():
-    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, workers_ocr, workers_menu, ocr_debug, _ocr_logger
+    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, workers_ocr, workers_menu, ocr_debug, _file_logger
     args = parse_args()
     data_dir = BASE_DIR / args.data
     mybase_dir = data_dir / 'mybase'
@@ -203,16 +218,17 @@ def init_config():
     data_dir.mkdir(exist_ok=True)
     (data_dir / 'db').mkdir(exist_ok=True)
     mybase_dir.mkdir(exist_ok=True)
+    # Initialize file logger for mybase.log (always created for error logging)
+    _file_logger = logging.getLogger('mybase')
+    _file_logger.setLevel(logging.DEBUG)
+    _file_logger.handlers.clear()
+    log_path = BASE_DIR / 'mybase.log'
+    handler = logging.FileHandler(str(log_path), mode='a', encoding='utf-8')
+    handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    _file_logger.addHandler(handler)
     if ocr_debug:
-        _ocr_logger = logging.getLogger('ocr_debug')
-        _ocr_logger.setLevel(logging.DEBUG)
-        _ocr_logger.handlers.clear()
-        log_path = BASE_DIR / 'mybase.log'
-        handler = logging.FileHandler(str(log_path), mode='a', encoding='utf-8')
-        handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-        _ocr_logger.addHandler(handler)
-        _ocr_logger.info(f"========== OCR Session Start (workers-ocr={workers_ocr}, workers-menu={workers_menu}) ==========")
-        print(f"  Debug log: {log_path}")
+        _file_logger.info(f"========== Session Start (workers-ocr={workers_ocr}, workers-menu={workers_menu}) ==========")
+    print(f"  Log file: {log_path}")
 
 
 def get_tab_path(tab_name):
@@ -498,7 +514,7 @@ def index_tab(tab_name):
                 results.append((item['id'], item['label'], text, path))
             return item['label']
         except Exception as e:
-            print(f"  ERROR indexing item '{item['label']}': {e}", flush=True)
+            log_error("index_tab._process", e, item['label'])
             return None
 
     if workers_menu <= 1:
@@ -524,7 +540,7 @@ def index_tab(tab_name):
                 try:
                     label = future.result()
                 except Exception as e:
-                    print(f"  ERROR in menu indexing thread: {e}", flush=True)
+                    log_error("index_tab.worker", e)
                     continue
                 if label is not None:
                     _progress[0] += 1
@@ -787,7 +803,7 @@ def ensure_indexes():
             try:
                 index_tab(tab)
             except Exception as e:
-                print(f"  ERROR creating index for {tab}: {e}")
+                log_error("ensure_indexes", e, f"creating index for {tab}")
 
     # ── Force-index (if requested) ──
     if force_index_target:
@@ -799,13 +815,13 @@ def ensure_indexes():
                 try:
                     index_tab(tab)
                 except Exception as e:
-                    print(f"  ERROR reindexing {tab}: {e}")
+                    log_error("ensure_indexes", e, f"reindexing {tab}")
         elif force_index_target in tabs:
             print(f"  Force reindexing: {force_index_target}")
             try:
                 index_tab(force_index_target)
             except Exception as e:
-                print(f"  ERROR reindexing {force_index_target}: {e}")
+                log_error("ensure_indexes", e, f"reindexing {force_index_target}")
         else:
             print(f"  Warning: Knowledge base '{force_index_target}' not found, skipping.")
 
@@ -816,7 +832,9 @@ def ensure_indexes():
 # the GIL contention of threads and the fork-safety issues of sharing
 # instances across processes.
 
+#PaddleOCR 3.5 using below , and set PADDLE_PDX_CACHE_HOME
 OCR_MODEL_DIR = BASE_DIR / 'models' / 'ocr'
+
 ocr_process_pool: 'OCRProcessPool | None' = None
 
 
@@ -856,8 +874,9 @@ def _ocr_worker(task_queue, result_queue):
 
     try:
         _ocr = _ocr_worker_init()
-    except BaseException:
-        return  # PaddleOCR init failed, nothing we can do
+    except BaseException as e:
+        log_error("_ocr_worker.init", e, "PaddleOCR init failed, OCR disabled")
+        return
 
     while True:
         try:
@@ -879,6 +898,7 @@ def _ocr_worker(task_queue, result_queue):
                         texts.extend(rec_texts)
             result_queue.put((task_id, ' '.join(texts)))
         except BaseException:
+            # OCR prediction failed for this image; return empty text
             result_queue.put((task_id, ''))
 
 
@@ -1109,7 +1129,7 @@ def extract_text_from_html_images(html_content, tab_name):
                 image_paths.append(Path(temp_path))
                 temp_files.append(temp_path)
             except Exception as e:
-                print(f"  Base64 decode error: {e}")
+                log_error("extract_text_from_html_images.decode", e)
             continue
 
         # File-based image
@@ -1136,7 +1156,7 @@ def extract_text_from_html_images(html_content, tab_name):
                 os.chmod(tp, stat.S_IWRITE)
                 os.unlink(tp)
         except Exception as e:
-            print(f"  Temp file cleanup error: {e}")
+            log_error("extract_text_from_html_images.cleanup", e)
 
     return ' '.join(t for t in texts if t).strip()
 
