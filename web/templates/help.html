@@ -162,6 +162,7 @@
     <a href="#index">5. Index System</a>
     <a href="#server">6. Server Commands</a>
     <a href="#tips">7. Tips & Tricks</a>
+    <a href="#export">8. Export</a>
   </div>
 
   <!-- ============================================================ -->
@@ -185,6 +186,7 @@
     <tr><td>Move Up</td><td>Move the item up in the list</td></tr>
     <tr><td>Move Down</td><td>Move the item down in the list</td></tr>
     <tr><td>Move To...</td><td>Move item to a different parent</td></tr>
+    <tr><td>Export</td><td>Export this item and its children as PDF or ZIP</td></tr>
     <tr><td>Edit</td><td>Rename the current menu item</td></tr>
     <tr><td>Custom Style</td><td>Set icon (Emoji), font, size, color, bold style</td></tr>
     <tr><td>Delete</td><td>Delete this item and all its children (requires confirmation)</td></tr>
@@ -425,6 +427,28 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <h3>7.5 External Docs</h3>
   <p>See the <code>README.md</code> for full documentation. The help page is also available via the <strong>"?"</strong> button.</p>
 
+  <!-- ============================================================ -->
+  <h2 id="export">8. Export</h2>
+  <p>The system provides flexible export functionality, supporting PDF and ZIP formats at two granularity levels.</p>
+
+  <h3>8.1 Tab-Level Export</h3>
+  <p><strong>Right-click</strong> a tab and choose <strong>"Export"</strong> → select format:</p>
+  <ul>
+    <li><strong>PDF</strong> — Recursively collects all menu items' content under the current KB and merges them into a single PDF document. Items are indented by depth. Uses NotoSansSC font for CJK character support.</li>
+    <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code>, and all other files.</li>
+  </ul>
+
+  <h3>8.2 Menu Item-Level Export</h3>
+  <p><strong>Right-click</strong> a tree menu item and choose <strong>"Export"</strong> → select format:</p>
+  <ul>
+    <li><strong>PDF</strong> — Exports the selected item and all its children into one PDF, arranged by hierarchy depth.</li>
+    <li><strong>ZIP</strong> — Generates a standalone HTML page containing the entire subtree content (with inline JSON data), copies referenced images to <code>images/</code>, and packages as a ZIP. Unzip and open <code>index.html</code> to browse offline.</li>
+  </ul>
+
+  <div class="tip">
+    <strong>Tip:</strong> PDF export requires <code>pdf_fonts/NotoSansSC-Regular.ttf</code>. If missing, Courier monospace font is used as fallback.
+  </div>
+
 {% else %}
   <h1>知识库 KBase {{ version }} 使用帮助</h1>
   <p style="color:#888;margin-bottom:24px">中文知识库管理系统 &mdash; 帮助文档 (by Jimmy Lang, jimmylang1974@126.com)</p>
@@ -438,6 +462,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <a href="#index">五、索引系统</a>
     <a href="#server">六、Server.py 命令行</a>
     <a href="#tips">七、使用技巧</a>
+    <a href="#export">八、导出功能</a>
   </div>
 
   <!-- ============================================================ -->
@@ -462,6 +487,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <tr><td>上移</td><td>将菜单项在同级列表中向上移动一位</td></tr>
     <tr><td>下移</td><td>将菜单项在同级列表中向下移动一位</td></tr>
     <tr><td>移动到...</td><td>弹出目标选择树，将项目移动到指定位置</td></tr>
+    <tr><td>导出</td><td>导出当前菜单项及其子项为 PDF 或 ZIP 文件</td></tr>
     <tr><td>编辑</td><td>重命名当前菜单项</td></tr>
     <tr><td>定制样式</td><td>设置图标（Emoji）、字体、字号、颜色、加粗等样式</td></tr>
     <tr><td>删除</td><td>删除当前菜单项及其所有子项（需确认）</td></tr>
@@ -565,6 +591,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <table>
     <tr><th>功能</th><th>说明</th></tr>
     <tr><td>编辑</td><td>重命名当前 Tab</td></tr>
+    <tr><td>导出</td><td>导出当前知识库为 PDF 或 ZIP 文件</td></tr>
     <tr><td>关闭</td><td>隐藏当前 Tab（可在"全部知识库"下拉菜单中重新显示）</td></tr>
     <tr><td>删除</td><td>永久删除 Tab 及其所有数据（需确认）</td></tr>
   </table>
@@ -805,6 +832,29 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
     <li>在 <code>web/</code> 目录下创建更多 HTML 帮助文档，通过链接引用</li>
     <li>添加 <code>web/</code> 目录下的其他静态资源（图片、样式等）来丰富帮助文档</li>
   </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="export">八、导出功能</h2>
+
+  <p>系统提供灵活的导出功能，支持将知识库内容导出为 PDF 或 ZIP 格式。</p>
+
+  <h3>8.1 Tab 级导出</h3>
+  <p>在 Tab 标签上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
+  <ul>
+    <li><strong>PDF</strong> — 将当前知识库下所有菜单项的内容递归收集，合并生成一个 PDF 文档。菜单项按深度缩进，使用 NotoSansSC 字体支持中文显示。</li>
+    <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code> 等所有文件。</li>
+  </ul>
+
+  <h3>8.2 菜单项级导出</h3>
+  <p>在树形菜单项上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
+  <ul>
+    <li><strong>PDF</strong> — 导出该菜单项及其所有子项的内容，合并为一个 PDF，按层级深度缩进排列。</li>
+    <li><strong>ZIP</strong> — 生成一个独立的 HTML 页面，包含该子树所有内容（内嵌 JSON 数据），并复制引用的图片到 <code>images/</code> 目录，打包为 ZIP 文件。解压后可直接打开 <code>index.html</code> 浏览。</li>
+  </ul>
+
+  <div class="tip">
+    <strong>提示：</strong> PDF 导出需要 <code>pdf_fonts/NotoSansSC-Regular.ttf</code> 字体文件，缺失时自动使用 Courier 等宽字体代替。
+  </div>
 
   <hr style="margin:40px 0;border:none;border-top:1px solid #ddd;">
   <p style="text-align:center;color:#999;font-size:12px">{% if lang == 'en' %}KBase {{ version }} &mdash; Help Documentation{% else %}知识库KBase {{ version }} &mdash; 帮助文档{% endif %}</p>

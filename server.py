@@ -148,6 +148,8 @@ workers_ocr = 8
 workers_menu = 8
 _file_logger = None
 
+#this var define the version of this software
+#any feature added or modified, be careful not to forget to update this var
 version = 'v3.0.1'
 
 
@@ -2246,7 +2248,7 @@ _backup_lock = threading.Lock()
 
 _BACKUP_EXCLUDE_DIRS = {'__pycache__', '.sisyphus'}
 _BACKUP_ROOT_EXCLUDE_DIRS = {'backups', 'data'}
-_BACKUP_ROOT_EXCLUDE_FILES = {'.gitignore', 'mybase.log'}
+_BACKUP_ROOT_EXCLUDE_FILES = {'.gitignore', 'mybase.log', 'nohup.out'}
 
 
 def _get_backup_dir() -> Path:
