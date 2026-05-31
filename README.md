@@ -33,6 +33,7 @@ source venv/bin/activate    # Linux / macOS
 venv\Scripts\activate       # Windows
 
 # 3. 安装依赖
+windows 下如果没有安装过python，请先安装python-3.10.11-amd64.ex
 pip install -r requirements.txt
 ```
 

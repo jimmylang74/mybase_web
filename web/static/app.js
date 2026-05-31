@@ -1061,6 +1061,16 @@
     if (top < 0) top = 8;
     menuEl.style.left = left + 'px';
     menuEl.style.top = top + 'px';
+
+    // Flip submenus to the left if menu is near the right edge
+    const nearRight = (left + menuW + 100) > vw;
+    menuEl.querySelectorAll('.tree-ctx-export, .tab-ctx-export').forEach((el) => {
+      const submenu = el.querySelector('.ctx-submenu');
+      if (submenu) {
+        submenu.style.left = nearRight ? 'auto' : '';
+        submenu.style.right = nearRight ? '100%' : '';
+      }
+    });
   }
 
   // ─── Tree Right-Click Context Menu ─────────────────────────────────────
@@ -1754,6 +1764,55 @@
     tabCtxName = name;
     positionMenuAtEvent(tabCtxMenu, e);
   }
+
+  function triggerDownload(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function handleTabExport(action) {
+    const name = tabCtxName;
+    tabCtxMenu.style.display = 'none';
+    if (!name) return;
+
+    const encodedName = encodeURIComponent(name);
+    if (action === 'export-tab-pdf') {
+      triggerDownload(`/api/${encodedName}/export/pdf`);
+    } else if (action === 'export-tab-zip') {
+      triggerDownload(`/api/${encodedName}/export/zip`);
+    }
+  }
+
+  function handleTreeExport(action) {
+    const id = treeCtxItemId;
+    treeCtxMenu.style.display = 'none';
+    if (!id || !currentTab) return;
+
+    const encodedTab = encodeURIComponent(currentTab);
+    if (action === 'export-tree-pdf') {
+      triggerDownload(`/api/${encodedTab}/export/pdf/${id}`);
+    } else if (action === 'export-tree-zip') {
+      triggerDownload(`/api/${encodedTab}/export/zip/${id}`);
+    }
+  }
+
+  $$('#tab-context-menu .ctx-submenu-item').forEach((item) => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleTabExport(item.dataset.action);
+    });
+  });
+
+  $$('#tree-context-menu .ctx-submenu-item').forEach((item) => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleTreeExport(item.dataset.action);
+    });
+  });
 
   $$('#tab-context-menu .tab-ctx-item').forEach((item) => {
     item.addEventListener('click', () => {

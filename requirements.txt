@@ -13,5 +13,8 @@ paddleocr>=3.0.0
 # PaddleX 模型管理依赖
 paddlex>=3.0.0
 
+# PDF 导出
+fpdf2>=2.8.0
+
 # Windows 平台依赖（可选）
 click>=8.0.0
