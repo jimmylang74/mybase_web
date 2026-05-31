@@ -1450,6 +1450,20 @@ def set_font_config(font_family, font_size):
         conn.close()
 
 
+def get_system_config(name):
+    if not common_db.exists():
+        return None
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT value FROM system_config WHERE name = ?", (name,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
 # ─── End Common Database ──────────────────────────────────────────────────
 
 
@@ -1536,7 +1550,8 @@ def delete_menu_item(items, item_id):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    version = get_system_config('version') or 'v2.0'
+    return render_template('index.html', version=version)
 
 
 @app.route('/help')
@@ -2204,7 +2219,7 @@ def _get_backup_dir() -> Path:
     return backup_dir
 
 
-def _walk_real_files(start_dir, arc_prefix, seen, root_skip_dirs, root_skip_files, skip_real_dir=None):
+def _walk_real_files(start_dir, arc_prefix, seen, root_skip_dirs, root_skip_files, skip_real_dir=None, dir_filter=None):
     start = Path(start_dir)
     for root, dirs, files in os.walk(start, followlinks=True):
         root_path = Path(root)
@@ -2219,6 +2234,8 @@ def _walk_real_files(start_dir, arc_prefix, seen, root_skip_dirs, root_skip_file
             if skip_real_dir is not None and real == skip_real_dir:
                 continue
             if real in seen:
+                continue
+            if dir_filter and not dir_filter(rel, d):
                 continue
             seen.add(real)
             kept.append(d)
@@ -2246,10 +2263,18 @@ def _iter_backup_files():
     )
 
     if data_real.exists() and data_real != base_real:
+        visibility = get_tab_visibility()
+
+        def _data_dir_filter(rel, dirname):
+            if rel == 'mybase':
+                return visibility.get(dirname, True)
+            return True
+
         yield from _walk_real_files(
             data_dir, 'data', seen,
             root_skip_dirs=set(),
             root_skip_files=set(),
+            dir_filter=_data_dir_filter,
         )
 
 
