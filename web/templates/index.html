@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>知识库KBase {{ version }}</title>
+<title data-i18n-title-template="page_title" data-version="{{ version }}">知识库KBase {{ version }}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -12,6 +12,7 @@
       <span id="tab-scroll-left" class="tab-scroll-btn">&#x2039;</span>
       <div id="tabs"></div>
       <span id="tab-scroll-right" class="tab-scroll-btn">&#x203A;</span>
+      <div id="tab-settings" title="Settings">⚙</div>
       <div id="tab-help" title="Help">?</div>
     </div>
   <div id="main-content">
@@ -20,10 +21,10 @@
         <div id="toolbar-dropdown-wrap">
           <button id="btn-toolbar-menu" title="Menu">☰ Menu</button>
           <div id="toolbar-dropdown" style="display:none">
-            <div class="dropdown-item" id="dd-collapse-all">全部收起</div>
-            <div class="dropdown-item" id="dd-expand-all">全部展开</div>
+            <div class="dropdown-item" id="dd-collapse-all" data-i18n="collapse_all">全部收起</div>
+            <div class="dropdown-item" id="dd-expand-all" data-i18n="expand_all">全部展开</div>
             <div class="dropdown-sep"></div>
-            <div class="dropdown-item" id="dd-add-root">新增根菜单项</div>
+            <div class="dropdown-item" id="dd-add-root" data-i18n="add_root_menu">新增根菜单项</div>
           </div>
         </div>
       </div>
@@ -61,20 +62,20 @@
         <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
         <span class="separator"></span>
         <label class="search-checkbox-label" title="Search all knowledge bases">
-          <input type="checkbox" id="search-global"> 全局搜索
+          <input type="checkbox" id="search-global"> <span data-i18n="global_search">全局搜索</span>
         </label>
         <label class="search-checkbox-label" title="Use regular expression">
-          <input type="checkbox" id="search-regex"> 正则
+          <input type="checkbox" id="search-regex"> <span data-i18n="regex">正则</span>
         </label>
-        <input type="text" id="search-input" class="search-input" placeholder="输入搜索关键词..." title="Search">
-        <button class="tool-btn" id="btn-search" title="Search">🔍 搜索</button>
+        <input type="text" id="search-input" class="search-input" data-i18n-placeholder="search_placeholder" placeholder="输入搜索关键词..." title="Search">
+        <button class="tool-btn" id="btn-search" title="Search">🔍 <span data-i18n="search">搜索</span></button>
         <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
-        <button class="tool-btn" id="btn-new-tab" title="New Tab">新增知识库</button>
-        <button class="tool-btn" id="btn-backup" title="备份知识库">📦 备份知识库</button>
+        <button class="tool-btn" id="btn-new-tab" title="New Tab" data-i18n="new_kb">新增知识库</button>
+        <button class="tool-btn" id="btn-backup" data-i18n-title="backup_kb" title="备份知识库">📦 <span data-i18n="backup_kb">备份知识库</span></button>
         <div class="kb-selector-wrap">
-          <label class="kb-all-checkbox-label" id="kb-all-label" title="全部知识库">
+          <label class="kb-all-checkbox-label" id="kb-all-label" data-i18n-title="all_kb" title="全部知识库">
             <input type="checkbox" id="kb-all-checkbox">
-            <span class="kb-all-text">全部知识库</span>
+            <span class="kb-all-text" data-i18n="all_kb">全部知识库</span>
           </label>
           <span class="kb-dropdown-arrow" id="kb-dropdown-arrow">▾</span>
           <div id="kb-dropdown" style="display:none"></div>
@@ -91,13 +92,13 @@
   <div id="search-splitter" style="display:none"></div>
   <div id="search-results-panel" style="display:none">
     <div id="search-results-header">
-      <span id="search-results-title">搜索结果</span>
-      <span id="search-results-close" title="关闭">✕</span>
+      <span id="search-results-title" data-i18n="search_results">搜索结果</span>
+      <span id="search-results-close" data-i18n-title="close" title="关闭">✕</span>
     </div>
     <div id="search-results-column-headers" style="display:none">
-      <span class="col-tab">知识库<span class="col-resize-handle"></span></span>
-      <span class="col-path">路径</span>
-      <span class="col-snippet">内容简述<span class="col-resize-handle"></span></span>
+      <span class="col-tab"><span data-i18n="kb">知识库</span><span class="col-resize-handle"></span></span>
+      <span class="col-path" data-i18n="path">路径</span>
+      <span class="col-snippet"><span data-i18n="content_summary">内容简述</span><span class="col-resize-handle"></span></span>
     </div>
     <div id="search-results-body"></div>
   </div>
@@ -120,39 +121,39 @@
 
 <!-- Tree Right-Click Context Menu -->
 <div id="tree-context-menu" style="display:none">
-  <div class="tree-ctx-item" data-action="add-child">新增子菜单项</div>
-  <div class="tree-ctx-item" data-action="add-sibling">新增菜单项</div>
+  <div class="tree-ctx-item" data-action="add-child" data-i18n="add_child_menu">新增子菜单项</div>
+  <div class="tree-ctx-item" data-action="add-sibling" data-i18n="add_menu_item">新增菜单项</div>
   <div class="tree-ctx-sep"></div>
-  <div class="tree-ctx-item" data-action="move-up">上移</div>
-  <div class="tree-ctx-item" data-action="move-down">下移</div>
-  <div class="tree-ctx-item" data-action="move-to">移动到...</div>
+  <div class="tree-ctx-item" data-action="move-up" data-i18n="move_up">上移</div>
+  <div class="tree-ctx-item" data-action="move-down" data-i18n="move_down">下移</div>
+  <div class="tree-ctx-item" data-action="move-to" data-i18n="move_to">移动到...</div>
   <div class="tree-ctx-sep"></div>
-  <div class="tree-ctx-item" data-action="edit">编辑</div>
-  <div class="tree-ctx-item" data-action="custom-style">定制样式</div>
-  <div class="tree-ctx-item tree-ctx-export" data-action="export">导出
+  <div class="tree-ctx-item" data-action="edit" data-i18n="edit">编辑</div>
+  <div class="tree-ctx-item" data-action="custom-style" data-i18n="custom_style">定制样式</div>
+  <div class="tree-ctx-item tree-ctx-export" data-action="export"><span data-i18n="export">导出</span>
     <div class="ctx-submenu">
       <div class="ctx-submenu-item" data-action="export-tree-pdf">PDF</div>
       <div class="ctx-submenu-item" data-action="export-tree-zip">zip</div>
     </div>
   </div>
   <div class="tree-ctx-sep"></div>
-  <div class="tree-ctx-item" data-action="delete">删除</div>
+  <div class="tree-ctx-item" data-action="delete" data-i18n="delete">删除</div>
 </div>
 
 <!-- Tab Right-Click Context Menu -->
 <div id="tab-context-menu" style="display:none">
-  <div class="tab-ctx-item" data-action="edit-tab">编辑</div>
+  <div class="tab-ctx-item" data-action="edit-tab" data-i18n="edit">编辑</div>
   <div class="tab-ctx-sep"></div>
-  <div class="tab-ctx-item tab-ctx-export" data-action="export">导出
+  <div class="tab-ctx-item tab-ctx-export" data-action="export"><span data-i18n="export">导出</span>
     <div class="ctx-submenu">
       <div class="ctx-submenu-item" data-action="export-tab-pdf">PDF</div>
       <div class="ctx-submenu-item" data-action="export-tab-zip">zip</div>
     </div>
   </div>
   <div class="tab-ctx-sep"></div>
-  <div class="tab-ctx-item" data-action="close-tab">关闭</div>
+  <div class="tab-ctx-item" data-action="close-tab" data-i18n="close">关闭</div>
   <div class="tab-ctx-sep"></div>
-  <div class="tab-ctx-item" data-action="delete-tab">删除</div>
+  <div class="tab-ctx-item" data-action="delete-tab" data-i18n="delete">删除</div>
 </div>
 
 <!-- Dialog Overlay -->
@@ -170,16 +171,16 @@
 <!-- Custom Style Dialog -->
 <div id="style-dialog" style="display:none">
   <div id="style-dialog-content">
-    <div id="style-dialog-header">定制样式</div>
+    <div id="style-dialog-header" data-i18n="custom_style">定制样式</div>
     <div id="style-dialog-body">
       <div class="style-row">
-        <label>图标 (Emoji):</label>
-        <input type="text" id="style-icon" class="style-input-short" placeholder="如: 📁 🔖">
+        <label data-i18n="icon_emoji">图标 (Emoji):</label>
+        <input type="text" id="style-icon" class="style-input-short" data-i18n-placeholder="icon_placeholder" placeholder="如: 📁 🔖">
       </div>
       <div class="style-row">
-        <label>字体:</label>
+        <label data-i18n="font">字体:</label>
         <select id="style-font-family">
-          <option value="">默认</option>
+          <option value="" data-i18n="default">默认</option>
           <option value="Arial">Arial</option>
           <option value="Times New Roman">Times New Roman</option>
           <option value="Courier New">Courier New</option>
@@ -191,9 +192,9 @@
         </select>
       </div>
       <div class="style-row">
-        <label>字号:</label>
+        <label data-i18n="font_size">字号:</label>
         <select id="style-font-size">
-          <option value="">默认</option>
+          <option value="" data-i18n="default">默认</option>
           <option value="12px">12px</option>
           <option value="13px">13px</option>
           <option value="14px">14px</option>
@@ -205,26 +206,50 @@
         </select>
       </div>
       <div class="style-row">
-        <label>文字颜色:</label>
+        <label data-i18n="text_color">文字颜色:</label>
         <input type="color" id="style-color" value="#000000">
-        <button class="style-reset-btn" data-target="color">重置</button>
+        <button class="style-reset-btn" data-target="color" data-i18n="reset">重置</button>
       </div>
       <div class="style-row">
-        <label>背景颜色:</label>
+        <label data-i18n="bg_color">背景颜色:</label>
         <input type="color" id="style-bg-color" value="#ffffff">
-        <button class="style-reset-btn" data-target="bg-color">重置</button>
+        <button class="style-reset-btn" data-target="bg-color" data-i18n="reset">重置</button>
       </div>
       <div class="style-row style-row-checkboxes">
-        <label>字体样式:</label>
-        <label class="style-check-label"><input type="checkbox" id="style-bold"> 加粗</label>
-        <label class="style-check-label"><input type="checkbox" id="style-underline"> 下划线</label>
-        <label class="style-check-label"><input type="checkbox" id="style-strikethrough"> 删除线</label>
+        <label data-i18n="font_style">字体样式:</label>
+        <label class="style-check-label"><input type="checkbox" id="style-bold"> <span data-i18n="bold">加粗</span></label>
+        <label class="style-check-label"><input type="checkbox" id="style-underline"> <span data-i18n="underline">下划线</span></label>
+        <label class="style-check-label"><input type="checkbox" id="style-strikethrough"> <span data-i18n="strikethrough">删除线</span></label>
       </div>
     </div>
     <div id="style-dialog-footer">
-      <button id="style-btn-ok" class="style-btn style-btn-primary">确定</button>
-      <button id="style-btn-cancel" class="style-btn">取消</button>
-      <button id="style-btn-reset" class="style-btn style-btn-danger" style="margin-left:auto">重置样式</button>
+      <button id="style-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="style-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+      <button id="style-btn-reset" class="style-btn style-btn-danger" style="margin-left:auto" data-i18n="reset_style">重置样式</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Dialog -->
+<div id="settings-dialog" style="display:none">
+  <div id="settings-dialog-content">
+    <div id="settings-dialog-header" data-i18n="settings">设置</div>
+    <div id="settings-dialog-body">
+      <div class="settings-row">
+        <label data-i18n="version">版本:</label>
+        <span id="settings-version">{{ version }}</span>
+      </div>
+      <div class="settings-row">
+        <label data-i18n="language">语言 / Language:</label>
+        <select id="settings-language">
+          <option value="zh-CN">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </div>
+    <div id="settings-dialog-footer">
+      <button id="settings-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="settings-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
     </div>
   </div>
 </div>

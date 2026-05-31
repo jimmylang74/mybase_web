@@ -148,6 +148,8 @@ workers_ocr = 8
 workers_menu = 8
 _file_logger = None
 
+version = 'v3.0.1'
+
 
 def ocr_log(msg: str):
     """Write a timestamped debug message to mybase.log.
@@ -1466,6 +1468,19 @@ def get_system_config(name):
         conn.close()
 
 
+def set_system_config(name, value):
+    """Upsert a key-value pair in system_config table."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO system_config (name, value) VALUES (?, ?)",
+            (name, value)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ─── End Common Database ──────────────────────────────────────────────────
 
 
@@ -1552,14 +1567,14 @@ def delete_menu_item(items, item_id):
 
 @app.route('/')
 def index():
-    version = get_system_config('version') or 'v2.0'
     return render_template('index.html', version=version)
 
 
 @app.route('/help')
 def help_page():
     """Serve the comprehensive help documentation page."""
-    return render_template('help.html')
+    lang = get_system_config('language') or 'zh-CN'
+    return render_template('help.html', version=version, lang=lang)
 
 
 @app.route('/api/tabs')
@@ -1975,6 +1990,25 @@ def set_font_config_route():
     font_family = data.get('font_family', 'Arial')
     font_size = data.get('font_size', '5')
     set_font_config(font_family, font_size)
+    return jsonify({'success': True})
+
+
+@app.route('/api/system-config/<name>')
+def get_system_config_route(name):
+    """Get a system config value by name."""
+    value = get_system_config(name)
+    if value is None:
+        return jsonify({'value': None}), 404
+    return jsonify({'name': name, 'value': value})
+
+
+@app.route('/api/system-config/<name>', methods=['PUT'])
+def set_system_config_route(name):
+    """Set a system config value by name."""
+    data = request.get_json()
+    if not data or 'value' not in data:
+        return jsonify({'error': 'Missing value'}), 400
+    set_system_config(name, data['value'])
     return jsonify({'success': True})
 
 

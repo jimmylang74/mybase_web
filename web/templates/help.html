@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ lang }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>帮助 - 知识库KBase v2.0</title>
+<title>{% if lang == 'en' %}Help - KBase {{ version }}{% else %}帮助 - 知识库KBase {{ version }}{% endif %}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
@@ -149,8 +149,285 @@
 <body>
 <div class="help-container">
 
-  <h1>知识库 KBase v2.0 使用帮助</h1>
-  <p style="color:#888;margin-bottom:24px">中文知识库管理系统 — 帮助文档 (by Jimmy Lang, jimmylang1974@126.com)</p>
+{% if lang == 'en' %}
+  <h1>KBase {{ version }} Help</h1>
+  <p style="color:#888;margin-bottom:24px">Web of Mybase Knowledge Server — Help Documentation (by Jimmy Lang, jimmylang1974@126.com)</p>
+
+  <div class="section-nav">
+    <strong style="color:#2c3e50;font-size:15px">Contents</strong>
+    <a href="#menu">1. Menu Operations</a>
+    <a href="#editor">2. Content Editor</a>
+    <a href="#tabs">3. Tab Operations</a>
+    <a href="#search">4. Search</a>
+    <a href="#index">5. Index System</a>
+    <a href="#server">6. Server Commands</a>
+    <a href="#tips">7. Tips & Tricks</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="menu">1. Menu Operations</h2>
+  <p>The left sidebar organizes knowledge base content in a tree structure, supporting nested menus, drag-and-drop, and custom styles.</p>
+
+  <h3>1.1 Tree Toolbar</h3>
+  <p>Click the <strong>"☰ Menu"</strong> button at the top of the sidebar to open the dropdown:</p>
+  <ul>
+    <li><strong>Collapse All</strong> — Collapse all expanded tree nodes</li>
+    <li><strong>Expand All</strong> — Expand all collapsible tree nodes</li>
+    <li><strong>Add Root Menu</strong> — Add a new menu item at the root level</li>
+  </ul>
+
+  <h3>1.2 Right-Click Menu</h3>
+  <p><strong>Right-click</strong> on any menu item to open the context menu:</p>
+  <table>
+    <tr><th>Action</th><th>Description</th></tr>
+    <tr><td>Add Child Menu</td><td>Create a sub-item under the current item</td></tr>
+    <tr><td>Add Menu Item</td><td>Create a new item after the current one</td></tr>
+    <tr><td>Move Up</td><td>Move the item up in the list</td></tr>
+    <tr><td>Move Down</td><td>Move the item down in the list</td></tr>
+    <tr><td>Move To...</td><td>Move item to a different parent</td></tr>
+    <tr><td>Edit</td><td>Rename the current menu item</td></tr>
+    <tr><td>Custom Style</td><td>Set icon (Emoji), font, size, color, bold style</td></tr>
+    <tr><td>Delete</td><td>Delete this item and all its children (requires confirmation)</td></tr>
+  </table>
+
+  <h3>1.3 Inline Rename</h3>
+  <p><strong>Double-click</strong> a selected menu item to rename it inline:</p>
+  <ul>
+    <li><span class="kbd">Enter</span> — Save and confirm</li>
+    <li><span class="kbd">Esc</span> — Cancel editing</li>
+  </ul>
+
+  <h3>1.4 Custom Style</h3>
+  <p>Use the <strong>"Custom Style"</strong> dialog to personalize menu items:</p>
+  <ul>
+    <li><strong>Icon</strong> — Emoji support (e.g. 📁 🔖 ⭐)</li>
+    <li><strong>Font / Size</strong> — Independent of editor font</li>
+    <li><strong>Text / Background Color</strong> — Custom color scheme</li>
+    <li><strong>Bold / Underline / Strikethrough</strong> — Text decoration</li>
+  </ul>
+  <div class="tip">
+    <strong>Tip:</strong> Click <strong>"Reset Style"</strong> to clear all custom styles and restore defaults.
+  </div>
+
+  <h3>1.5 Expand & Collapse</h3>
+  <p>Click the <strong>▸ / ▾</strong> arrow to toggle node expansion. State is saved automatically when switching tabs.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="editor">2. Content Editor</h2>
+  <p>The right panel is a WYSIWYG rich text editor with extensive formatting options.</p>
+
+  <h3>2.1 Editor Toolbar</h3>
+  <table>
+    <tr><th>Control</th><th>Function</th></tr>
+    <tr><td>Font dropdown</td><td>Set text font (Arial, SimSun, Microsoft YaHei, etc.)</td></tr>
+    <tr><td>Size dropdown</td><td>Set text size (Small / Normal / Large / X-Large)</td></tr>
+    <tr><td><b>B</b> (Bold)</td><td>Toggle bold</td></tr>
+    <tr><td><i>I</i> (Italic)</td><td>Toggle italic</td></tr>
+    <tr><td><u>U</u> (Underline)</td><td>Toggle underline</td></tr>
+    <tr><td><s>S</s> (Strikethrough)</td><td>Toggle strikethrough</td></tr>
+    <tr><td>Color (swatch▾)</td><td>Set text color — click swatch to apply, ▾ to pick</td></tr>
+    <tr><td>🔗 (Link)</td><td>Insert hyperlink (URL + display text)</td></tr>
+    <tr><td>💾 Save</td><td>Save current content manually</td></tr>
+  </table>
+
+  <h3>2.2 Keyboard Shortcuts</h3>
+  <ul>
+    <li><span class="kbd">Ctrl + S</span> — Save current content</li>
+    <li><span class="kbd">Esc</span> — Close any popup menu or dialog</li>
+  </ul>
+
+  <h3>2.3 Right-Click Context Menu</h3>
+  <p><strong>Right-click</strong> in the editor to open the edit menu:</p>
+  <ul>
+    <li><strong>Bold / Italic / Underline / Strikethrough</strong> — Text formatting</li>
+    <li><strong>Font Family</strong> — Set font</li>
+    <li><strong>Font Color</strong> — Set text color</li>
+    <li><strong>Remove Format</strong> — Clear formatting from selection</li>
+    <li><strong>Copy / Paste</strong> — Copy and paste (browser native)</li>
+  </ul>
+
+  <h3>2.4 Paste Operations</h3>
+  <p>The editor supports smart paste:</p>
+  <ul>
+    <li><strong>Paste text</strong> — Plain text inserted automatically (no external formatting)</li>
+    <li><strong>Paste images</strong> — Paste images directly from clipboard (Ctrl+V), auto-uploaded</li>
+    <li><strong>Paste rich text</strong> — HTML formatted content preserved</li>
+  </ul>
+  <div class="tip">
+    <strong>Tip:</strong> Pasted images are automatically scaled to 50% of original size.
+  </div>
+
+  <h3>2.5 Save Mechanism</h3>
+  <ul>
+    <li>Editor status bar shows current editing state</li>
+    <li><strong>"(unsaved)"</strong> indicator appears when content is modified</li>
+    <li>Tab name shows <strong>"*"</strong> when the KB has unsaved content</li>
+    <li>Content is auto-saved when switching tabs</li>
+    <li>Index is automatically updated after saving</li>
+  </ul>
+
+  <h3>2.6 Image Operations</h3>
+  <ul>
+    <li><strong>Paste images</strong> — Directly from clipboard (PNG, JPG, etc.)</li>
+    <li><strong>Link clicking</strong> — Links open in a new tab automatically</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="tabs">3. Tab Operations</h2>
+  <p>The top tab bar manages multiple knowledge base pages with support for switching, sorting, renaming, hiding, and deleting.</p>
+
+  <h3>3.1 Basic Operations</h3>
+  <ul>
+    <li><strong>Left-click</strong> tab name — Switch to that KB</li>
+    <li><strong>Right-click</strong> tab name — Open context menu</li>
+    <li><strong>Drag</strong> tab left/right — Reorder tabs</li>
+  </ul>
+
+  <h3>3.2 Tab Right-Click Menu</h3>
+  <table>
+    <tr><th>Action</th><th>Description</th></tr>
+    <tr><td>Edit</td><td>Rename the tab</td></tr>
+    <tr><td>Export</td><td>Export as PDF or ZIP</td></tr>
+    <tr><td>Close</td><td>Hide the tab (can be restored later)</td></tr>
+    <tr><td>Delete</td><td>Permanently delete the tab and all its data</td></tr>
+  </table>
+
+  <h3>3.3 Drag & Drop Sorting</h3>
+  <p>Drag tabs horizontally to reorder. A <span style="color:#3498db">blue indicator</span> shows the drop position. Order is persisted to the server immediately.</p>
+
+  <h3>3.4 Tab Scrolling</h3>
+  <p>When tabs overflow, <span class="tab-scroll-btn" style="position:static;display:inline-flex;width:24px;height:24px;font-size:12px;background:#34495e;border-radius:3px;color:#bdc3c7">‹</span> and <span class="tab-scroll-btn" style="position:static;display:inline-flex;width:24px;height:24px;font-size:12px;background:#34495e;border-radius:3px;color:#bdc3c7">›</span> arrows appear. Use mouse wheel or click arrows to scroll.</p>
+
+  <h3>3.5 Creating New KB</h3>
+  <p>Click <strong>"New KB"</strong> on the toolbar, enter a name, and the new KB is created with an empty menu structure.</p>
+
+  <h3>3.6 KB Visibility</h3>
+  <p>The KB selector (bottom of toolbar) lets you filter which KBs to display. Uncheck "All KBs" to choose individually.</p>
+
+  <h3>3.7 Reading Position Memory</h3>
+  <p>The system remembers which menu item was last selected for each tab. When you switch back, the same item is automatically selected.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="search">4. Search</h2>
+  <p>SQLite-based full-text search with OCR support for image text.</p>
+
+  <h3>4.1 Basic Search</h3>
+  <p>Enter keywords in the search box and click <strong>🔍 Search</strong> or press <span class="kbd">Enter</span>.</p>
+
+  <h3>4.2 Search Modes</h3>
+  <ul>
+    <li><strong>Regular Search</strong> — Match keywords (with stemming)</li>
+    <li><strong>Regex Search</strong> — Enable <strong>"Regex"</strong> checkbox for pattern matching</li>
+    <li><strong>Global Search</strong> — Enable <strong>"Global Search"</strong> to search all KBs</li>
+  </ul>
+
+  <h3>4.3 Search Results Panel</h3>
+  <p>Results show KB name, path, and content snippet. Click a result to navigate directly. The panel is resizable by dragging the splitter handle above it.</p>
+
+  <h3>4.4 Regex Syntax</h3>
+  <p>Supports SQLite regex syntax (X REGEXP Y). Common patterns:</p>
+  <ul>
+    <li><code>^prefix</code> — Match at start</li>
+    <li><code>suffix$</code> — Match at end</li>
+    <li><code>pat1|pat2</code> — Match either pattern</li>
+    <li><code>.*</code> — Match any characters</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="index">5. Index System</h2>
+  <p>Automatic indexing of all KB content with incremental updates and OCR support.</p>
+
+  <h3>5.1 Auto-Indexing</h3>
+  <ul>
+    <li>New KBs are indexed automatically on server startup</li>
+    <li>Content saves trigger incremental index updates</li>
+    <li>OCR processes images and indexes recognized text</li>
+  </ul>
+
+  <h3>5.2 Manual Rebuild</h3>
+  <p>Run <code>python server.py --force-index</code> to rebuild all indexes. Use <code>--force-index my_kb</code> for a specific KB.</p>
+
+  <h3>5.3 Index Status</h3>
+  <p>The <span style="color:#e67e22">📇 Indexing...</span> indicator in the toolbar shows when background indexing is active.</p>
+
+  <h3>5.4 OCR Text Index</h3>
+  <p>Images in content are processed by PaddleOCR. OCR runs in background processes and does not block the server.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="server">6. Server Commands</h2>
+
+  <h3>6.1 Basic Usage</h3>
+  <pre><code>python server.py
+python server.py --port 8080 --data /path/to/data</code></pre>
+
+  <h3>6.2 Parameters</h3>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>--port PORT</code></td><td>9999</td><td>Server port</td></tr>
+    <tr><td><code>--data DIR</code></td><td>data</td><td>Data root directory</td></tr>
+    <tr><td><code>--force-index [NAME]</code></td><td>—</td><td>Force rebuild index (all or specific KB)</td></tr>
+    <tr><td><code>--disable-ocr</code></td><td>—</td><td>Disable OCR</td></tr>
+    <tr><td><code>--workers-ocr N</code></td><td>8</td><td>OCR worker processes</td></tr>
+    <tr><td><code>--workers-menu N</code></td><td>8</td><td>Menu item index workers</td></tr>
+    <tr><td><code>--no-debug</code></td><td>—</td><td>Disable debug logging</td></tr>
+  </table>
+
+  <h3>6.3 Examples</h3>
+  <pre><code># Specific port and data directory
+python server.py --port 8080 --data /path/to/data
+
+# Force rebuild all indexes
+python server.py --force-index
+
+# Rebuild specific KB, disable OCR
+python server.py --force-index my_kb --disable-ocr
+
+# Low-resource environment
+python server.py --workers-ocr 2 --workers-menu 2</code></pre>
+
+  <h3>6.4 Server Log</h3>
+  <p>Logs are written to <code>mybase.log</code> in the project root. Use <code>--no-debug</code> to suppress debug messages.</p>
+
+  <h3>6.5 Graceful Shutdown</h3>
+  <p>Press <span class="kbd">Ctrl + C</span> to stop the server. Active tasks will complete before shutdown.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="tips">7. Tips & Tricks</h2>
+
+  <h3>7.1 Efficient Editing</h3>
+  <ul>
+    <li>Use <span class="kbd">Ctrl + S</span> frequently to save</li>
+    <li>Double-click menu items for quick rename</li>
+    <li>Drag tabs to reorder</li>
+  </ul>
+
+  <h3>7.2 Data Safety</h3>
+  <ul>
+    <li>Use <strong>"Backup KB"</strong> to download a ZIP of all data</li>
+    <li>Copy the <code>data/</code> directory for manual backups</li>
+    <li>Use <code>--data</code> to specify custom data paths</li>
+  </ul>
+
+  <h3>7.3 Search Tips</h3>
+  <ul>
+    <li>Use regex for complex patterns</li>
+    <li>Use global search to find content across all KBs</li>
+    <li>OCR enables searching text within images</li>
+  </ul>
+
+  <h3>7.4 Performance</h3>
+  <ul>
+    <li>Reduce <code>--workers-ocr</code> and <code>--workers-menu</code> on low-resource machines</li>
+    <li>Disable OCR with <code>--disable-ocr</code> if not needed</li>
+    <li>Use <code>--no-debug</code> to reduce disk I/O</li>
+  </ul>
+
+  <h3>7.5 External Docs</h3>
+  <p>See the <code>README.md</code> for full documentation. The help page is also available via the <strong>"?"</strong> button.</p>
+
+{% else %}
+  <h1>知识库 KBase {{ version }} 使用帮助</h1>
+  <p style="color:#888;margin-bottom:24px">中文知识库管理系统 &mdash; 帮助文档 (by Jimmy Lang, jimmylang1974@126.com)</p>
 
   <div class="section-nav">
     <strong style="color:#2c3e50;font-size:15px">目录</strong>
@@ -530,8 +807,9 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   </ul>
 
   <hr style="margin:40px 0;border:none;border-top:1px solid #ddd;">
-  <p style="text-align:center;color:#999;font-size:12px">知识库KBase v2.0 &mdash; 帮助文档</p>
+  <p style="text-align:center;color:#999;font-size:12px">{% if lang == 'en' %}KBase {{ version }} &mdash; Help Documentation{% else %}知识库KBase {{ version }} &mdash; 帮助文档{% endif %}</p>
 
+{% endif %}
 </div>
 </body>
 </html>

@@ -24,6 +24,182 @@
   const treeCtxMenu = $('#tree-context-menu');
   const tabCtxMenu = $('#tab-context-menu');
 
+  // ─── i18n ──────────────────────────────────────────────────────────────
+
+  const i18n = {
+    'zh-CN': {
+      collapse_all: '全部收起',
+      expand_all: '全部展开',
+      add_root_menu: '新增根菜单项',
+      add_child_menu: '新增子菜单项',
+      add_menu_item: '新增菜单项',
+      move_up: '上移',
+      move_down: '下移',
+      move_to: '移动到...',
+      edit: '编辑',
+      custom_style: '定制样式',
+      export: '导出',
+      delete: '删除',
+      close: '关闭',
+      global_search: '全局搜索',
+      regex: '正则',
+      search_placeholder: '输入搜索关键词...',
+      search: '搜索',
+      new_kb: '新增知识库',
+      backup_kb: '备份知识库',
+      all_kb: '全部知识库',
+      search_results: '搜索结果',
+      kb: '知识库',
+      path: '路径',
+      content_summary: '内容简述',
+      icon_emoji: '图标 (Emoji):',
+      icon_placeholder: '如: 📁 🔖',
+      font: '字体:',
+      font_size: '字号:',
+      default: '默认',
+      text_color: '文字颜色:',
+      bg_color: '背景颜色:',
+      reset: '重置',
+      font_style: '字体样式:',
+      bold: '加粗',
+      underline: '下划线',
+      strikethrough: '删除线',
+      ok: '确定',
+      cancel: '取消',
+      reset_style: '重置样式',
+      settings: '设置',
+      help: '帮助',
+      page_title: '知识库KBase {version}',
+      version: '版本:',
+      language: '语言:',
+      loading: 'Loading...',
+      failed_load_menu: 'Failed to load menu',
+      select_item_hint: 'Select a menu item to edit its content...',
+      no_item_selected: 'No item selected',
+      search_in_progress: '搜索中...',
+      search_no_results: '未找到匹配结果',
+      search_found: '找到',
+      search_results_count: '条结果',
+      search_error: '搜索出错:',
+      backup_title: '备份知识库',
+      backup_waiting: '正在备份知识库，请稍候...',
+      backup_scanning: '正在扫描文件...',
+      backup_background: '后台运行',
+      backup_packing: '正在打包...',
+      backup_failed: '备份失败',
+      add_menu_item_title: 'Add Menu Item',
+      add_menu_item_placeholder: 'Enter item name',
+      rename_tab: '重命名 Tab',
+      new_name: '新名称',
+      delete_tab: '删除 Tab',
+      confirm_delete_tab: '确定要删除 tab',
+      indexing: '索引中...',
+      regex_placeholder: '输入正则表达式...',
+      move_item_title: 'Move Item',
+      move_to_label: 'Move',
+      error_dialog_title: 'Error',
+    },
+    en: {
+      collapse_all: 'Collapse All',
+      expand_all: 'Expand All',
+      add_root_menu: 'Add Root Menu',
+      add_child_menu: 'Add Child Menu',
+      add_menu_item: 'Add Menu Item',
+      move_up: 'Move Up',
+      move_down: 'Move Down',
+      move_to: 'Move To...',
+      edit: 'Edit',
+      custom_style: 'Custom Style',
+      export: 'Export',
+      delete: 'Delete',
+      close: 'Close',
+      global_search: 'Global Search',
+      regex: 'Regex',
+      search_placeholder: 'Enter search keywords...',
+      search: 'Search',
+      new_kb: 'New KB',
+      backup_kb: 'Backup KB',
+      all_kb: 'All KBs',
+      search_results: 'Search Results',
+      kb: 'KB',
+      path: 'Path',
+      content_summary: 'Summary',
+      icon_emoji: 'Icon (Emoji):',
+      icon_placeholder: 'e.g. 📁 🔖',
+      font: 'Font:',
+      font_size: 'Font Size:',
+      default: 'Default',
+      text_color: 'Text Color:',
+      bg_color: 'Background Color:',
+      reset: 'Reset',
+      font_style: 'Font Style:',
+      bold: 'Bold',
+      underline: 'Underline',
+      strikethrough: 'Strikethrough',
+      ok: 'OK',
+      cancel: 'Cancel',
+      reset_style: 'Reset Style',
+      settings: 'Settings',
+      help: 'Help',
+      page_title: 'KBase v{version}',
+      version: 'Version:',
+      language: 'Language:',
+      loading: 'Loading...',
+      failed_load_menu: 'Failed to load menu',
+      select_item_hint: 'Select a menu item to edit its content...',
+      no_item_selected: 'No item selected',
+      search_in_progress: 'Searching...',
+      search_no_results: 'No matching results found',
+      search_found: 'Found ',
+      search_results_count: ' results',
+      search_error: 'Search error:',
+      backup_title: 'Backup Knowledge Base',
+      backup_waiting: 'Backing up knowledge base, please wait...',
+      backup_scanning: 'Scanning files...',
+      backup_background: 'Background',
+      backup_packing: 'Packaging...',
+      backup_failed: 'Backup Failed',
+      add_menu_item_title: 'Add Menu Item',
+      add_menu_item_placeholder: 'Enter item name',
+      rename_tab: 'Rename Tab',
+      new_name: 'New name',
+      delete_tab: 'Delete Tab',
+      confirm_delete_tab: 'Are you sure you want to delete tab',
+      indexing: 'Indexing...',
+      regex_placeholder: 'Enter regex pattern...',
+      move_item_title: 'Move Item',
+      move_to_label: 'Move',
+      error_dialog_title: 'Error',
+    }
+  };
+
+  let currentLang = 'zh-CN';
+
+  function t(key) {
+    return (i18n[currentLang] && i18n[currentLang][key]) || (i18n['zh-CN'][key] || key);
+  }
+
+  function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      el.textContent = t(el.dataset.i18n);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      el.placeholder = t(el.dataset.i18nPlaceholder);
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      el.title = t(el.dataset.i18nTitle);
+    });
+    $('#tab-help').title = t('help') || 'Help';
+    $('#tab-settings').title = t('settings') || 'Settings';
+
+    const titleEl = document.querySelector('title');
+    if (titleEl) {
+      const ver = titleEl.dataset.version || '';
+      const titleKey = titleEl.dataset.i18nTitleTemplate || 'page_title';
+      titleEl.textContent = t(titleKey).replace('{version}', ver);
+    }
+  }
+
 
   async function api(method, url, body) {
     const opts = {
@@ -271,13 +447,13 @@
     contentModified = false;
     menuTree = [];
 
-    treeContainer.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Loading...</div>';
+    treeContainer.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${t('loading')}</div>`;
 
     try {
       await loadMenu();
     } catch (e) {
       console.error('Failed to load menu for tab:', name, e);
-      treeContainer.innerHTML = '<div style="padding:12px;color:#999;font-size:13px">Failed to load menu</div>';
+      treeContainer.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${t('failed_load_menu')}</div>`;
     }
 
     // Restore last selected item for this tab
@@ -286,8 +462,8 @@
       scrollToTreeNode(lastId);
       selectItem(lastId);
     } else {
-      editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
-      editorStatus.textContent = 'No item selected';
+      editor.innerHTML = `<p>${t('select_item_hint')}</p>`;
+      editorStatus.textContent = t('no_item_selected');
     }
   }
 
@@ -814,11 +990,10 @@
 
   function promptRenameTab(oldName) {
     showDialog(
-      '重命名 Tab',
-      `<label>新名称:</label><input type="text" id="dialog-input" value="${escapeHtml(oldName)}">`,
+      t('rename_tab'),
+      `<label>${t('new_name')}:</label><input type="text" id="dialog-input" value="${escapeHtml(oldName)}">`,
       () => {
-        const input = $('#dialog-input');
-        const val = input.value.trim();
+        const val = $('#dialog-input').value.trim();
         if (val && val !== oldName) {
           renameTab(oldName, val);
         }
@@ -925,22 +1100,76 @@
     window.open('/help', '_blank');
   });
 
+  // ─── Settings ──────────────────────────────────────────────────────────
+
+  async function loadLanguage() {
+    try {
+      const res = await api('GET', '/api/system-config/language');
+      if (res.value) {
+        currentLang = res.value;
+      }
+    } catch (e) {
+      // fallback to localStorage
+      const saved = localStorage.getItem('kbase_lang');
+      if (saved) currentLang = saved;
+    }
+  }
+
+  async function saveLanguage(lang) {
+    try {
+      await api('PUT', `/api/system-config/language`, { value: lang });
+      localStorage.setItem('kbase_lang', lang);
+    } catch (e) {
+      // non-critical
+    }
+  }
+
+  function openSettings() {
+    $('#settings-language').value = currentLang;
+    $('#settings-dialog').style.display = 'flex';
+  }
+
+  function closeSettings() {
+    $('#settings-dialog').style.display = 'none';
+  }
+
+  $('#tab-settings').addEventListener('click', openSettings);
+
+  $('#settings-btn-cancel').addEventListener('click', closeSettings);
+
+  $('#settings-btn-ok').addEventListener('click', async () => {
+    const newLang = $('#settings-language').value;
+    if (newLang !== currentLang) {
+      currentLang = newLang;
+      await saveLanguage(newLang);
+      applyTranslations();
+    }
+    closeSettings();
+  });
+
+  // Close settings dialog on overlay click
+  $('#settings-dialog').addEventListener('click', (e) => {
+    if (e.target === $('#settings-dialog')) {
+      closeSettings();
+    }
+  });
+
   // ─── Backup Knowledge Base ────────────────────────────────────────────
 
   $('#btn-backup').addEventListener('click', async () => {
     const overlay = $('#dialog-overlay');
-    $('#dialog-title').textContent = '备份知识库';
+    $('#dialog-title').textContent = t('backup_title');
     $('#dialog-content').innerHTML = `
       <div id="backup-progress" style="text-align:center;padding:20px">
-        <div style="margin-bottom:12px;font-size:14px;color:#555">正在备份知识库，请稍候...</div>
+        <div style="margin-bottom:12px;font-size:14px;color:#555">${t('backup_waiting')}</div>
         <div style="background:#eee;border-radius:4px;height:20px;overflow:hidden">
           <div id="backup-progress-bar" style="background:#3498db;height:100%;width:0%;transition:width 0.3s"></div>
         </div>
-        <div id="backup-progress-text" style="margin-top:8px;font-size:12px;color:#888">正在扫描文件...</div>
+        <div id="backup-progress-text" style="margin-top:8px;font-size:12px;color:#888">${t('backup_scanning')}</div>
       </div>
     `;
     $('#dialog-ok').style.display = 'none';
-    $('#dialog-cancel').textContent = '后台运行';
+    $('#dialog-cancel').textContent = t('backup_background');
     overlay.style.display = 'flex';
 
     try {
@@ -953,7 +1182,7 @@
           const bar = $('#backup-progress-bar');
           const txt = $('#backup-progress-text');
           if (bar) bar.style.width = pct + '%';
-          if (txt) txt.textContent = `正在打包... (${status.current}/${total} 个文件)`;
+          if (txt) txt.textContent = `${t('backup_packing')} (${status.current}/${total})`;
 
           if (status.done) {
             clearInterval(pollInterval);
@@ -962,7 +1191,7 @@
             $('#dialog-cancel').textContent = 'Cancel';
 
             if (status.error) {
-              showDialog('备份失败', `<p>${escapeHtml(status.error)}</p>`);
+              showDialog(t('backup_failed'), `<p>${escapeHtml(status.error)}</p>`);
               return;
             }
 
@@ -978,14 +1207,14 @@
           overlay.style.display = 'none';
           $('#dialog-ok').style.display = '';
           $('#dialog-cancel').textContent = 'Cancel';
-          showDialog('备份失败', `<p>${escapeHtml(e.message)}</p>`);
+          showDialog(t('backup_failed'), `<p>${escapeHtml(e.message)}</p>`);
         }
       }, 300);
     } catch (e) {
       overlay.style.display = 'none';
       $('#dialog-ok').style.display = '';
       $('#dialog-cancel').textContent = 'Cancel';
-      showDialog('备份失败', `<p>${escapeHtml(e.message)}</p>`);
+      showDialog(t('backup_failed'), `<p>${escapeHtml(e.message)}</p>`);
     }
   });
 
@@ -1836,8 +2065,8 @@
           break;
         case 'delete-tab':
           showDialog(
-            '删除 Tab',
-            `<p>确定要删除 tab "<strong>${escapeHtml(name)}</strong>" 及其所有数据吗？</p>`,
+            t('delete_tab'),
+            `<p>${t('confirm_delete_tab')} "<strong>${escapeHtml(name)}</strong>"?</p>`,
             () => {
               deleteTab(name);
               return true;
@@ -1876,7 +2105,7 @@
       const statusEl = $('#indexing-status');
       if (state.busy) {
         statusEl.style.display = 'inline';
-        statusEl.textContent = state.status || '📇 索引中...';
+        statusEl.textContent = state.status || '📇 ' + t('indexing');
       } else {
         statusEl.style.display = 'none';
       }
@@ -1907,11 +2136,11 @@
     const globalMode = searchGlobal.checked;
     const tabParam = globalMode ? '' : (currentTab || '');
 
-    searchResultsBody.innerHTML = '<div class="search-loading">搜索中...</div>';
+    searchResultsBody.innerHTML = `<div class="search-loading">${t('search_in_progress')}</div>`;
     searchPanel.style.display = 'flex';
     searchSplitter.style.display = 'block';
     $('#search-results-column-headers').style.display = 'none';
-    $('#search-results-title').textContent = '搜索结果';
+    $('#search-results-title').textContent = t('search_results');
 
     const regexMode = searchRegex.checked;
 
@@ -1925,13 +2154,13 @@
       }
       const results = await api('GET', url);
 
-      $('#search-results-title').textContent = `搜索结果 (${results.length})`;
+      $('#search-results-title').textContent = `${t('search_results')} (${results.length})`;
       if (results.length === 0) {
-        searchResultsBody.innerHTML = '<div class="search-empty">未找到匹配结果</div>';
+        searchResultsBody.innerHTML = `<div class="search-empty">${t('search_no_results')}</div>`;
         return;
       }
 
-      let html = `<div class="search-stats">找到 ${results.length} 条结果</div>`;
+      let html = `<div class="search-stats">${t('search_found')} ${results.length} ${t('search_results_count')}</div>`;
       results.forEach((r) => {
         const tab = escapeHtml(r.tab);
         const path = escapeHtml(r.menu_path);
@@ -1956,7 +2185,7 @@
         });
       });
     } catch (e) {
-      searchResultsBody.innerHTML = `<div class="search-empty">搜索出错: ${escapeHtml(e.message)}</div>`;
+      searchResultsBody.innerHTML = `<div class="search-empty">${t('search_error')} ${escapeHtml(e.message)}</div>`;
     }
   }
 
@@ -1993,8 +2222,8 @@
   });
   searchRegex.addEventListener('change', () => {
     searchInput.placeholder = searchRegex.checked
-      ? '输入正则表达式...'
-      : '输入搜索关键词...';
+      ? t('regex_placeholder')
+      : t('search_placeholder');
   });
 
   searchResultsClose.addEventListener('click', () => {
@@ -2067,7 +2296,11 @@
 
   // ─── Init ──────────────────────────────────────────────────────────────
 
-  loadTabs();
-  loadFontConfig();
+  (async function init() {
+    await loadLanguage();
+    applyTranslations();
+    loadTabs();
+    loadFontConfig();
+  })();
 
 })();

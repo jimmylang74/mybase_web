@@ -76,7 +76,7 @@ body {
 }
 
 #tab-scroll-right {
-  right: 40px;
+  right: 80px;
   background: linear-gradient(270deg, #2c3e50 50%, transparent);
   padding-left: 8px;
 }
@@ -903,7 +903,8 @@ body {
   border-right: 3px solid #3498db;
 }
 
-/* ─── Tab Help (Blue Circular) ─────────────────────────────────────────── */
+/* ─── Tab Settings & Help (Blue Circular) ──────────────────────────────── */
+#tab-settings,
 #tab-help {
   width: 32px;
   height: 32px;
@@ -918,18 +919,24 @@ body {
   font-size: 18px;
   font-weight: bold;
   user-select: none;
-  margin: auto 4px auto 8px;
+  margin: auto 4px;
   line-height: 1;
   transition: background 0.2s, transform 0.15s;
 }
 
+#tab-settings:hover,
 #tab-help:hover {
   background: #3498db;
   transform: scale(1.1);
 }
 
+#tab-settings:active,
 #tab-help:active {
   transform: scale(0.95);
+}
+
+#tab-settings {
+  font-size: 20px;
 }
 
 /* ─── Inline Rename Input ──────────────────────────────────────────────── */
@@ -1211,4 +1218,80 @@ body {
 
 .style-btn-danger:hover {
   background: #fdf0ef;
+}
+
+/* ─── Settings Dialog ──────────────────────────────────────────────────── */
+#settings-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+#settings-dialog-content {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px 28px;
+  min-width: 360px;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+#settings-dialog-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+#settings-dialog-body {
+  margin-bottom: 20px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row label {
+  font-size: 14px;
+  color: #555;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.settings-row span {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+.settings-row select {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+  flex: 1;
+}
+
+#settings-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #eee;
+  padding-top: 16px;
 }
