@@ -197,6 +197,7 @@
   <tr><td>OCR Image Text Recognition</td><td>PaddleOCR-based, auto-extract text from images and index it</td><td>Core</td></tr>
   <tr><td>One-Click Backup</td><td>ZIP package of all KB data for download</td><td>Important</td></tr>
   <tr><td>Standalone Export</td><td>Generate self-contained single-page HTML for each KB</td><td>Important</td></tr>
+  <tr><td>KB Encryption</td><td>BCrypt password hashing + AES-256-GCM file encryption, session-based unlock</td><td>Important</td></tr>
   <tr><td>Export (PDF/ZIP)</td><td>Tab-level and menu-item-level PDF and ZIP export</td><td>Important</td></tr>
   <tr><td>Help Documentation</td><td>Built-in HTML help page</td><td>Supplementary</td></tr>
 </table>
@@ -227,8 +228,8 @@
 │   │       ├── menu.js              # Frontend menu data (JS variable)
 │   │       ├── index.html           # Standalone export HTML
 │   │       ├── nav.html             # (Optional) legacy nav file
-│   │       ├── content/             # Entry content files (UUID.html)
-│   │       ├── images/              # Uploaded images
+│   │       ├── content/             # Entry content files (UUID.html, .html.enc when encrypted)
+│   │       ├── images/              # Uploaded images (.enc suffix when encrypted)
 │   │       └── *.qrich.html         # (Legacy) old rich text files
 │   └── db/                          # Database directory
 │       ├── common.db                # Common config database (SQLite)
@@ -264,6 +265,8 @@
   <tr><td>paddlepaddle</td><td>&gt;=3.0.0</td><td>Deep learning framework, OCR inference engine</td></tr>
   <tr><td>paddleocr</td><td>&gt;=3.0.0</td><td>OCR optical character recognition library</td></tr>
   <tr><td>paddlex</td><td>&gt;=3.0.0</td><td>Paddle model management tool</td></tr>
+  <tr><td>bcrypt</td><td>&gt;=4.0.0</td><td>Password hashing, KB password verification</td></tr>
+  <tr><td>pycryptodome</td><td>&gt;=3.20.0</td><td>AES-256-GCM file encryption/decryption</td></tr>
   <tr><td>click</td><td>&gt;=8.0.0</td><td>Windows platform compatibility (optional)</td></tr>
 </table>
 
@@ -332,6 +335,12 @@ pip install -r requirements.txt</code></pre>
     <td><code>server.py</code> (start_backup, get_backup_status, download_backup)</td>
     <td><code>app.js</code> (btn-backup click handler)</td>
     <td>Async ZIP packaging, progress polling, auto download</td>
+  </tr>
+  <tr>
+    <td>Encryption</td>
+    <td><code>server.py</code> (AES-256-GCM encrypt/decrypt, PBKDF2 key derivation, BCrypt password hash, WebSocket sync blocking)</td>
+    <td><code>app.js</code> (password dialog, session unlock tracking, context menu handlers)</td>
+    <td>User password → BCrypt verify → PBKDF2 derive AES key → AES-256-GCM file encryption</td>
   </tr>
   <tr>
     <td>Export System</td>

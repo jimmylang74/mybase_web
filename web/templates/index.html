@@ -151,6 +151,10 @@
     </div>
   </div>
   <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item" data-action="set-password" data-i18n="set_password">加密</div>
+  <div class="tab-ctx-item" data-action="change-password" data-i18n="change_password" style="display:none">修改密码</div>
+  <div class="tab-ctx-item" data-action="remove-password" data-i18n="remove_password" style="display:none">解密</div>
+  <div class="tab-ctx-sep" id="tab-ctx-pw-sep" style="display:none"></div>
   <div class="tab-ctx-item" data-action="close-tab" data-i18n="close">关闭</div>
   <div class="tab-ctx-sep"></div>
   <div class="tab-ctx-item" data-action="delete-tab" data-i18n="delete">删除</div>
@@ -250,6 +254,32 @@
     <div id="settings-dialog-footer">
       <button id="settings-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
       <button id="settings-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password Dialog -->
+<div id="password-dialog" style="display:none">
+  <div id="password-dialog-content">
+    <div id="password-dialog-header" data-i18n="set_password">设定密码</div>
+    <div id="password-dialog-body">
+      <div class="password-row">
+        <label data-i18n="password_label">密码:</label>
+        <input type="password" id="password-input" class="password-input">
+      </div>
+      <div id="password-confirm-row" class="password-row">
+        <label data-i18n="confirm_password_label">确认密码:</label>
+        <input type="password" id="password-confirm-input" class="password-input">
+      </div>
+      <div class="password-row" id="password-old-row" style="display:none">
+        <label data-i18n="old_password_label">原密码:</label>
+        <input type="password" id="password-old-input" class="password-input">
+      </div>
+      <div id="password-error" class="password-error" style="display:none"></div>
+    </div>
+    <div id="password-dialog-footer">
+      <button id="password-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="password-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
     </div>
   </div>
 </div>

@@ -19,3 +19,9 @@ fpdf2>=2.8.0
 
 # Windows 平台依赖（可选）
 click>=8.0.0
+
+# 密码加密（BCrypt）
+bcrypt>=4.0.0
+
+# AES 文件加密
+pycryptodome>=3.20.0

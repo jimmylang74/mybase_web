@@ -12,6 +12,8 @@
   let lastEditedItem = {}; // { tabName: itemId }
   let kbVisibility = {}; // { tabName: true/false }
   let kbTabNames = []; // full list of all tab names
+  let unlockedTabs = new Set(); // tab names unlocked in this session
+  let encryptedTabsCache = null; // null = not loaded, array = list of encrypted tab names
 
   // Socket.IO for real-time collaboration
   const socket = io();
@@ -105,6 +107,19 @@
       move_item_title: 'Move Item',
       move_to_label: 'Move',
       error_dialog_title: 'Error',
+      set_password: '加密',
+      change_password: '修改密码',
+      remove_password: '解密',
+      password_label: '密码:',
+      confirm_password_label: '确认密码:',
+      old_password_label: '原密码:',
+      password_mismatch: '两次密码输入不一致',
+      password_too_short: '密码至少需要4个字符',
+      wrong_password: '密码错误',
+      unlock_kb: '解锁知识库',
+      unlock_prompt: '请输入密码解锁该知识库',
+      remove_password_confirm: '确定要解密该知识库吗？',
+      encrypted: '已加密',
     },
     en: {
       collapse_all: 'Collapse All',
@@ -177,6 +192,19 @@
       move_item_title: 'Move Item',
       move_to_label: 'Move',
       error_dialog_title: 'Error',
+      set_password: 'Set Password',
+      change_password: 'Change Password',
+      remove_password: 'Remove Password',
+      password_label: 'Password:',
+      confirm_password_label: 'Confirm Password:',
+      old_password_label: 'Current Password:',
+      password_mismatch: 'Passwords do not match',
+      password_too_short: 'Password must be at least 4 characters',
+      wrong_password: 'Incorrect password',
+      unlock_kb: 'Unlock Knowledge Base',
+      unlock_prompt: 'Enter password to unlock this knowledge base',
+      remove_password_confirm: 'Are you sure you want to remove password protection?',
+      encrypted: 'Encrypted',
     }
   };
 
@@ -345,6 +373,11 @@
     showDialog('无法锁定', `<p>${escapeHtml(data.reason || '该条目正在被其他用户编辑')}</p>`);
   });
 
+  socket.on('sync_denied', (data) => {
+    // Encrypted tab sync blocked — silently handled, no user-facing dialog needed
+    console.warn('Sync denied for tab:', data.tab, data.reason);
+  });
+
   // ─── Tab Drag-and-Drop ─────────────────────────────────────────────────
 
   let dragSrcTab = null;
@@ -468,6 +501,7 @@
   // ─── Load Tabs ─────────────────────────────────────────────────────────
 
   async function loadTabs() {
+    await loadEncryptedTabs();
     const tabs = await api('GET', '/api/tabs');
     kbTabNames = tabs.slice();
     // Load visibility state
@@ -521,7 +555,10 @@
       el.className = 'tab';
       el.dataset.tab = name;
       el.dataset.origName = name;
-      el.textContent = name;
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'tab-label';
+      labelSpan.textContent = name;
+      el.appendChild(labelSpan);
       el.addEventListener('click', () => switchTab(name, el));
       el.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -545,9 +582,13 @@
     updateTabScrollButtons();
     updateKbCheckbox();
     rebuildKbDropdown();
+    updateTabEncryptionIndicators();
   }
 
   async function switchTab(name, el) {
+    const prevTab = currentTab;
+    const prevTabEl = activeTabEl;
+
     if (currentTab && currentTab !== name) {
       // Leave old tab room and document room
       leaveTabRoom(currentTab);
@@ -573,6 +614,23 @@
     currentItemId = null;
     contentModified = false;
     menuTree = [];
+
+    // Check if tab is encrypted and needs unlock
+    const encrypted = await isTabEncrypted(name);
+    if (encrypted && !unlockedTabs.has(name)) {
+      const unlocked = await requireUnlock(name);
+      if (!unlocked) {
+        el.classList.remove('active');
+        currentTab = prevTab;
+        if (prevTabEl) {
+          prevTabEl.classList.add('active');
+          activeTabEl = prevTabEl;
+        } else {
+          activeTabEl = null;
+        }
+        return;
+      }
+    }
 
     // Join the tab-level room for menu/save notifications
     joinTabRoom(name);
@@ -941,7 +999,12 @@
     const el = tabsEl.querySelector(`.tab[data-tab="${name}"]`);
     if (!el) return;
     const base = el.dataset.origName || name;
-    el.textContent = dirtyTabs[name] ? '*' + base : base;
+    const labelSpan = el.querySelector('.tab-label');
+    if (labelSpan) {
+      labelSpan.textContent = dirtyTabs[name] ? '*' + base : base;
+    } else {
+      el.textContent = dirtyTabs[name] ? '*' + base : base;
+    }
   }
 
   // ─── KB Selector (全部知识库) ────────────────────────────────────────────
@@ -1081,6 +1144,175 @@
         resolve(null);
       };
     });
+  }
+
+  // ─── Password / Encryption ────────────────────────────────────────────
+
+  async function loadEncryptedTabs() {
+    try {
+      const res = await api('GET', '/api/encrypted-tabs');
+      encryptedTabsCache = res.encrypted_tabs || [];
+    } catch (e) {
+      encryptedTabsCache = [];
+    }
+    return encryptedTabsCache;
+  }
+
+  async function isTabEncrypted(tabName) {
+    if (encryptedTabsCache === null) {
+      await loadEncryptedTabs();
+    }
+    return encryptedTabsCache.includes(tabName);
+  }
+
+  async function setTabPassword(tabName, password, oldPassword) {
+    const body = { password };
+    if (oldPassword) body.old_password = oldPassword;
+    await api('POST', `/api/tabs/${encodeURIComponent(tabName)}/password`, body);
+  }
+
+  async function verifyTabPassword(tabName, password) {
+    await api('POST', `/api/tabs/${encodeURIComponent(tabName)}/verify-password`, { password });
+  }
+
+  async function removeTabPassword(tabName, password) {
+    await api('DELETE', `/api/tabs/${encodeURIComponent(tabName)}/password`, { password });
+  }
+
+  function showPasswordDialog(mode, tabName) {
+    // mode: 'set' | 'change' | 'unlock' | 'remove'
+    const dialog = $('#password-dialog');
+    const header = $('#password-dialog-header');
+    const confirmRow = $('#password-confirm-row');
+    const oldRow = $('#password-old-row');
+    const errorEl = $('#password-error');
+    const pwInput = $('#password-input');
+    const confirmInput = $('#password-confirm-input');
+    const oldInput = $('#password-old-input');
+
+    // Reset
+    pwInput.value = '';
+    confirmInput.value = '';
+    oldInput.value = '';
+    errorEl.style.display = 'none';
+    confirmRow.style.display = 'none';
+    oldRow.style.display = 'none';
+
+    if (mode === 'set') {
+      header.textContent = t('set_password');
+      confirmRow.style.display = '';
+    } else if (mode === 'change') {
+      header.textContent = t('change_password');
+      confirmRow.style.display = '';
+      oldRow.style.display = '';
+    } else if (mode === 'unlock') {
+      header.textContent = t('unlock_kb') + ' - ' + tabName;
+    } else if (mode === 'remove') {
+      header.textContent = t('remove_password');
+    }
+
+    dialog.style.display = 'flex';
+
+    return new Promise((resolve) => {
+      function doAction() {
+        const password = pwInput.value;
+        if (mode === 'set' || mode === 'change') {
+          if (password.length < 4) {
+            errorEl.textContent = t('password_too_short');
+            errorEl.style.display = '';
+            pwInput.focus();
+            return;
+          }
+          if (password !== confirmInput.value) {
+            errorEl.textContent = t('password_mismatch');
+            errorEl.style.display = '';
+            confirmInput.focus();
+            return;
+          }
+        } else if (mode === 'unlock') {
+          if (!password) {
+            errorEl.textContent = t('password_too_short');
+            errorEl.style.display = '';
+            pwInput.focus();
+            return;
+          }
+        } else if (mode === 'remove') {
+          if (!password) {
+            errorEl.textContent = t('password_too_short');
+            errorEl.style.display = '';
+            pwInput.focus();
+            return;
+          }
+        }
+
+        const oldPassword = (mode === 'change') ? oldInput.value : '';
+        dialog.style.display = 'none';
+        resolve({ password, oldPassword });
+      }
+
+      function doCancel() {
+        dialog.style.display = 'none';
+        resolve(null);
+      }
+
+      $('#password-btn-ok').onclick = doAction;
+      $('#password-btn-cancel').onclick = doCancel;
+
+      pwInput.onkeydown = (e) => {
+        if (e.key === 'Enter') doAction();
+        if (e.key === 'Escape') doCancel();
+      };
+      confirmInput.onkeydown = (e) => {
+        if (e.key === 'Enter') doAction();
+      };
+      oldInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          if (mode === 'change' && !oldInput.value) return;
+          pwInput.focus();
+        }
+      };
+
+      setTimeout(() => pwInput.focus(), 100);
+    });
+  }
+
+  async function requireUnlock(tabName) {
+    // Check cached first
+    if (unlockedTabs.has(tabName)) return true;
+
+    const encrypted = await isTabEncrypted(tabName);
+    if (!encrypted) {
+      unlockedTabs.add(tabName); // not encrypted, mark as "unlocked"
+      return true;
+    }
+
+    while (true) {
+      const result = await showPasswordDialog('unlock', tabName);
+      if (!result) return false; // user cancelled
+
+      try {
+        await verifyTabPassword(tabName, result.password);
+        unlockedTabs.add(tabName);
+        return true;
+      } catch (e) {
+        // Show error and retry
+        const errorEl = $('#password-error');
+        errorEl.textContent = t('wrong_password');
+        errorEl.style.display = '';
+        // Re-show the dialog
+        const dialog = $('#password-dialog');
+        dialog.style.display = 'flex';
+      }
+    }
+  }
+
+  function clearTabUnlock(tabName) {
+    unlockedTabs.delete(tabName);
+  }
+
+  async function onTabUnlock(tabName) {
+    // Called when re-opening an encrypted tab
+    return await requireUnlock(tabName);
   }
 
   function promptAddChild(parentId, afterId) {
@@ -2148,6 +2380,33 @@
 
   function showTabContextMenu(e, name) {
     tabCtxName = name;
+    const setPwItem = tabCtxMenu.querySelector('[data-action="set-password"]');
+    const changePwItem = tabCtxMenu.querySelector('[data-action="change-password"]');
+    const removePwItem = tabCtxMenu.querySelector('[data-action="remove-password"]');
+    const pwSep = $('#tab-ctx-pw-sep');
+    const exportItems = tabCtxMenu.querySelectorAll('.ctx-submenu-item');
+    const isEncrypted = encryptedTabsCache && encryptedTabsCache.includes(name);
+    const isUnlocked = unlockedTabs.has(name);
+    if (isEncrypted) {
+      setPwItem.style.display = 'none';
+      changePwItem.style.display = '';
+      removePwItem.style.display = '';
+      pwSep.style.display = '';
+      // Disable export for encrypted-not-unlocked tabs
+      exportItems.forEach((item) => {
+        if (!isUnlocked) {
+          item.classList.add('ctx-menu-disabled');
+        } else {
+          item.classList.remove('ctx-menu-disabled');
+        }
+      });
+    } else {
+      setPwItem.style.display = '';
+      changePwItem.style.display = 'none';
+      removePwItem.style.display = 'none';
+      pwSep.style.display = '';
+      exportItems.forEach((item) => item.classList.remove('ctx-menu-disabled'));
+    }
     positionMenuAtEvent(tabCtxMenu, e);
   }
 
@@ -2173,6 +2432,93 @@
     }
   }
 
+  async function handleSetPassword(name) {
+    const result = await showPasswordDialog('set', name);
+    if (!result) return;
+    try {
+      await setTabPassword(name, result.password);
+      encryptedTabsCache = encryptedTabsCache || [];
+      if (!encryptedTabsCache.includes(name)) {
+        encryptedTabsCache.push(name);
+      }
+      unlockedTabs.add(name);
+      if (currentTab === name) {
+        await loadMenu();
+      }
+      updateTabEncryptionIndicators();
+    } catch (e) {
+      showDialog(t('error_dialog_title'), `<p>${escapeHtml(e.message)}</p>`);
+    }
+  }
+
+  async function handleChangePassword(name) {
+    const result = await showPasswordDialog('change', name);
+    if (!result) return;
+    try {
+      await setTabPassword(name, result.password, result.oldPassword);
+      unlockedTabs.add(name);
+      if (currentTab === name) {
+        await loadMenu();
+      }
+    } catch (e) {
+      showDialog(t('error_dialog_title'), `<p>${escapeHtml(e.message)}</p>`);
+    }
+  }
+
+  async function handleRemovePassword(name) {
+    // First confirm
+    const confirmed = await showDialog(
+      t('remove_password'),
+      `<p>${t('remove_password_confirm')} "${escapeHtml(name)}"?</p>`,
+      () => true
+    );
+    if (!confirmed) return;
+
+    const result = await showPasswordDialog('remove', name);
+    if (!result) return;
+    try {
+      await removeTabPassword(name, result.password);
+      unlockedTabs.delete(name);
+      if (encryptedTabsCache) {
+        const idx = encryptedTabsCache.indexOf(name);
+        if (idx !== -1) encryptedTabsCache.splice(idx, 1);
+      }
+      clearTabUnlock(name);
+      if (currentTab === name) {
+        await loadMenu();
+      }
+      updateTabEncryptionIndicators();
+    } catch (e) {
+      showDialog(t('error_dialog_title'), `<p>${escapeHtml(e.message)}</p>`);
+    }
+  }
+
+  function updateTabEncryptionIndicators() {
+    tabsEl.querySelectorAll('.tab').forEach((tabEl) => {
+      const tabName = tabEl.dataset.tab;
+      if (!tabName) return;
+      const isEncrypted = encryptedTabsCache && encryptedTabsCache.includes(tabName);
+      const lockIcon = tabEl.querySelector('.tab-lock-icon');
+      if (isEncrypted) {
+        if (!lockIcon) {
+          const icon = document.createElement('span');
+          icon.className = 'tab-lock-icon';
+          icon.textContent = ' 🔒';
+          icon.title = t('encrypted');
+          // Append after .tab-label so updateTabLabel textContent doesn't wipe it
+          const label = tabEl.querySelector('.tab-label');
+          if (label && label.nextSibling) {
+            tabEl.insertBefore(icon, label.nextSibling);
+          } else {
+            tabEl.appendChild(icon);
+          }
+        }
+      } else if (lockIcon) {
+        lockIcon.remove();
+      }
+    });
+  }
+
   function handleTreeExport(action) {
     const id = treeCtxItemId;
     treeCtxMenu.style.display = 'none';
@@ -2188,6 +2534,7 @@
 
   $$('#tab-context-menu .ctx-submenu-item').forEach((item) => {
     item.addEventListener('click', (e) => {
+      if (item.classList.contains('ctx-menu-disabled')) return;
       e.stopPropagation();
       handleTabExport(item.dataset.action);
     });
@@ -2212,13 +2559,22 @@
           promptRenameTab(name);
           break;
         case 'close-tab':
-          // Hide this tab and sync to server
+          clearTabUnlock(name);
           kbVisibility[name] = false;
           api('PUT', '/api/tab-visibility', kbVisibility).then(() => {
             loadTabs();
           }).catch((e) => {
             console.error('Failed to save visibility:', e);
           });
+          break;
+        case 'set-password':
+          handleSetPassword(name);
+          break;
+        case 'change-password':
+          handleChangePassword(name);
+          break;
+        case 'remove-password':
+          handleRemovePassword(name);
           break;
         case 'delete-tab':
           showDialog(
@@ -2450,6 +2806,32 @@
 
   $('#kb-all-checkbox').addEventListener('change', onKbAllToggle);
   $('#kb-dropdown-arrow').addEventListener('click', toggleKbDropdown);
+
+  // ─── Session Security ──────────────────────────────────────────────────
+  // Clear encryption key cache when page is hidden.
+  // This ensures re-prompt on next visit (tab close/reopen).
+  function clearServerEncryptionCache() {
+    // Use sendBeacon (reliable during page unload), fallback to fetch+keepalive
+    try {
+      const body = JSON.stringify({});
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/clear-encryption-cache', body);
+      } else {
+        fetch('/api/clear-encryption-cache', { method: 'POST', body, keepalive: true });
+      }
+    } catch (_) { /* ignore errors during page lifecycle events */ }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      unlockedTabs.clear();
+      clearServerEncryptionCache();
+    }
+  });
+  window.addEventListener('pagehide', () => {
+    unlockedTabs.clear();
+    clearServerEncryptionCache();
+  });
 
   // ─── Init ──────────────────────────────────────────────────────────────
 

@@ -36,9 +36,15 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.utils import secure_filename
 from fpdf import FPDF
 
+# Password hashing and encryption
+import bcrypt
+from Crypto.Cipher import AES
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Random import get_random_bytes
+
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v3.1.1'
+version = 'v3.2.1'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -334,10 +340,13 @@ def load_menu(tab_name):
     menu_path = tab_path / 'menu.json'
     nav_path = tab_path / 'nav.html'
 
-    if menu_path.exists():
-        with open(menu_path, 'r', encoding='utf-8') as f:
+    # Check both plain and encrypted menu.json
+    menu_exists = menu_path.exists() or (menu_path.with_suffix('.json.enc')).exists()
+    if menu_exists:
+        raw = read_tab_text(tab_name, 'menu.json')
+        if raw is not None:
             try:
-                data = json.load(f)
+                data = json.loads(raw)
                 if data:
                     return data
             except json.JSONDecodeError:
@@ -355,10 +364,11 @@ def save_menu(tab_name, menu_data):
     menu_path = get_menu_path(tab_name)
     if menu_path:
         menu_path.parent.mkdir(exist_ok=True)
-        with open(menu_path, 'w', encoding='utf-8') as f:
-            json.dump(menu_data, f, ensure_ascii=False, indent=2)
+        json_str = json.dumps(menu_data, ensure_ascii=False, indent=2)
+        write_tab_text(tab_name, 'menu.json', json_str)
         menu_js = menu_path.with_name('menu.js')
         js_content = 'var MENU_DATA = ' + json.dumps(menu_data, ensure_ascii=False) + ';'
+        # menu.js is always plain-text (frontend reads it directly for standalone export)
         with open(menu_js, 'w', encoding='utf-8') as f:
             f.write(js_content)
         return True
@@ -372,14 +382,15 @@ def find_content_file(tab_name, item_id):
 
     content_dir = tab_path / 'content'
     content_file = content_dir / f"{item_id}.html"
-    if content_file.exists():
+    # Check both plain and encrypted versions
+    if content_file.exists() or (content_file.with_suffix(content_file.suffix + '.enc')).exists():
         return content_file, 'html'
 
     menu = load_menu(tab_name)
     item = find_menu_item(menu, item_id)
     if item and 'href' in item:
         href_path = tab_path / item['href']
-        if href_path.exists():
+        if href_path.exists() or (href_path.with_suffix(href_path.suffix + '.enc')).exists():
             return href_path, 'qrich'
     return None, None
 
@@ -387,12 +398,18 @@ def find_content_file(tab_name, item_id):
 def load_content(tab_name, item_id):
     content_file, ctype = find_content_file(tab_name, item_id)
     if content_file:
-        with open(content_file, 'r', encoding='utf-8') as f:
-            raw = f.read()
+        raw = read_tab_text(tab_name, content_file.relative_to(tab_path_for_rel(tab_name)))
+        if raw is None:
+            return ''
         if ctype == 'qrich':
             return _extract_body_from_qrich(raw)
         return raw
     return ''
+
+
+def tab_path_for_rel(tab_name):
+    """Return the base path for a tab, for computing relative paths."""
+    return get_tab_path(tab_name)
 
 
 def _extract_body_from_qrich(html):
@@ -688,12 +705,21 @@ def _search_index_regex(tab_name, pattern, db_path):
         conn.close()
 
 
+def _tab_searchable(tab_name):
+    """Check whether a tab can be searched — skip encrypted-not-unlocked tabs."""
+    if is_tab_encrypted(tab_name) and get_cached_encryption_key(tab_name) is None:
+        return False
+    return True
+
+
 def search_all_tabs(query, use_regex=False):
-    """Search across all indexed knowledge bases."""
+    """Search across all indexed knowledge bases (skips encrypted-not-unlocked tabs)."""
     results = []
     if index_db_dir.exists():
         for db_file in sorted(index_db_dir.glob("*.db")):
             tab_name = db_file.stem
+            if not _tab_searchable(tab_name):
+                continue
             results.extend(search_index(tab_name, query, use_regex=use_regex))
     return results
 
@@ -785,6 +811,21 @@ def delete_tab_index(tab_name):
         db_path.unlink()
 
 
+def _index_db_has_rows(tab_name):
+    """Check if an index DB has any indexed items."""
+    db_path = get_index_db_path(tab_name)
+    if not db_path.exists():
+        return False
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.execute("SELECT COUNT(*) FROM item_index")
+        return cursor.fetchone()[0] > 0
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
 def ensure_indexes():
     """On startup: delete orphan index files, auto-index new tabs, force-index if requested."""
     index_db_dir.mkdir(exist_ok=True)
@@ -799,6 +840,13 @@ def ensure_indexes():
         if db_file.stem not in tabs:
             print(f"  Removing orphan index: {db_file.stem}")
             db_file.unlink()
+
+    # ── Ensure all tabs have visibility and order entries ──
+    # Tabs copied directly into mybase/ won't have entries in common.db,
+    # which excludes them from global search (_get_visible_tab_names).
+    for tab in sorted(tabs):
+        add_tab_to_order(tab)
+        init_tab_visibility(tab)
 
     indexed = {db.stem for db in index_db_dir.glob("*.db")}
 
@@ -819,6 +867,20 @@ def ensure_indexes():
                 index_tab(tab)
             except Exception as e:
                 log_error("ensure_indexes", e, f"creating index for {tab}")
+
+    # ── Rebuild stale empty indexes ──
+    # If an index DB exists but has 0 rows (e.g. initial index_tab ran before
+    # any menu items existed), re-index to populate it.
+    for tab in sorted(tabs):
+        if tab in indexed and tab not in skip_auto:
+            if not _index_db_has_rows(tab):
+                menu = load_menu(tab)
+                if menu:  # tab has content but empty index → stale
+                    print(f"  Rebuilding stale empty index for tab: {tab}")
+                    try:
+                        index_tab(tab)
+                    except Exception as e:
+                        log_error("ensure_indexes", e, f"rebuilding index for {tab}")
 
     # ── Force-index (if requested) ──
     if force_index_target:
@@ -1230,6 +1292,7 @@ def init_common_db():
         conn.commit()
     finally:
         conn.close()
+    _init_password_tables()
 
 
 def get_tab_order():
@@ -1495,14 +1558,401 @@ def set_system_config(name, value):
 # ─── End Common Database ──────────────────────────────────────────────────
 
 
-def save_content(tab_name, item_id, content_html):
-    content_dir = get_content_dir(tab_name)
-    if content_dir:
-        content_file = content_dir / f"{item_id}.html"
-        with open(content_file, 'w', encoding='utf-8') as f:
-            f.write(content_html)
+# === Password & Encryption System ==========================================
+
+# In-memory cache of derived AES keys for unlocked encrypted tabs.
+# key: tab_name → 32-byte AES key (bytes)
+# Cleared when a tab is hidden/closed.
+_encryption_key_cache: dict[str, bytes] = {}
+_encryption_key_cache_lock = threading.Lock()
+
+
+def _init_password_tables():
+    """Create password/encryption tables in common.db if not exists."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tab_passwords (
+                tab_name TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                enc_salt BLOB NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def is_tab_encrypted(tab_name: str) -> bool:
+    """Check if a knowledge base has a password set."""
+    if not common_db.exists():
+        return False
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT 1 FROM tab_passwords WHERE tab_name = ?", (tab_name,)
+        )
+        return cursor.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def get_encrypted_tabs() -> list[str]:
+    """Return list of tab names that have passwords set."""
+    if not common_db.exists():
+        return []
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name FROM tab_passwords")
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def set_tab_password(tab_name: str, password: str) -> str:
+    """Set/change password for a tab. Returns error string or empty string on success.
+
+    On first-time setup (no existing password), also encrypts all KB files.
+    On password change (existing password), re-encrypts all files with new key.
+    """
+    pw_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    # Generate new salt for AES key derivation
+    new_salt = get_random_bytes(16)
+    new_key = PBKDF2(password.encode('utf-8'), new_salt, dkLen=32, count=100000)
+
+    existing_salt = None
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT enc_salt FROM tab_passwords WHERE tab_name = ?", (tab_name,)
+        )
+        row = cursor.fetchone()
+        if row:
+            existing_salt = row[0]
+
+        conn.execute(
+            "INSERT OR REPLACE INTO tab_passwords (tab_name, password_hash, enc_salt) VALUES (?, ?, ?)",
+            (tab_name, pw_hash, new_salt)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Cache the new key
+    with _encryption_key_cache_lock:
+        _encryption_key_cache[tab_name] = new_key
+
+    # If this is a new password (no existing salt), encrypt all files
+    if not existing_salt:
+        try:
+            _encrypt_all_tab_files(tab_name, new_key)
+        except Exception as e:
+            log_error("set_tab_password._encrypt_all_tab_files", e, tab_name)
+            return f"加密文件失败: {e}"
+    elif existing_salt != new_salt:
+        # Password changed, re-encrypt with new key
+        try:
+            _encrypt_all_tab_files(tab_name, new_key)
+        except Exception as e:
+            log_error("set_tab_password._encrypt_all_tab_files", e, tab_name)
+            return f"重新加密文件失败: {e}"
+
+    return ""
+
+
+def verify_tab_password(tab_name: str, password: str) -> bool:
+    """Verify password for a tab. On success, caches the derived AES key."""
+    if not common_db.exists():
+        return False
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT password_hash, enc_salt FROM tab_passwords WHERE tab_name = ?",
+            (tab_name,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return False
+        pw_hash, salt = row
+        if not bcrypt.checkpw(password.encode('utf-8'), pw_hash.encode('utf-8')):
+            return False
+        # Derive and cache the AES key
+        key = PBKDF2(password.encode('utf-8'), salt, dkLen=32, count=100000)
+        with _encryption_key_cache_lock:
+            _encryption_key_cache[tab_name] = key
         return True
-    return False
+    finally:
+        conn.close()
+
+
+def remove_tab_password(tab_name: str, password: str) -> str:
+    """Remove password protection from a tab. Returns '' on success or error message."""
+    if not verify_tab_password(tab_name, password):
+        return "密码验证失败"
+
+    # Decrypt all files back to plaintext
+    key = get_cached_encryption_key(tab_name)
+    if key:
+        try:
+            _decrypt_all_tab_files(tab_name, key)
+        except Exception as e:
+            log_error("remove_tab_password._decrypt_all_tab_files", e, tab_name)
+            return f"解密文件失败: {e}"
+
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("DELETE FROM tab_passwords WHERE tab_name = ?", (tab_name,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with _encryption_key_cache_lock:
+        _encryption_key_cache.pop(tab_name, None)
+    return ""
+
+
+def get_cached_encryption_key(tab_name: str) -> bytes | None:
+    """Return cached AES key for a tab, or None if not in cache."""
+    with _encryption_key_cache_lock:
+        return _encryption_key_cache.get(tab_name)
+
+
+def clear_encryption_key_cache(tab_name: str):
+    """Remove cached AES key for a tab (e.g. when tab is hidden)."""
+    with _encryption_key_cache_lock:
+        _encryption_key_cache.pop(tab_name, None)
+
+
+# ─── File-level AES-GCM Encryption ────────────────────────────────────────
+
+def _encrypt_file_data(data: bytes, key: bytes) -> bytes:
+    """Encrypt *data* with AES-256-GCM using a random 12-byte nonce.
+    Returns: nonce (12) + ciphertext + tag (16).
+    """
+    nonce = get_random_bytes(12)
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    ciphertext, tag = cipher.encrypt_and_digest(data)
+    return nonce + ciphertext + tag
+
+
+def _decrypt_file_data(encrypted: bytes, key: bytes) -> bytes:
+    """Decrypt data produced by _encrypt_file_data.
+    Returns original plaintext or raises ValueError on authentication failure.
+    """
+    if len(encrypted) < 28:
+        raise ValueError("数据损坏: 加密数据过短")
+    nonce = encrypted[:12]
+    tag = encrypted[-16:]
+    ciphertext = encrypted[12:-16]
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    try:
+        return cipher.decrypt_and_verify(ciphertext, tag)
+    except (ValueError, KeyError) as e:
+        raise ValueError(f"解密失败: {e}")
+
+
+def _encrypt_file_at_path(file_path: Path, key: bytes) -> Path:
+    """Encrypt a file in-place. Replaces file with .enc version.
+    Returns the new .enc path, or raises on error.
+    """
+    enc_path = file_path.with_suffix(file_path.suffix + '.enc')
+    data = file_path.read_bytes()
+    enc_data = _encrypt_file_data(data, key)
+    enc_path.write_bytes(enc_data)
+    file_path.unlink()  # remove original
+    return enc_path
+
+
+def _decrypt_file_at_path(enc_path: Path, key: bytes) -> Path:
+    """Decrypt a .enc file back to original. Returns the original path."""
+    if not enc_path.suffix.endswith('.enc'):
+        return enc_path  # not encrypted
+    orig_suffix = enc_path.suffix[:-4]  # remove .enc
+    orig_path = enc_path.with_suffix(orig_suffix)
+    data = enc_path.read_bytes()
+    plain = _decrypt_file_data(data, key)
+    orig_path.write_bytes(plain)
+    enc_path.unlink()
+    return orig_path
+
+
+def _read_decrypted_file(file_path: Path, key: bytes) -> bytes:
+    """Read a file, transparently decrypting if .enc version exists."""
+    enc_path = file_path.with_suffix(file_path.suffix + '.enc')
+    if enc_path.exists():
+        data = enc_path.read_bytes()
+        return _decrypt_file_data(data, key)
+    # Plain file exists
+    if file_path.exists():
+        return file_path.read_bytes()
+    raise FileNotFoundError(f"文件不存在: {file_path}")
+
+
+def _write_encrypted_file(file_path: Path, data: bytes, key: bytes):
+    """Write data, transparently encrypted. Removes any old plaintext file."""
+    enc_path = file_path.with_suffix(file_path.suffix + '.enc')
+    # Remove old plaintext if it exists
+    if file_path.exists():
+        file_path.unlink()
+    enc_data = _encrypt_file_data(data, key)
+    enc_path.write_bytes(enc_data)
+
+
+def _walk_tab_files(tab_name: str) -> list[Path]:
+    """Return all files (paths) under a tab's directory, excluding .enc files
+    (since we iterate the originals and their .enc counterparts are handled together)."""
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return []
+    files = []
+    for root, _dirs, filenames in os.walk(tab_path):
+        for f in filenames:
+            fp = Path(root) / f
+            if fp.suffix == '.enc':
+                continue  # we handle these via their originals
+            # Skip hidden files
+            if f.startswith('.'):
+                continue
+            # Skip the exported index.html (re-generatable)
+            if f == 'index.html' and fp.parent == tab_path:
+                continue
+            files.append(fp)
+    return files
+
+
+def _encrypt_all_tab_files(tab_name: str, key: bytes):
+    """Encrypt all files under a tab's directory with AES-GCM."""
+    files = _walk_tab_files(tab_name)
+    for fp in files:
+        try:
+            _encrypt_file_at_path(fp, key)
+        except Exception as e:
+            log_error("_encrypt_all_tab_files", e, f"{tab_name}/{fp.name}")
+
+
+def _decrypt_all_tab_files(tab_name: str, key: bytes):
+    """Decrypt all .enc files under a tab's directory back to plaintext."""
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return
+    for root, _dirs, filenames in os.walk(tab_path):
+        for f in filenames:
+            if not f.endswith('.enc'):
+                continue
+            enc_path = Path(root) / f
+            try:
+                _decrypt_file_at_path(enc_path, key)
+            except Exception as e:
+                log_error("_decrypt_all_tab_files", e, f"{tab_name}/{f}")
+
+
+# ─── Modified file I/O for encrypted tabs ─────────────────────────────────
+
+def read_tab_file(tab_name: str, rel_path: str) -> bytes | None:
+    """Read a file from a tab, transparently decrypting if tab is encrypted.
+    *rel_path* is relative to the tab's directory (e.g. 'content/uuid.html').
+    Returns bytes or None if the file doesn't exist.
+    """
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return None
+    file_path = tab_path / rel_path
+
+    key = get_cached_encryption_key(tab_name)
+    if key:
+        # Tab is encrypted, try reading the .enc version
+        try:
+            return _read_decrypted_file(file_path, key)
+        except FileNotFoundError:
+            return None
+        except ValueError as e:
+            log_error("read_tab_file", e, f"{tab_name}/{rel_path}")
+            return None
+    else:
+        if is_tab_encrypted(tab_name):
+            # Tab is encrypted but not unlocked
+            log_error("read_tab_file", Exception("access denied"),
+                      f"{tab_name}/{rel_path} - tab is encrypted but not unlocked")
+            return None
+        # Plain file
+        if not file_path.exists():
+            return None
+        return file_path.read_bytes()
+
+
+def write_tab_file(tab_name: str, rel_path: str, data: bytes) -> bool:
+    """Write a file to a tab, transparently encrypting if tab is encrypted.
+    Returns True on success.
+    """
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return False
+    file_path = tab_path / rel_path
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    key = get_cached_encryption_key(tab_name)
+    if key:
+        _write_encrypted_file(file_path, data, key)
+    else:
+        file_path.write_bytes(data)
+    return True
+
+
+def read_tab_text(tab_name: str, rel_path: str, encoding='utf-8') -> str | None:
+    """Read a text file from a tab with transparent decryption."""
+    data = read_tab_file(tab_name, rel_path)
+    if data is None:
+        return None
+    return data.decode(encoding)
+
+
+def write_tab_text(tab_name: str, rel_path: str, text: str, encoding='utf-8') -> bool:
+    """Write a text file to a tab with transparent encryption."""
+    return write_tab_file(tab_name, rel_path, text.encode(encoding))
+
+
+def tab_file_exists(tab_name: str, rel_path: str) -> bool:
+    """Check if a file exists in a tab (handles both plain and encrypted versions)."""
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return False
+    file_path = tab_path / rel_path
+    if file_path.exists():
+        return True
+    enc_path = file_path.with_suffix(file_path.suffix + '.enc')
+    return enc_path.exists()
+
+
+def list_tab_files(tab_name: str, rel_dir: str) -> list[str]:
+    """List files in a tab directory, handling .enc naming transparently.
+    Returns original filenames (without .enc suffix).
+    """
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return []
+    dir_path = tab_path / rel_dir
+    if not dir_path.exists():
+        return []
+    names = set()
+    for f in dir_path.iterdir():
+        name = f.name
+        if name.endswith('.enc'):
+            name = name[:-4]
+        if not name.startswith('.'):
+            names.add(name)
+    return sorted(names)
+
+
+# === End Password & Encryption System ======================================
+
+
+def save_content(tab_name, item_id, content_html):
+    tab_path = get_tab_path(tab_name)
+    if not tab_path:
+        return False
+    rel_path = f"content/{item_id}.html"
+    return write_tab_text(tab_name, rel_path, content_html)
 
 
 
@@ -1540,7 +1990,10 @@ def _collect_all_descendant_ids(items, item_id):
 
 def ws_emit_menu_changed(tab):
     """Broadcast menu_changed event to all clients in the tab room.
-    Called from REST routes after menu mutations."""
+    Called from REST routes after menu mutations.
+    Encrypted tabs don't broadcast menu changes (no sync)."""
+    if is_tab_encrypted(tab):
+        return
     try:
         room = f'tab:{tab}'
         socketio.emit('menu_changed', {'tab': tab}, room=room)
@@ -1550,7 +2003,10 @@ def ws_emit_menu_changed(tab):
 
 def ws_emit_content_saved(tab, item_id, content):
     """Broadcast content_saved event to all clients in the tab room.
-    Called from REST route after content save."""
+    Called from REST route after content save.
+    Encrypted tabs don't broadcast content saves (no sync)."""
+    if is_tab_encrypted(tab):
+        return
     try:
         room = f'tab:{tab}'
         socketio.emit('content_saved', {
@@ -1576,9 +2032,14 @@ def ws_handle_disconnect():
 
 @socketio.on('join_tab')
 def ws_join_tab(data):
-    """Client joins the tab-level room to receive menu/save notifications."""
+    """Client joins the tab-level room to receive menu/save notifications.
+    Encrypted tabs cannot join — they must not sync content via WebSocket."""
     tab = data.get('tab')
     if tab:
+        if is_tab_encrypted(tab) and get_cached_encryption_key(tab) is None:
+            # Encrypted tab not unlocked — deny sync
+            emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
+            return
         join_room(f'tab:{tab}')
 
 
@@ -1613,8 +2074,12 @@ def ws_leave_document(data):
 @socketio.on('content_change')
 def ws_content_change(data):
     """Receive real-time content change from one client and broadcast to others
-    in the same document room (excludes the sender)."""
+    in the same document room (excludes the sender).
+    Encrypted tabs cannot sync content via WebSocket."""
     tab = data.get('tab')
+    if tab and is_tab_encrypted(tab):
+        emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
+        return
     item_id = data.get('item_id')
     content = data.get('content')
     if tab and item_id and content is not None:
@@ -1629,10 +2094,14 @@ def ws_content_change(data):
 @socketio.on('lock_document')
 def ws_lock_document(data):
     """Client requests an edit lock for an item (to prevent deletion by others).
-    If the item is already locked by a different session, respond with lock_denied."""
+    If the item is already locked by a different session, respond with lock_denied.
+    Encrypted tabs cannot use document locks (no sync)."""
     tab = data.get('tab')
     item_id = data.get('item_id')
     if not tab or not item_id:
+        return
+    if is_tab_encrypted(tab):
+        emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
         return
     key = (tab, item_id)
     sid = request.sid
@@ -1897,8 +2366,9 @@ def save_content_route(tab, item_id):
     tab_path = get_tab_path(tab)
     if tab_path:
         index_html = generate_standalone_html(tab)
-        with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
-            f.write(index_html)
+        if index_html is not None:
+            with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
+                f.write(index_html)
     # Broadcast to all clients in the tab that this item was saved
     ws_emit_content_saved(tab, item_id, content_html)
     return jsonify({'success': True})
@@ -1925,7 +2395,8 @@ def upload_image(tab):
     upload_dir = get_upload_dir(tab)
     assert upload_dir is not None, "tab verified above"
     file_path = upload_dir / unique_name
-    file.save(str(file_path))
+    file_data = file.read()
+    write_tab_file(tab, f"images/{unique_name}", file_data)
 
     return jsonify({'url': f'/uploads/{tab}/images/{unique_name}'}), 201
 
@@ -1935,7 +2406,28 @@ def serve_uploaded_image(tab, filename):
     tab_path = get_tab_path(tab)
     if not tab_path:
         abort(404)
+    # Check if this tab is encrypted and try to serve decrypted image
+    key = get_cached_encryption_key(tab)
+    if key:
+        rel_path = f"images/{filename}"
+        data = read_tab_file(tab, rel_path)
+        if data is None:
+            abort(404)
+        # Determine mimetype from extension
+        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'png'
+        mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                     'gif': 'image/gif', 'webp': 'image/webp', 'bmp': 'image/bmp'}
+        mime = mime_map.get(ext, 'application/octet-stream')
+        return send_file(io.BytesIO(data), mimetype=mime)
+    # Plain file
     upload_dir = tab_path / UPLOAD_DIR_NAME
+    file_path = upload_dir / filename
+    if not file_path.exists():
+        # Also check .enc version
+        enc_path = file_path.with_suffix(file_path.suffix + '.enc')
+        if enc_path.exists():
+            abort(404)  # encrypted but not unlocked
+        abort(404)
     return send_from_directory(str(upload_dir), filename)
 
 
@@ -1965,13 +2457,18 @@ def search():
 
     try:
         if tab:
-            results = search_index(tab, query, use_regex=use_regex) if visible_tabs is None or tab in visible_tabs else []
+            if (visible_tabs is not None and tab not in visible_tabs) or not _tab_searchable(tab):
+                results = []
+            else:
+                results = search_index(tab, query, use_regex=use_regex)
         else:
             if visible_tabs is None:
                 results = search_all_tabs(query, use_regex=use_regex)
             else:
                 results = []
                 for t in sorted(visible_tabs):
+                    if not _tab_searchable(t):
+                        continue
                     results.extend(search_index(t, query, use_regex=use_regex))
         return jsonify(results)
     except ValueError as e:
@@ -1989,6 +2486,9 @@ def get_indexing_status():
 
 
 def generate_standalone_html(tab_name):
+    # Encrypted tabs cannot export standalone HTML (content files are encrypted)
+    if is_tab_encrypted(tab_name) and get_cached_encryption_key(tab_name) is None:
+        return None
     content_data = {}
     img_pattern = re.compile(r'/uploads/' + re.escape(tab_name) + r'/images/')
     tab_path = get_tab_path(tab_name)
@@ -1997,9 +2497,10 @@ def generate_standalone_html(tab_name):
     content_dir = get_content_dir(tab_name)
     if content_dir and content_dir.exists():
         for f in sorted(content_dir.glob('*.html')):
-            html = f.read_text(encoding='utf-8')
-            html = img_pattern.sub('images/', html)
-            content_data[f.stem] = html
+            html = read_tab_text(tab_name, f"content/{f.name}")
+            if html is not None:
+                html = img_pattern.sub('images/', html)
+                content_data[f.stem] = html
 
     # Read .qrich.html files (legacy frameset tabs)
     if tab_path:
@@ -2213,8 +2714,9 @@ def create_tab():
     add_tab_to_order(name)
     init_tab_visibility(name)
     index_html = generate_standalone_html(name)
-    with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
-        f.write(index_html)
+    if index_html is not None:
+        with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
+            f.write(index_html)
     _run_in_background(index_tab, name)
     return jsonify({'name': name}), 201
 
@@ -2253,6 +2755,10 @@ def rename_tab_in_common_db(old_name, new_name):
             "UPDATE tab_current_item SET tab_name = ? WHERE tab_name = ?",
             (new_name, old_name)
         )
+        conn.execute(
+            "UPDATE tab_passwords SET tab_name = ? WHERE tab_name = ?",
+            (new_name, old_name)
+        )
         conn.commit()
     finally:
         conn.close()
@@ -2260,8 +2766,9 @@ def rename_tab_in_common_db(old_name, new_name):
 
 def regenerate_index_html(tab_name, tab_path):
     index_html = generate_standalone_html(tab_name)
-    with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
-        f.write(index_html)
+    if index_html is not None:
+        with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
+            f.write(index_html)
 
 
 @app.route('/api/tabs/<old_name>', methods=['PUT'])
@@ -2318,6 +2825,16 @@ def delete_tab(tab):
     remove_tab_from_order(tab)
     delete_tab_visibility(tab)
     delete_tab_current_item(tab)
+    # Remove password entry if exists
+    if common_db.exists():
+        conn = sqlite3.connect(str(common_db))
+        try:
+            conn.execute("DELETE FROM tab_passwords WHERE tab_name = ?", (tab,))
+            conn.commit()
+        finally:
+            conn.close()
+    with _encryption_key_cache_lock:
+        _encryption_key_cache.pop(tab, None)
 
     def _remove_readonly(func, path, _):
         """Clear read-only flag and retry (required on Windows)."""
@@ -2325,6 +2842,80 @@ def delete_tab(tab):
         func(path)
 
     shutil.rmtree(str(tab_path), onerror=_remove_readonly)
+    return jsonify({'success': True})
+
+
+# ─── Password Management API Routes ───────────────────────────────────────
+
+
+@app.route('/api/tabs/<tab>/password', methods=['POST'])
+def set_tab_password_route(tab):
+    """Set or change password for a knowledge base."""
+    if not get_tab_path(tab):
+        return jsonify({'error': '知识库不存在'}), 404
+    data = request.get_json()
+    if not data or 'password' not in data:
+        return jsonify({'error': '需要提供密码'}), 400
+
+    password = data['password']
+    if len(password) < 4:
+        return jsonify({'error': '密码至少需要4个字符'}), 400
+
+    # If tab already has a password, verify the old one
+    if is_tab_encrypted(tab):
+        old_password = data.get('old_password', '')
+        if not verify_tab_password(tab, old_password):
+            return jsonify({'error': '原密码验证失败'}), 403
+
+    err = set_tab_password(tab, password)
+    if err:
+        return jsonify({'error': err}), 500
+    return jsonify({'success': True})
+
+
+@app.route('/api/tabs/<tab>/verify-password', methods=['POST'])
+def verify_tab_password_route(tab):
+    """Verify password for a tab. On success, caches the derived AES key."""
+    if not get_tab_path(tab):
+        return jsonify({'error': '知识库不存在'}), 404
+    data = request.get_json()
+    if not data or 'password' not in data:
+        return jsonify({'error': '需要提供密码'}), 400
+
+    if verify_tab_password(tab, data['password']):
+        return jsonify({'success': True})
+    return jsonify({'error': '密码错误'}), 403
+
+
+@app.route('/api/tabs/<tab>/password', methods=['DELETE'])
+def remove_tab_password_route(tab):
+    """Remove password protection from a tab."""
+    if not get_tab_path(tab):
+        return jsonify({'error': '知识库不存在'}), 404
+    if not is_tab_encrypted(tab):
+        return jsonify({'error': '该知识库没有设置密码'}), 400
+
+    data = request.get_json()
+    if not data or 'password' not in data:
+        return jsonify({'error': '需要提供密码'}), 400
+
+    err = remove_tab_password(tab, data['password'])
+    if err:
+        return jsonify({'error': err}), 403
+    return jsonify({'success': True})
+
+
+@app.route('/api/encrypted-tabs')
+def get_encrypted_tabs_route():
+    """Return list of tab names that have passwords set."""
+    return jsonify({'encrypted_tabs': get_encrypted_tabs()})
+
+
+@app.route('/api/clear-encryption-cache', methods=['POST'])
+def clear_encryption_cache():
+    """Clear all cached encryption keys (called when page hides/unloads)."""
+    with _encryption_key_cache_lock:
+        _encryption_key_cache.clear()
     return jsonify({'success': True})
 
 
@@ -2968,7 +3559,9 @@ def export_tab_pdf(tab):
 
 @app.route('/api/<tab>/export/zip')
 def export_tab_zip(tab):
-    """Package the entire knowledge base folder as <知识库>-<date>.zip."""
+    """Package the entire knowledge base folder as <知识库>-<date>.zip.
+    If the tab is encrypted and unlocked, decrypts files on-the-fly into the zip.
+    If encrypted but not unlocked, includes .enc files as-is."""
     try:
         tab_path = get_tab_path(tab)
         if not tab_path:
@@ -2979,6 +3572,9 @@ def export_tab_zip(tab):
         filename = f"{tab}-{date_str}.zip"
         zip_path = _EXPORT_DIR / filename
 
+        tab_encrypted = is_tab_encrypted(tab)
+        tab_unlocked = get_cached_encryption_key(tab) is not None
+
         # Create zip of the tab's data folder
         with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(tab_path):
@@ -2986,6 +3582,23 @@ def export_tab_zip(tab):
                 for f in files:
                     file_path = os.path.join(root, f)
                     arcname = os.path.join(rel_dir, f)
+
+                    # For encrypted+unlocked tabs, decrypt .enc files on-the-fly
+                    if tab_encrypted and tab_unlocked and f.endswith('.enc'):
+                        orig_name = f[:-4]  # strip .enc
+                        tab_rel = os.path.relpath(root, tab_path)
+                        if tab_rel == '.':
+                            tab_rel_path = orig_name
+                        else:
+                            tab_rel_path = os.path.join(tab_rel, orig_name)
+                        tab_rel_path = tab_rel_path.replace('\\', '/')
+                        data = read_tab_file(tab, tab_rel_path)
+                        if data is not None:
+                            # Write decrypted content with original filename
+                            arcname = os.path.join(rel_dir, orig_name)
+                            zf.writestr(arcname, data)
+                            continue
+
                     zf.write(file_path, arcname)
 
         return send_file(str(zip_path), mimetype='application/zip', as_attachment=True, download_name=filename)

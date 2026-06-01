@@ -193,6 +193,7 @@
   <tr><td>OCR 图片文字识别</td><td>基于 PaddleOCR，自动提取图片文字并纳入索引</td><td>核心</td></tr>
   <tr><td>一键备份</td><td>ZIP 打包所有知识库数据，支持下载</td><td>重要</td></tr>
   <tr><td>独立导出</td><td>每个知识库生成独立单页 HTML</td><td>重要</td></tr>
+  <tr><td>知识库加密</td><td>BCrypt 密码验证 + AES-256-GCM 文件加密，基于会话的解锁</td><td>重要</td></tr>
   <tr><td>导出功能</td><td>支持 Tab 级和菜单项级的 PDF/ZIP 导出</td><td>重要</td></tr>
   <tr><td>帮助文档</td><td>内置 HTML 帮助页面</td><td>补充</td></tr>
 </table>
@@ -223,8 +224,9 @@
 │   │       ├── menu.js              # 前端用菜单数据（JS 变量）
 │   │       ├── index.html           # 独立导出 HTML 页面
 │   │       ├── nav.html             # （可选）遗留导航文件
-│   │       ├── content/             # 条目内容文件（UUID.html）
-│   │       ├── images/              # 上传的图片文件
+│   │       ├── content/             # 条目内容文件（UUID.html，加密后为 .html.enc）
+│   │       ├── images/              # 上传的图片文件（加密后为 .enc 后缀）
+│   │       ├── menu.json            # 菜单文件（加密时保存为 menu.json.enc）
 │   │       └── *.qrich.html         # （遗留）旧版富文本文件
 │   └── db/                          # 数据库目录
 │       ├── common.db                # 通用配置数据库（SQLite）
@@ -260,6 +262,8 @@
   <tr><td>paddlepaddle</td><td>&gt;=3.0.0</td><td>深度学习框架，OCR 模型推理基础</td></tr>
   <tr><td>paddleocr</td><td>&gt;=3.0.0</td><td>OCR 光学字符识别库</td></tr>
   <tr><td>paddlex</td><td>&gt;=3.0.0</td><td>Paddle 模型管理工具</td></tr>
+  <tr><td>bcrypt</td><td>&gt;=4.0.0</td><td>密码哈希，知识库密码验证</td></tr>
+  <tr><td>pycryptodome</td><td>&gt;=3.20.0</td><td>AES-256-GCM 文件加密解密</td></tr>
   <tr><td>click</td><td>&gt;=8.0.0</td><td>Windows 平台兼容（可选）</td></tr>
 </table>
 
@@ -328,6 +332,12 @@ pip install -r requirements.txt</code></pre>
     <td><code>server.py</code> (start_backup, get_backup_status, download_backup)</td>
     <td><code>app.js</code> (btn-backup click handler)</td>
     <td>异步 ZIP 打包，进度轮询，自动下载</td>
+  </tr>
+  <tr>
+    <td>加密系统</td>
+    <td><code>server.py</code> (AES-256-GCM 加解密, PBKDF2 密钥派生, BCrypt 密码哈希, WebSocket 同步阻断)</td>
+    <td><code>app.js</code> (password dialog, session unlock tracking, context menu handlers)</td>
+    <td>用户密码 → BCrypt 验证 → PBKDF2 派生 AES 密钥 → AES-256-GCM 文件加密</td>
   </tr>
   <tr>
     <td>导出系统</td>
