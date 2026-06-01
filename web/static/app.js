@@ -13,6 +13,13 @@
   let kbVisibility = {}; // { tabName: true/false }
   let kbTabNames = []; // full list of all tab names
 
+  // Socket.IO for real-time collaboration
+  const socket = io();
+  let mySocketId = null;
+  socket.on('connect', () => { mySocketId = socket.id; });
+  let syncTimer = null;
+  let isRemoteUpdate = false;
+
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
@@ -206,12 +213,19 @@
       method,
       headers: { 'Content-Type': 'application/json' },
     };
+    if (mySocketId) {
+      opts.headers['X-Socket-ID'] = mySocketId;
+    }
     if (body !== undefined) {
       opts.body = JSON.stringify(body);
     }
     const res = await fetch(url, opts);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'API Error');
+    if (!res.ok) {
+      const err = new Error(data.error || 'API Error');
+      err.status = res.status;
+      throw err;
+    }
     return data;
   }
 
@@ -223,6 +237,113 @@
     if (!res.ok) throw new Error(data.error || 'Upload Error');
     return data;
   }
+
+  // ─── Socket.IO Real-time Sync ──────────────────────────────────────────
+
+  // ── Rooms ────────────────────────────────────────────────────────────────
+  //   doc:{tab}:{item_id}  — real-time content sync (same item)
+  //   tab:{tab}            — menu_changed / content_saved notifications
+
+  function joinDocumentRoom(tab, itemId) {
+    if (tab && itemId) {
+      socket.emit('join_document', { tab, item_id: itemId });
+    }
+  }
+
+  function leaveDocumentRoom(tab, itemId) {
+    if (tab && itemId) {
+      socket.emit('leave_document', { tab, item_id: itemId });
+    }
+  }
+
+  function joinTabRoom(tab) {
+    if (tab) {
+      socket.emit('join_tab', { tab });
+    }
+  }
+
+  function leaveTabRoom(tab) {
+    if (tab) {
+      socket.emit('leave_tab', { tab });
+    }
+  }
+
+  // ── Edit Lock ────────────────────────────────────────────────────────────
+
+  function tryLockDocument(tab, itemId) {
+    if (tab && itemId) {
+      socket.emit('lock_document', { tab, item_id: itemId });
+    }
+  }
+
+  function unlockDocument(tab, itemId) {
+    if (tab && itemId) {
+      socket.emit('unlock_document', { tab, item_id: itemId });
+    }
+  }
+
+  // ── Content Sync (debounced 1s) ──────────────────────────────────────────
+
+  function debouncedSync() {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      if (currentTab && currentItemId) {
+        socket.emit('content_change', {
+          tab: currentTab,
+          item_id: currentItemId,
+          content: editor.innerHTML
+        });
+      }
+    }, 1000);
+  }
+
+  // ── Socket Event Listeners ───────────────────────────────────────────────
+
+  // Real-time content sync (both users viewing the same document)
+  socket.on('content_update', (data) => {
+    if (data.tab === currentTab && data.item_id === currentItemId) {
+      isRemoteUpdate = true;
+      editor.innerHTML = data.content;
+      constrainEditorImages();
+      contentModified = false;
+      const txt = editorStatus.textContent;
+      if (txt.includes('(unsaved)')) {
+        editorStatus.textContent = txt.replace(' (unsaved)', '');
+      }
+      isRemoteUpdate = false;
+    }
+  });
+
+  // Menu changed (add/delete/rename/move) — reload menu tree
+  socket.on('menu_changed', (data) => {
+    if (data.tab === currentTab) {
+      reloadMenu();
+    }
+  });
+
+  // Content saved — if viewing the saved item, refresh it silently
+  socket.on('content_saved', (data) => {
+    if (data.tab === currentTab && data.item_id === currentItemId) {
+      isRemoteUpdate = true;
+      editor.innerHTML = data.content;
+      constrainEditorImages();
+      contentModified = false;
+      const txt = editorStatus.textContent;
+      if (txt.includes('(unsaved)')) {
+        editorStatus.textContent = txt.replace(' (unsaved)', '');
+      }
+      isRemoteUpdate = false;
+    }
+  });
+
+  // Lock management
+  socket.on('lock_acquired', (data) => {
+    // Lock confirmed — no UI feedback needed
+  });
+
+  socket.on('lock_denied', (data) => {
+    showDialog('无法锁定', `<p>${escapeHtml(data.reason || '该条目正在被其他用户编辑')}</p>`);
+  });
 
   // ─── Tab Drag-and-Drop ─────────────────────────────────────────────────
 
@@ -428,6 +549,12 @@
 
   async function switchTab(name, el) {
     if (currentTab && currentTab !== name) {
+      // Leave old tab room and document room
+      leaveTabRoom(currentTab);
+      if (currentItemId) {
+        unlockDocument(currentTab, currentItemId);
+        leaveDocumentRoom(currentTab, currentItemId);
+      }
       // Save unsaved content before leaving
       if (contentModified && currentItemId) {
         await saveContent(currentItemId);
@@ -446,6 +573,9 @@
     currentItemId = null;
     contentModified = false;
     menuTree = [];
+
+    // Join the tab-level room for menu/save notifications
+    joinTabRoom(name);
 
     treeContainer.innerHTML = `<div style="padding:12px;color:#999;font-size:13px">${t('loading')}</div>`;
 
@@ -636,7 +766,17 @@
       saveContent(currentItemId);
     }
 
+    // Leave previous document room and unlock
+    if (currentTab && currentItemId && currentItemId !== id) {
+      unlockDocument(currentTab, currentItemId);
+      leaveDocumentRoom(currentTab, currentItemId);
+    }
     currentItemId = id;
+    if (currentTab && id) {
+      tryLockDocument(currentTab, id);
+      joinDocumentRoom(currentTab, id);
+    }
+
     lastEditedItem[currentTab] = id;
     contentModified = false;
 
@@ -656,6 +796,7 @@
     if (!currentTab) return;
     try {
       const data = await api('GET', `/api/${encodeURIComponent(currentTab)}/content/${itemId}`);
+      isRemoteUpdate = true;
       const html = data.content.trim();
       if (html) {
         editor.innerHTML = html;
@@ -663,6 +804,7 @@
       } else {
         editor.innerHTML = '<p></p>';
       }
+      isRemoteUpdate = false;
       const item = findNodeById(menuTree, itemId);
       editorStatus.textContent = `Editing: ${item ? item.label : 'Unknown'}`;
     } catch (e) {
@@ -680,6 +822,12 @@
       editorStatus.textContent = editorStatus.textContent.replace(' (unsaved)', '') + ' (saved)';
       dirtyTabs[currentTab] = false;
       updateTabLabel(currentTab);
+      // Also broadcast via WebSocket so other clients see the save immediately
+      socket.emit('content_change', {
+        tab: currentTab,
+        item_id: itemId,
+        content: html
+      });
     } catch (e) {
       console.error('Save failed:', e);
       editorStatus.textContent = 'Save failed!';
@@ -736,7 +884,11 @@
       updateTabLabel(currentTab);
       await reloadMenu();
     } catch (e) {
-      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
+      if (e.status === 409) {
+        showDialog('删除被锁定', `<p>${escapeHtml(e.message)}</p>`);
+      } else {
+        showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
+      }
     }
   }
 
@@ -1635,7 +1787,12 @@
     }
   }
 
-  editor.addEventListener('input', markModified);
+  editor.addEventListener('input', () => {
+    markModified();
+    if (!isRemoteUpdate) {
+      debouncedSync();
+    }
+  });
   editor.addEventListener('paste', handlePaste);
   editor.addEventListener('click', (e) => {
     let node = e.target;

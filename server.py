@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, request, render_template, send_from_directory, send_file, abort
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.utils import secure_filename
 from fpdf import FPDF
 
@@ -59,6 +60,11 @@ _shutdown_requested = threading.Event()
 # Background indexing tracking (for /api/indexing-status)
 _indexing_counter = 0
 _indexing_lock = threading.Lock()
+
+# Edit conflict prevention: track which items are being edited by whom
+# key=(tab, item_id) -> value=sid (socket session id)
+_item_locks: dict = {}
+_item_locks_lock = threading.Lock()
 
 
 def _shutdown_signal_handler(signum, frame):
@@ -134,6 +140,10 @@ app = Flask(__name__,
     template_folder=str(BASE_DIR / 'web' / 'templates'),
     static_folder=str(BASE_DIR / 'web' / 'static'),
     static_url_path='/static')
+app.config['SECRET_KEY'] = os.urandom(24).hex()
+
+# Flask-SocketIO for real-time collaboration
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 UPLOAD_DIR_NAME = 'images'
 data_dir: Path = BASE_DIR / 'data'
@@ -1498,6 +1508,162 @@ def save_content(tab_name, item_id, content_html):
 
 
 
+# ─── WebSocket Real-time Sync (Flask-SocketIO) ──────────────────────────
+
+def _release_locks_by_sid(sid):
+    """Release all document/delete locks held by a given socket session."""
+    with _item_locks_lock:
+        to_release = [k for k, v in _item_locks.items() if v == sid]
+        for k in to_release:
+            del _item_locks[k]
+        return to_release
+
+
+def _collect_all_descendant_ids(items, item_id):
+    """Collect the given item_id and all its descendant IDs."""
+    def _find_and_collect(items_list):
+        for item in items_list:
+            if item['id'] == item_id:
+                result = [item['id']]
+                _collect_children(item, result)
+                return result
+            if item.get('children'):
+                result = _find_and_collect(item['children'])
+                if result:
+                    return result
+        return None
+    def _collect_children(node, acc):
+        for child in node.get('children', []):
+            acc.append(child['id'])
+            _collect_children(child, acc)
+    return _find_and_collect(items)
+
+
+def ws_emit_menu_changed(tab):
+    """Broadcast menu_changed event to all clients in the tab room.
+    Called from REST routes after menu mutations."""
+    try:
+        room = f'tab:{tab}'
+        socketio.emit('menu_changed', {'tab': tab}, room=room)
+    except Exception:
+        pass  # emit is best-effort outside SocketIO handler
+
+
+def ws_emit_content_saved(tab, item_id, content):
+    """Broadcast content_saved event to all clients in the tab room.
+    Called from REST route after content save."""
+    try:
+        room = f'tab:{tab}'
+        socketio.emit('content_saved', {
+            'tab': tab,
+            'item_id': item_id,
+            'content': content,
+        }, room=room)
+    except Exception:
+        pass  # emit is best-effort outside SocketIO handler
+
+
+@socketio.on('connect')
+def ws_handle_connect():
+    print(f'  [WS] Client connected', flush=True)
+
+
+@socketio.on('disconnect')
+def ws_handle_disconnect():
+    released = _release_locks_by_sid(request.sid)
+    if released:
+        print(f'  [WS] Released locks on disconnect: {released}', flush=True)
+
+
+@socketio.on('join_tab')
+def ws_join_tab(data):
+    """Client joins the tab-level room to receive menu/save notifications."""
+    tab = data.get('tab')
+    if tab:
+        join_room(f'tab:{tab}')
+
+
+@socketio.on('leave_tab')
+def ws_leave_tab(data):
+    """Client leaves the tab-level room."""
+    tab = data.get('tab')
+    if tab:
+        leave_room(f'tab:{tab}')
+
+
+@socketio.on('join_document')
+def ws_join_document(data):
+    """Client joins a document room so it receives edits for that document."""
+    tab = data.get('tab')
+    item_id = data.get('item_id')
+    if tab and item_id:
+        room = f'doc:{tab}:{item_id}'
+        join_room(room)
+
+
+@socketio.on('leave_document')
+def ws_leave_document(data):
+    """Client leaves a document room (e.g. when switching items/tabs)."""
+    tab = data.get('tab')
+    item_id = data.get('item_id')
+    if tab and item_id:
+        room = f'doc:{tab}:{item_id}'
+        leave_room(room)
+
+
+@socketio.on('content_change')
+def ws_content_change(data):
+    """Receive real-time content change from one client and broadcast to others
+    in the same document room (excludes the sender)."""
+    tab = data.get('tab')
+    item_id = data.get('item_id')
+    content = data.get('content')
+    if tab and item_id and content is not None:
+        room = f'doc:{tab}:{item_id}'
+        emit('content_update', {
+            'tab': tab,
+            'item_id': item_id,
+            'content': content,
+        }, room=room, include_self=False)
+
+
+@socketio.on('lock_document')
+def ws_lock_document(data):
+    """Client requests an edit lock for an item (to prevent deletion by others).
+    If the item is already locked by a different session, respond with lock_denied."""
+    tab = data.get('tab')
+    item_id = data.get('item_id')
+    if not tab or not item_id:
+        return
+    key = (tab, item_id)
+    sid = request.sid
+    with _item_locks_lock:
+        existing = _item_locks.get(key)
+        if existing is None or existing == sid:
+            _item_locks[key] = sid
+            emit('lock_acquired', {'tab': tab, 'item_id': item_id}, room=sid)
+        else:
+            emit('lock_denied', {
+                'tab': tab,
+                'item_id': item_id,
+                'reason': '该条目正在被其他用户编辑，无法锁定',
+            }, room=sid)
+
+
+@socketio.on('unlock_document')
+def ws_unlock_document(data):
+    """Client releases an edit lock."""
+    tab = data.get('tab')
+    item_id = data.get('item_id')
+    if not tab or not item_id:
+        return
+    key = (tab, item_id)
+    sid = request.sid
+    with _item_locks_lock:
+        if _item_locks.get(key) == sid:
+            del _item_locks[key]
+
+
 def find_menu_item(items, item_id):
     for item in items:
         if item['id'] == item_id:
@@ -1643,6 +1809,8 @@ def create_menu_item(tab):
                 conn.commit()
             finally:
                 conn.close()
+    # Notify other clients in this tab to reload their menu
+    ws_emit_menu_changed(tab)
     return jsonify(new_item), 201
 
 
@@ -1665,6 +1833,7 @@ def update_menu_item_route(tab, item_id):
     item = find_menu_item(menu, item_id)
     if path and item:
         _run_in_background(update_item_meta_in_index, tab, item_id, item['label'], path)
+    ws_emit_menu_changed(tab)
     return jsonify({'success': True})
 
 
@@ -1673,7 +1842,20 @@ def delete_menu_item_route(tab, item_id):
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
 
+    # Check if the item or any descendant is locked by a DIFFERENT user
+    request_sid = request.headers.get('X-Socket-ID')
     menu = load_menu(tab)
+    all_ids = _collect_all_descendant_ids(menu, item_id)
+    if all_ids:
+        locked_items = []
+        with _item_locks_lock:
+            for did in all_ids:
+                lock_sid = _item_locks.get((tab, did))
+                if lock_sid is not None and lock_sid != request_sid:
+                    locked_items.append(did)
+        if locked_items:
+            return jsonify({'error': '该条目正在被其他用户编辑，无法删除', 'locked_ids': locked_items}), 409
+
     menu, deleted_ids = delete_menu_item(menu, item_id)
 
     if not deleted_ids:
@@ -1690,6 +1872,7 @@ def delete_menu_item_route(tab, item_id):
 
     for did in deleted_ids:
         delete_item_from_index(tab, did)
+    ws_emit_menu_changed(tab)
     return jsonify({'deleted_ids': deleted_ids})
 
 
@@ -1709,13 +1892,16 @@ def save_content_route(tab, item_id):
     if data is None or 'content' not in data:
         return jsonify({'error': 'Content is required'}, 400)
 
-    save_content(tab, item_id, data['content'])
+    content_html = data['content']
+    save_content(tab, item_id, content_html)
     _run_in_background(update_item_in_index, tab, item_id)
     tab_path = get_tab_path(tab)
     if tab_path:
         index_html = generate_standalone_html(tab)
         with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
             f.write(index_html)
+    # Broadcast to all clients in the tab that this item was saved
+    ws_emit_content_saved(tab, item_id, content_html)
     return jsonify({'success': True})
 
 
@@ -2214,6 +2400,7 @@ def move_menu_item_route(tab, item_id):
     path = compute_item_path(menu, item_id, tab)
     if path:
         update_item_path_in_index(tab, item_id, menu, path)
+    ws_emit_menu_changed(tab)
     return jsonify({'success': True})
 
 
@@ -2911,7 +3098,7 @@ if __name__ == '__main__':
         init_common_db()
         print("  Done.")
         print("=" * 60)
-        app.run(host='0.0.0.0', port=server_port, debug=False, threaded=True)
+        socketio.run(app, host='0.0.0.0', port=server_port, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         _shutdown_requested.set()
         if ocr_process_pool is not None:
