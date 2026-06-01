@@ -36,6 +36,10 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.utils import secure_filename
 from fpdf import FPDF
 
+#this var define the version of this software
+#any feature added or modified, be careful not to forget to update this var
+version = 'v3.1.1'
+
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
 logging.getLogger("paddlex").setLevel(logging.ERROR)
@@ -157,11 +161,6 @@ ocr_debug = False
 workers_ocr = 8
 workers_menu = 8
 _file_logger = None
-
-#this var define the version of this software
-#any feature added or modified, be careful not to forget to update this var
-version = 'v3.0.1'
-
 
 def ocr_log(msg: str):
     """Write a timestamped debug message to mybase.log.
