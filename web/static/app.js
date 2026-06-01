@@ -2808,8 +2808,10 @@
   $('#kb-dropdown-arrow').addEventListener('click', toggleKbDropdown);
 
   // ─── Session Security ──────────────────────────────────────────────────
-  // Clear encryption key cache when page is hidden.
-  // This ensures re-prompt on next visit (tab close/reopen).
+  // Clear encryption key cache only on actual page unload (pagehide).
+  // Do NOT clear on visibilitychange — that fires when switching browser tabs,
+  // which would break encryption state in other windows/tabs sharing the
+  // same server-side key cache.
   function clearServerEncryptionCache() {
     // Use sendBeacon (reliable during page unload), fallback to fetch+keepalive
     try {
@@ -2822,12 +2824,17 @@
     } catch (_) { /* ignore errors during page lifecycle events */ }
   }
 
+  // visibilitychange fires when switching browser tabs or minimizing.
+  // Clear client-side unlockedTabs so the user gets re-prompted,
+  // but DON'T clear the server cache — that would break other tabs.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       unlockedTabs.clear();
-      clearServerEncryptionCache();
     }
   });
+
+  // pagehide fires on actual page unload (close tab, navigate away).
+  // Only here should we clear the server-side encryption cache.
   window.addEventListener('pagehide', () => {
     unlockedTabs.clear();
     clearServerEncryptionCache();
