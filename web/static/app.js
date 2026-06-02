@@ -378,6 +378,131 @@
     console.warn('Sync denied for tab:', data.tab, data.reason);
   });
 
+  // ── Encrypted Tab Lifecycle Events (from other windows) ────────────────
+
+  // Another window deleted this encrypted tab → close it locally
+  socket.on('encrypted_tab_deleted', (data) => {
+    if (data.sender_sid === mySocketId) return;  // skip self
+    const tab = data.tab;
+    unlockedTabs.delete(tab);
+    if (encryptedTabsCache) {
+      const idx = encryptedTabsCache.indexOf(tab);
+      if (idx !== -1) encryptedTabsCache.splice(idx, 1);
+    }
+    if (currentTab === tab) {
+      currentTab = null;
+      currentItemId = null;
+      editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
+      editorStatus.textContent = 'No item selected';
+    }
+    loadTabs();  // removes the deleted tab from the tab bar
+  });
+
+  // Another window changed/added this encrypted tab's password → re-prompt needed
+  socket.on('encrypted_tab_password_changed', async (data) => {
+    if (data.sender_sid === mySocketId) return;  // skip self
+    const tab = data.tab;
+    // Server has already purged this session's key — clear local unlock state
+    unlockedTabs.delete(tab);
+    // Refresh encrypted-tabs cache so isTabEncrypted() returns correct result
+    await loadEncryptedTabs();
+    if (currentTab === tab) {
+      // Close the view so user gets re-prompted when they click the tab
+      leaveTabRoom(tab);
+      currentTab = null;
+      currentItemId = null;
+      editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
+      editorStatus.textContent = 'No item selected';
+    }
+    updateTabEncryptionIndicators();
+  });
+
+  // Another window removed this tab's password → no longer encrypted
+  socket.on('encrypted_tab_decrypted', (data) => {
+    if (data.sender_sid === mySocketId) return;  // skip self
+    const tab = data.tab;
+    // Server has purged this session's key — clear local unlock state
+    unlockedTabs.delete(tab);
+    if (encryptedTabsCache) {
+      const idx = encryptedTabsCache.indexOf(tab);
+      if (idx !== -1) encryptedTabsCache.splice(idx, 1);
+    }
+    updateTabEncryptionIndicators();  // removes 🔒 icon
+    if (currentTab === tab) {
+      // Tab is now plaintext — join the sync room and reload
+      joinTabRoom(tab);
+      loadMenu();
+    }
+  });
+
+  // Another window created a new tab → refresh the tab bar
+  socket.on('tab_added', (data) => {
+    if (data.sender_sid === mySocketId) return;  // skip self
+    loadTabs();
+  });
+
+  // Another window deleted a tab → refresh the tab bar
+  socket.on('tab_deleted', (data) => {
+    if (data.sender_sid === mySocketId) return;  // skip self
+    const tab = data.tab;
+    // The encrypted_tab_deleted handler already handles encrypted-tab-specific cleanup.
+    // This generic handler ensures ALL windows remove the tab regardless of encryption state.
+    if (currentTab === tab) {
+      currentTab = null;
+      currentItemId = null;
+      editor.innerHTML = '<p>Select a menu item to edit its content...</p>';
+      editorStatus.textContent = 'No item selected';
+    }
+    loadTabs();
+  });
+
+  // Another window renamed a tab → rebuild the tab bar with fresh click handlers
+  socket.on('tab_renamed', async (data) => {
+    if (data.sender_sid === mySocketId) return;  // skip self
+
+    // Migrate per-tab caches from old name to new name
+    if (lastEditedItem[data.old_name] !== undefined) {
+      lastEditedItem[data.new_name] = lastEditedItem[data.old_name];
+      delete lastEditedItem[data.old_name];
+    }
+    if (dirtyTabs[data.old_name] !== undefined) {
+      dirtyTabs[data.new_name] = dirtyTabs[data.old_name];
+      delete dirtyTabs[data.old_name];
+    }
+    if (treeExpandedState[data.old_name] !== undefined) {
+      treeExpandedState[data.new_name] = treeExpandedState[data.old_name];
+      delete treeExpandedState[data.old_name];
+    }
+
+    const wasCurrent = currentTab === data.old_name;
+    if (wasCurrent) {
+      currentTab = data.new_name;
+    }
+    const prevTab = currentTab;
+
+    // Rebuild the tab bar with skipRestore so the server-selected tab
+    // doesn't steal focus from the tab this window is on.
+    await loadTabs(true);
+
+    // Re-activate visual state for the tab we were on (loadTabs rebuilds
+    // all tab elements from scratch, clearing active state).
+    if (prevTab) {
+      const el = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(prevTab)}"]`);
+      if (el) {
+        el.classList.add('active');
+        activeTabEl = el;
+      }
+    }
+
+    // If the renamed tab was our current tab, reload its menu so content
+    // reflects the new tab name.
+    if (wasCurrent) {
+      await loadMenu();
+    }
+
+    updateTabEncryptionIndicators();
+  });
+
   // ─── Tab Drag-and-Drop ─────────────────────────────────────────────────
 
   let dragSrcTab = null;
@@ -500,7 +625,7 @@
 
   // ─── Load Tabs ─────────────────────────────────────────────────────────
 
-  async function loadTabs() {
+  async function loadTabs(skipRestore = false) {
     await loadEncryptedTabs();
     const tabs = await api('GET', '/api/tabs');
     kbTabNames = tabs.slice();
@@ -568,11 +693,13 @@
       makeTabDraggable(el);
       tabsEl.appendChild(el);
     });
-    // Restore the previously selected tab (saved in tab_kb_visibility.is_active)
+    // Restore the previously selected tab (saved in tab_kb_visibility.is_active).
+    // skipRestore=true is used when a rename event is received from another window
+    // so we don't steal focus from the tab the user is currently on.
     const restoreTab = selectedTabFromServer && visibleTabs.includes(selectedTabFromServer)
       ? selectedTabFromServer
       : null;
-    if (restoreTab) {
+    if (!skipRestore && restoreTab) {
       const el = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(restoreTab)}"]`);
       if (el) switchTab(restoreTab, el);
     } else if (!currentTab || !visibleTabs.includes(currentTab)) {
@@ -2808,36 +2935,35 @@
   $('#kb-dropdown-arrow').addEventListener('click', toggleKbDropdown);
 
   // ─── Session Security ──────────────────────────────────────────────────
-  // Clear encryption key cache only on actual page unload (pagehide).
-  // Do NOT clear on visibilitychange — that fires when switching browser tabs,
-  // which would break encryption state in other windows/tabs sharing the
-  // same server-side key cache.
-  function clearServerEncryptionCache() {
-    // Use sendBeacon (reliable during page unload), fallback to fetch+keepalive
-    try {
-      const body = JSON.stringify({});
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon('/api/clear-encryption-cache', body);
-      } else {
-        fetch('/api/clear-encryption-cache', { method: 'POST', body, keepalive: true });
-      }
-    } catch (_) { /* ignore errors during page lifecycle events */ }
-  }
+  // Encryption key cache management:
+  //   - The server caches derived AES keys in memory per tab_name.
+  //   - The client tracks which tabs are unlocked via `unlockedTabs` Set.
+  //   - Both caches are shared across windows/tabs connecting to the same server.
+  //
+  // Security model for a local-only desktop app:
+  //   - Server is localhost-only; only the local user can reach it.
+  //   - Clearing `unlockedTabs` on pagehide ensures the user re-authenticates
+  //     on their next visit, without affecting other open windows.
+  //   - The server key cache is intentionally NOT cleared on pagehide/visibilitychange
+  //     because other windows may still need their cached keys. The server cache
+  //     is in-memory and dies with the server process.
 
   // visibilitychange fires when switching browser tabs or minimizing.
-  // Clear client-side unlockedTabs so the user gets re-prompted,
-  // but DON'T clear the server cache — that would break other tabs.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      unlockedTabs.clear();
-    }
-  });
+  // We intentionally do NOT clear unlockedTabs here — doing so would cause
+  // the encrypted tab to re-prompt for a password when switching back from
+  // another browser window/tab. The server-side key cache is also shared
+  // across sessions, so clearing only the client set provides no real
+  // security benefit while creating a bad UX.
+  // Server-side cache is never cleared on visibilitychange or pagehide
+  // because other windows sharing the same server may need their cached keys.
 
   // pagehide fires on actual page unload (close tab, navigate away).
-  // Only here should we clear the server-side encryption cache.
+  // Clear client-side unlockedTabs so the next visit re-prompts for password.
+  // Do NOT clear the server-side encryption cache — other windows/tabs sharing
+  // the same server may still need their cached AES keys. The server cache is
+  // in-memory and dies with the server process anyway.
   window.addEventListener('pagehide', () => {
     unlockedTabs.clear();
-    clearServerEncryptionCache();
   });
 
   // ─── Init ──────────────────────────────────────────────────────────────

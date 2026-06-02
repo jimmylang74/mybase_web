@@ -44,7 +44,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v3.2.1'
+version = 'v3.3.1'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -706,8 +706,12 @@ def _search_index_regex(tab_name, pattern, db_path):
 
 
 def _tab_searchable(tab_name):
-    """Check whether a tab can be searched — skip encrypted-not-unlocked tabs."""
-    if is_tab_encrypted(tab_name) and get_cached_encryption_key(tab_name) is None:
+    """Check whether a tab can be searched for the current session.
+
+    Encrypted tabs are only searchable if the calling session has unlocked
+    them. Each window independently controls which tabs it can search.
+    """
+    if is_tab_encrypted(tab_name) and get_cached_encryption_key(tab_name, _get_current_sid()) is None:
         return False
     return True
 
@@ -1560,11 +1564,34 @@ def set_system_config(name, value):
 
 # === Password & Encryption System ==========================================
 
-# In-memory cache of derived AES keys for unlocked encrypted tabs.
-# key: tab_name → 32-byte AES key (bytes)
-# Cleared when a tab is hidden/closed.
-_encryption_key_cache: dict[str, bytes] = {}
-_encryption_key_cache_lock = threading.Lock()
+# Per-session cache of derived AES keys for unlocked encrypted tabs.
+# Structure: {socket_sid: {tab_name: 32-byte AES key}}
+# Each browser window/tab has its own Socket.IO session ID (sid).
+# A window only has access to keys it personally unlocked.
+# When a socket disconnects, its keys are automatically cleaned up.
+_session_encryption_keys: dict[str, dict[str, bytes]] = {}
+_session_encryption_keys_lock = threading.Lock()
+
+
+def _get_current_sid() -> str | None:
+    """Extract the client's Socket.IO session ID from the current request.
+
+    Works in both REST routes (via X-Socket-ID header) and Socket.IO
+    handlers (via request.sid). Returns None outside request context
+    (background threads, startup, etc.).
+    """
+    from flask import request as _flask_req
+    try:
+        # Socket.IO handler context — request.sid is injected by Flask-SocketIO
+        return _flask_req.sid
+    except (AttributeError, RuntimeError):
+        pass
+    try:
+        # REST handler context (frontend sends X-Socket-ID on every API call)
+        return _flask_req.headers.get('X-Socket-ID')
+    except RuntimeError:
+        # No request context at all
+        return None
 
 
 def _init_password_tables():
@@ -1639,9 +1666,19 @@ def set_tab_password(tab_name: str, password: str) -> str:
     finally:
         conn.close()
 
-    # Cache the new key
-    with _encryption_key_cache_lock:
-        _encryption_key_cache[tab_name] = new_key
+    # Cache the new key for the current session.
+    # On password change, stale keys in OTHER sessions must be purged so
+    # they re-prompt for the new password instead of using the old key.
+    _sid = _get_current_sid()
+    with _session_encryption_keys_lock:
+        if existing_salt:
+            # Password change — remove stale key from ALL sessions
+            for keys in _session_encryption_keys.values():
+                keys.pop(tab_name, None)
+        if _sid:
+            if _sid not in _session_encryption_keys:
+                _session_encryption_keys[_sid] = {}
+            _session_encryption_keys[_sid][tab_name] = new_key
 
     # If this is a new password (no existing salt), encrypt all files
     if not existing_salt:
@@ -1662,7 +1699,8 @@ def set_tab_password(tab_name: str, password: str) -> str:
 
 
 def verify_tab_password(tab_name: str, password: str) -> bool:
-    """Verify password for a tab. On success, caches the derived AES key."""
+    """Verify password for a tab. On success, caches the derived AES key
+    for the calling session only."""
     if not common_db.exists():
         return False
     conn = sqlite3.connect(str(common_db))
@@ -1677,10 +1715,13 @@ def verify_tab_password(tab_name: str, password: str) -> bool:
         pw_hash, salt = row
         if not bcrypt.checkpw(password.encode('utf-8'), pw_hash.encode('utf-8')):
             return False
-        # Derive and cache the AES key
+        # Derive and cache the AES key for the current session only
         key = PBKDF2(password.encode('utf-8'), salt, dkLen=32, count=100000)
-        with _encryption_key_cache_lock:
-            _encryption_key_cache[tab_name] = key
+        sid = _get_current_sid()
+        with _session_encryption_keys_lock:
+            if sid not in _session_encryption_keys:
+                _session_encryption_keys[sid] = {}
+            _session_encryption_keys[sid][tab_name] = key
         return True
     finally:
         conn.close()
@@ -1707,21 +1748,44 @@ def remove_tab_password(tab_name: str, password: str) -> str:
     finally:
         conn.close()
 
-    with _encryption_key_cache_lock:
-        _encryption_key_cache.pop(tab_name, None)
+    with _session_encryption_keys_lock:
+        for keys in _session_encryption_keys.values():
+            keys.pop(tab_name, None)
     return ""
 
 
-def get_cached_encryption_key(tab_name: str) -> bytes | None:
-    """Return cached AES key for a tab, or None if not in cache."""
-    with _encryption_key_cache_lock:
-        return _encryption_key_cache.get(tab_name)
+def get_cached_encryption_key(tab_name: str, sid: str | None = None) -> bytes | None:
+    """Return cached AES key for a tab, scoped to a session.
+
+    Args:
+        tab_name: The tab to look up.
+        sid: Socket.IO session ID. When provided, only checks that session's
+             keys. When None (background/admin tasks with no request context),
+             checks all sessions as a fallback.
+
+    Returns:
+        The 32-byte AES key, or None if the session hasn't unlocked this tab.
+    """
+    if sid is None:
+        sid = _get_current_sid()
+    with _session_encryption_keys_lock:
+        if sid:
+            session_keys = _session_encryption_keys.get(sid)
+            if session_keys:
+                return session_keys.get(tab_name)
+            return None
+        # No SID available — check all sessions (for background/admin tasks
+        # like indexing that run without a request context).
+        for keys in _session_encryption_keys.values():
+            if tab_name in keys:
+                return keys[tab_name]
+        return None
 
 
-def clear_encryption_key_cache(tab_name: str):
-    """Remove cached AES key for a tab (e.g. when tab is hidden)."""
-    with _encryption_key_cache_lock:
-        _encryption_key_cache.pop(tab_name, None)
+def clear_session_encryption_keys(sid: str):
+    """Remove all cached keys for a specific session (on socket disconnect)."""
+    with _session_encryption_keys_lock:
+        _session_encryption_keys.pop(sid, None)
 
 
 # ─── File-level AES-GCM Encryption ────────────────────────────────────────
@@ -1853,13 +1917,16 @@ def read_tab_file(tab_name: str, rel_path: str) -> bytes | None:
     """Read a file from a tab, transparently decrypting if tab is encrypted.
     *rel_path* is relative to the tab's directory (e.g. 'content/uuid.html').
     Returns bytes or None if the file doesn't exist.
+
+    Decryption uses the calling session's cached AES key, so each window
+    must unlock the tab independently to read its content.
     """
     tab_path = get_tab_path(tab_name)
     if not tab_path:
         return None
     file_path = tab_path / rel_path
 
-    key = get_cached_encryption_key(tab_name)
+    key = get_cached_encryption_key(tab_name, _get_current_sid())
     if key:
         # Tab is encrypted, try reading the .enc version
         try:
@@ -1884,6 +1951,9 @@ def read_tab_file(tab_name: str, rel_path: str) -> bytes | None:
 def write_tab_file(tab_name: str, rel_path: str, data: bytes) -> bool:
     """Write a file to a tab, transparently encrypting if tab is encrypted.
     Returns True on success.
+
+    Encryption uses the calling session's cached AES key. A session must
+    have unlocked the tab to be able to write encrypted content.
     """
     tab_path = get_tab_path(tab_name)
     if not tab_path:
@@ -1891,7 +1961,7 @@ def write_tab_file(tab_name: str, rel_path: str, data: bytes) -> bool:
     file_path = tab_path / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    key = get_cached_encryption_key(tab_name)
+    key = get_cached_encryption_key(tab_name, _get_current_sid())
     if key:
         _write_encrypted_file(file_path, data, key)
     else:
@@ -2018,6 +2088,27 @@ def ws_emit_content_saved(tab, item_id, content):
         pass  # emit is best-effort outside SocketIO handler
 
 
+def ws_emit_encrypted_tab_event(tab, event, data=None, sender_sid=None):
+    """Emit a lifecycle event to ALL clients.
+
+    These events (delete, password-change, decrypt) are broadcast to every
+    connected client so that *all* windows update the tab bar and encryption
+    indicators — not just windows that have visited this specific tab.
+
+    *sender_sid* is the socket ID of the window that triggered the event —
+    the frontend uses it to skip self-notification.
+    """
+    payload = {'tab': tab}
+    if data:
+        payload.update(data)
+    if sender_sid:
+        payload['sender_sid'] = sender_sid
+    try:
+        socketio.emit(event, payload)
+    except Exception:
+        pass  # emit is best-effort outside SocketIO handler
+
+
 @socketio.on('connect')
 def ws_handle_connect():
     print(f'  [WS] Client connected', flush=True)
@@ -2025,19 +2116,29 @@ def ws_handle_connect():
 
 @socketio.on('disconnect')
 def ws_handle_disconnect():
-    released = _release_locks_by_sid(request.sid)
+    sid = request.sid
+    released = _release_locks_by_sid(sid)
     if released:
         print(f'  [WS] Released locks on disconnect: {released}', flush=True)
+    # Clean up this session's encryption keys — other windows are unaffected
+    clear_session_encryption_keys(sid)
 
 
 @socketio.on('join_tab')
 def ws_join_tab(data):
-    """Client joins the tab-level room to receive menu/save notifications.
-    Encrypted tabs cannot join — they must not sync content via WebSocket."""
+    """Client joins rooms for this tab.
+
+    Every client joins the :notify room to receive encrypted-tab lifecycle
+    events (delete, password-change, decrypt) regardless of encryption status.
+
+    The regular tab room is for menu/content sync — encrypted tabs that
+    haven't been unlocked by THIS session are denied to prevent sync leaks.
+    """
     tab = data.get('tab')
     if tab:
-        if is_tab_encrypted(tab) and get_cached_encryption_key(tab) is None:
-            # Encrypted tab not unlocked — deny sync
+        # Always join notification room for lifecycle events
+        join_room(f'tab:{tab}:notify')
+        if is_tab_encrypted(tab) and get_cached_encryption_key(tab, request.sid) is None:
             emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
             return
         join_room(f'tab:{tab}')
@@ -2045,10 +2146,11 @@ def ws_join_tab(data):
 
 @socketio.on('leave_tab')
 def ws_leave_tab(data):
-    """Client leaves the tab-level room."""
+    """Client leaves both the tab room and the notification room."""
     tab = data.get('tab')
     if tab:
         leave_room(f'tab:{tab}')
+        leave_room(f'tab:{tab}:notify')
 
 
 @socketio.on('join_document')
@@ -2718,6 +2820,14 @@ def create_tab():
         with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
             f.write(index_html)
     _run_in_background(index_tab, name)
+    # Notify all clients that a new tab was created (for cross-window sync)
+    try:
+        socketio.emit('tab_added', {
+            'tab': name,
+            'sender_sid': _get_current_sid(),
+        })
+    except Exception:
+        pass
     return jsonify({'name': name}), 201
 
 
@@ -2762,6 +2872,37 @@ def rename_tab_in_common_db(old_name, new_name):
         conn.commit()
     finally:
         conn.close()
+
+
+def _update_image_urls_after_rename(tab_path, old_name, new_name):
+    """Update image URLs in content files after a tab rename.
+    
+    Content HTML contains <img src="/uploads/OLD_NAME/images/..."> references.
+    After renaming the tab, these URLs must point to the new tab name so images
+    can still be served by the /uploads/<tab>/ route.
+    
+    Handles both modern content/*.html files and legacy *.qrich.html files.
+    """
+    old_prefix = f'/uploads/{old_name}/'
+    new_prefix = f'/uploads/{new_name}/'
+    # Modern content files
+    content_dir = tab_path / 'content'
+    if content_dir.exists():
+        for fpath in content_dir.glob('*.html'):
+            try:
+                original = fpath.read_text(encoding='utf-8')
+                if old_prefix in original:
+                    fpath.write_text(original.replace(old_prefix, new_prefix), encoding='utf-8')
+            except Exception as e:
+                log_error("_update_image_urls_after_rename", e, str(fpath))
+    # Legacy .qrich.html files stored directly in tab root
+    for fpath in tab_path.glob('*.qrich.html'):
+        try:
+            original = fpath.read_text(encoding='utf-8')
+            if old_prefix in original:
+                fpath.write_text(original.replace(old_prefix, new_prefix), encoding='utf-8')
+        except Exception as e:
+            log_error("_update_image_urls_after_rename", e, str(fpath))
 
 
 def regenerate_index_html(tab_name, tab_path):
@@ -2809,7 +2950,18 @@ def rename_tab(old_name):
                 shm_file.rename(new_index_db_path.with_suffix('.db-shm'))
 
         old_tab_path.rename(new_tab_path)
+        _update_image_urls_after_rename(new_tab_path, old_name, new_name)
         regenerate_index_html(new_name, new_tab_path)
+
+        # Notify all clients that a tab was renamed
+        try:
+            socketio.emit('tab_renamed', {
+                'old_name': old_name,
+                'new_name': new_name,
+                'sender_sid': _get_current_sid(),
+            })
+        except Exception:
+            pass
 
         return jsonify({'success': True})
     except Exception as e:
@@ -2833,8 +2985,20 @@ def delete_tab(tab):
             conn.commit()
         finally:
             conn.close()
-    with _encryption_key_cache_lock:
-        _encryption_key_cache.pop(tab, None)
+    with _session_encryption_keys_lock:
+        for keys in _session_encryption_keys.values():
+            keys.pop(tab, None)
+
+    # Notify other windows that this encrypted tab has been deleted
+    ws_emit_encrypted_tab_event(tab, 'encrypted_tab_deleted', sender_sid=_get_current_sid())
+    # Also send a generic tab_deleted event for all clients (encrypted or not)
+    try:
+        socketio.emit('tab_deleted', {
+            'tab': tab,
+            'sender_sid': _get_current_sid(),
+        })
+    except Exception:
+        pass
 
     def _remove_readonly(func, path, _):
         """Clear read-only flag and retry (required on Windows)."""
@@ -2862,7 +3026,8 @@ def set_tab_password_route(tab):
         return jsonify({'error': '密码至少需要4个字符'}), 400
 
     # If tab already has a password, verify the old one
-    if is_tab_encrypted(tab):
+    was_encrypted = is_tab_encrypted(tab)
+    if was_encrypted:
         old_password = data.get('old_password', '')
         if not verify_tab_password(tab, old_password):
             return jsonify({'error': '原密码验证失败'}), 403
@@ -2870,6 +3035,10 @@ def set_tab_password_route(tab):
     err = set_tab_password(tab, password)
     if err:
         return jsonify({'error': err}), 500
+
+    # Notify other windows — whether first-time encryption or password change
+    ws_emit_encrypted_tab_event(tab, 'encrypted_tab_password_changed', sender_sid=_get_current_sid())
+
     return jsonify({'success': True})
 
 
@@ -2902,6 +3071,10 @@ def remove_tab_password_route(tab):
     err = remove_tab_password(tab, data['password'])
     if err:
         return jsonify({'error': err}), 403
+
+    # Notify other windows that this tab is no longer encrypted
+    ws_emit_encrypted_tab_event(tab, 'encrypted_tab_decrypted', sender_sid=_get_current_sid())
+
     return jsonify({'success': True})
 
 
@@ -2913,9 +3086,12 @@ def get_encrypted_tabs_route():
 
 @app.route('/api/clear-encryption-cache', methods=['POST'])
 def clear_encryption_cache():
-    """Clear all cached encryption keys (called when page hides/unloads)."""
-    with _encryption_key_cache_lock:
-        _encryption_key_cache.clear()
+    """Clear cached encryption keys for the current session (if called).
+    No longer triggered by the frontend — keys are now per-session and
+    cleaned up automatically on socket disconnect."""
+    sid = _get_current_sid()
+    if sid:
+        clear_session_encryption_keys(sid)
     return jsonify({'success': True})
 
 
@@ -3262,10 +3438,17 @@ def _generate_pdf(items, title, tab_name=None):
         if bold_ttf.exists():
             pdf.add_font('CJK', 'B', str(bold_ttf))
 
-    def _resolve_img(src):
+    def _resolve_img_data(src):
         if not src or src.startswith('data:') or not tab_name:
             return None
-        return resolve_image_path(src, tab_name)
+        # URL pattern: /uploads/<tab>/images/<filename>
+        m = re.match(r'^/uploads/([^/]+)/images/(.+)$', src)
+        if m:
+            return read_tab_file(m.group(1), f'images/{m.group(2)}')
+        tab_path = get_tab_path(tab_name)
+        if tab_path:
+            return read_tab_file(tab_name, src.lstrip('/'))
+        return None
 
     def _render_item(pdf, label, content_html, depth, sep=True):
         if not has_font:
@@ -3289,15 +3472,14 @@ def _generate_pdf(items, title, tab_name=None):
                 pdf.set_font('CJK', '', 9)
                 pdf.multi_cell(pdf.epw - indent - 4, 5, text)
                 pdf.ln(2)
-            # Images (capped width)
             for match in re.finditer(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', content_html):
                 src = match.group(1)
-                img_path = _resolve_img(src)
-                if img_path and img_path.exists():
+                img_data = _resolve_img_data(src)
+                if img_data:
                     max_w = min(pdf.epw - indent - 20, 60)
                     if max_w > 20:
                         try:
-                            pdf.image(str(img_path), w=max_w)
+                            pdf.image(io.BytesIO(img_data), w=max_w)
                             pdf.ln(3)
                         except Exception:
                             pass
@@ -3520,14 +3702,23 @@ def _copy_export_images(html_content, tab_name, dest_dir):
         suffix = match.group(3)
         if src.startswith('data:'):
             return match.group(0)
-        # Resolve image path
-        img_path = resolve_image_path(src, tab_name)
-        if img_path and img_path.exists():
+        img_data = None
+        img_filename = None
+        # URL pattern: /uploads/<tab>/images/<filename>
+        m = re.match(r'^/uploads/([^/]+)/images/(.+)$', src)
+        if m:
+            img_data = read_tab_file(m.group(1), f'images/{m.group(2)}')
+            img_filename = m.group(2)
+        else:
+            rel = src.lstrip('/')
+            img_data = read_tab_file(tab_name, rel)
+            img_filename = os.path.basename(rel)
+        if img_data is not None and img_filename:
             img_dest = dest_dir / 'images'
             img_dest.mkdir(exist_ok=True)
-            dest_file = img_dest / img_path.name
-            shutil.copy2(str(img_path), str(dest_file))
-            return f'{prefix}images/{img_path.name}{suffix}'
+            dest_file = img_dest / img_filename
+            dest_file.write_bytes(img_data)
+            return f'{prefix}images/{img_filename}{suffix}'
         return match.group(0)
 
     return img_pattern.sub(_replace_img, html_content)
