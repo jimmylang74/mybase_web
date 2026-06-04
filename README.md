@@ -60,6 +60,7 @@ python server.py
 | `--data DIR` | data | 数据根目录 |
 | `--force-index [NAME]` | — | 强制重建索引（指定名称或全部） |
 | `--disable-ocr` | — | 禁用 OCR 图片文字识别 |
+| `--mobile-ocr` | — | 使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用 |
 | `--workers-ocr N` | 8 | OCR 工作进程数 |
 | `--workers-menu N` | 8 | 菜单项索引并行数 |
 | `--no-debug` | — | 关闭调试日志 |

@@ -480,7 +480,7 @@ User            Frontend(app.js)        Backend(server.py)      SQLite Index (pe
 server.py startup
     │
     ├─ init_config()
-    │    ├─ Parse CLI args (--port, --data, --force-index, --disable-ocr...)
+    │    ├─ Parse CLI args (--port, --data, --force-index, --disable-ocr, --mobile-ocr...)
     │    ├─ Create directories (data/, data/db/, data/mybase/)
     │    └─ Initialize mybase.log
     │
@@ -669,26 +669,16 @@ server.py startup
     <td><code>multiprocessing.Queue</code></td>
     <td>Main thread submits OCR tasks via <code>task_queue.put((task_id, image_path))</code></td>
   </tr>
-  <tr>
-    <td>OCR Pool → Flask Main</td>
-    <td><code>multiprocessing.Queue</code></td>
-    <td>OCR processes return results via <code>result_queue.put((task_id, text))</code></td>
-  </tr>
-  <tr>
-    <td>Queue Collector → Dispatch</td>
-    <td><code>threading.Condition</code></td>
-    <td>Background collector drains result_queue continuously, notifies callers via Condition</td>
-  </tr>
-  <tr>
-    <td>Background Index Thread → Main</td>
-    <td><code>threading.Lock</code> + <code>int_counter</code></td>
-    <td>Index status exposed via locked global counter <code>_indexing_counter</code> polled at /api/indexing-status</td>
-  </tr>
-  <tr>
-    <td>Backup Thread → Main</td>
-    <td><code>threading.Lock</code> + <code>dict</code></td>
-    <td>Backup progress stored in <code>_backup_tasks</code> dict, lock-protected, polled by frontend</td>
-  </tr>
+    <tr>
+      <td>Windows Compatibility</td>
+      <td>Limit workers=1</td>
+      <td>Windows lacks os.fork(); multiprocessing behaves differently; limiting to single process avoids issues.</td>
+    </tr>
+    <tr>
+      <td>OCR Model Selection</td>
+      <td><code>--mobile-ocr</code> flag / platform auto-detect</td>
+      <td>Windows defaults to Mobile model for compatibility; Linux uses Server model for higher accuracy. Both specify <code>ocr_version="PP-OCRv5"</code>; the mobile/server variant is selected via <code>text_detection_model_name</code> / <code>text_recognition_model_name</code></td>
+    </tr>
 </table>
 
 <h4>4.4.3.6 Error Handling</h4>
@@ -713,6 +703,7 @@ server.py startup
   <tr><td>Frontend Framework</td><td>Vanilla JS (no framework)</td><td>Lightweight, zero dependencies, fast loading; project complexity manageable with native JS.</td></tr>
   <tr><td>Index Build Strategy</td><td>Batch INSERT (not per-item)</td><td>Avoids SQLite write contention: collect all results first, then batch INSERT in single thread.</td></tr>
   <tr><td>Windows Compatibility</td><td>Limit workers=1</td><td>Windows lacks os.fork(); multiprocessing behaves differently; limiting to single process avoids issues.</td></tr>
+  <tr><td>OCR Model Selection</td><td><code>--mobile-ocr</code> flag / platform auto-detect</td><td>Windows defaults to Mobile model for compatibility; Linux uses Server model for higher accuracy. Both specify <code>ocr_version="PP-OCRv5"</code>; the mobile/server variant is selected via <code>text_detection_model_name</code> / <code>text_recognition_model_name</code></td></tr>
 </table>
 
 <!-- ============================================================ -->
@@ -721,8 +712,13 @@ server.py startup
 <h4>4.4.4.1 OCR Image Text Recognition</h4>
 <p><span class="badge badge-green">Technology</span> Based on <strong>PaddleOCR</strong> open-source OCR engine:</p>
 <ul>
-  <li><strong>Models</strong>: PP-OCRv5_server_det (text detection) + PP-LCNet_x1_0_doc_ori (orientation) + UVDoc (document correction)</li>
-  <li><strong>Initialization</strong>: Each OCR worker creates an independent <code>PaddleOCR</code> instance in <code>_ocr_worker_init()</code>, configured with <code>lang='ch'</code>, <code>device='cpu'</code></li>
+  <li><strong>Models</strong>: Based on the unified <code>ocr_version="PP-OCRv5"</code> framework. The <code>--mobile-ocr</code> flag selects the variant:
+    <ul>
+      <li><strong>Mobile model</strong> (<code>--mobile-ocr true</code>, Windows default): <code>PP-OCRv5_mobile_det</code> (text detection) + <code>PP-OCRv5_mobile_rec</code> (text recognition) + PP-LCNet_x1_0_doc_ori (orientation) + UVDoc (document correction). Lower memory footprint, suitable for resource-constrained environments</li>
+      <li><strong>Server model</strong> (<code>--mobile-ocr false</code>, Linux default): <code>PP-OCRv5_server_det</code> (text detection) + <code>PP-OCRv5_server_rec</code> (text recognition) + PP-LCNet_x1_0_doc_ori (orientation) + UVDoc (document correction). Higher accuracy with greater memory usage</li>
+    </ul>
+  </li>
+  <li><strong>Initialization</strong>: Each OCR worker creates an independent <code>PaddleOCR</code> instance in <code>_ocr_worker_init()</code>, configured with <code>lang='ch'</code>, <code>device='cpu'</code>. At startup, it reads <code>os.environ['OCR_MOBILE']</code> to select mobile or server model parameters</li>
   <li><strong>Flow</strong>:
     <ol>
       <li><code>extract_text_from_html_images()</code> scans <code>&lt;img&gt;</code> tags in HTML</li>

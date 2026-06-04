@@ -369,6 +369,7 @@ python server.py --port 8080 --data /path/to/data</code></pre>
     <tr><td><code>--data DIR</code></td><td>data</td><td>Data root directory</td></tr>
     <tr><td><code>--force-index [NAME]</code></td><td>—</td><td>Force rebuild index (all or specific KB)</td></tr>
     <tr><td><code>--disable-ocr</code></td><td>—</td><td>Disable OCR</td></tr>
+    <tr><td><code>--mobile-ocr true|false</code></td><td>—</td><td>Use lightweight mobile OCR model (less accurate, lower memory). Enabled by default on Windows. Use <code>--mobile-ocr false</code> to force server model on Windows</td></tr>
     <tr><td><code>--workers-ocr N</code></td><td>8</td><td>OCR worker processes</td></tr>
     <tr><td><code>--workers-menu N</code></td><td>8</td><td>Menu item index workers</td></tr>
     <tr><td><code>--no-debug</code></td><td>—</td><td>Disable debug logging</td></tr>
@@ -739,6 +740,11 @@ python server.py --force-index my_kb_name</code></pre>
       <td><code>--disable-ocr</code></td>
       <td>—</td>
       <td>禁用 OCR 图片文字识别功能</td>
+    </tr>
+    <tr>
+      <td><code>--mobile-ocr true|false</code></td>
+      <td>—</td>
+      <td>使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用。使用 <code>--mobile-ocr false</code> 在 Windows 上强制使用服务器模型</td>
     </tr>
     <tr>
       <td><code>--workers-ocr N</code></td>

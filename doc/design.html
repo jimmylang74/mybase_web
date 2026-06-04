@@ -474,7 +474,7 @@ pip install -r requirements.txt</code></pre>
 server.py 启动
     │
     ├─ init_config()
-    │    ├─ 解析命令行参数 (--port, --data, --force-index, --disable-ocr...)
+    │    ├─ 解析命令行参数 (--port, --data, --force-index, --disable-ocr, --mobile-ocr...)
     │    ├─ 创建目录结构 (data/, data/db/, data/mybase/)
     │    └─ 初始化 mybase.log 日志
     │
@@ -749,11 +749,16 @@ server.py 启动
     <td>批量插入（非逐条）</td>
     <td>避免 SQLite 写竞争：收集所有结果后在单线程中 batch INSERT</td>
   </tr>
-  <tr>
-    <td>Windows 兼容</td>
-    <td>限制 workers=1</td>
-    <td>Windows 无 os.fork()，multiprocessing 行为不同，限制为单进程避免异常</td>
-  </tr>
+    <tr>
+      <td>Windows 兼容</td>
+      <td>限制 workers=1</td>
+      <td>Windows 无 os.fork()，multiprocessing 行为不同，限制为单进程避免异常</td>
+    </tr>
+    <tr>
+      <td>OCR 模型选择</td>
+      <td><code>--mobile-ocr</code> 参数 / 平台自动检测</td>
+      <td>Windows 默认使用 Mobile 模型避免兼容性问题；Linux 使用 Server 模型获取更高精度。通过 <code>ocr_version="PP-OCRv5"</code> 统一指定版本，用 <code>text_detection_model_name</code> / <code>text_recognition_model_name</code> 区分 mobile/server 模型</td>
+    </tr>
 </table>
 
 <!-- ============================================================ -->
@@ -762,8 +767,13 @@ server.py 启动
 <h4>4.4.4.1 OCR 图片文字识别</h4>
 <p><span class="badge badge-green">技术</span> 基于 <strong>PaddleOCR</strong> 开源 OCR 引擎：</p>
 <ul>
-  <li><strong>模型</strong>：PP-OCRv5_server_det（文字检测）+ PP-LCNet_x1_0_doc_ori（方向分类）+ UVDoc（文档矫正）</li>
-  <li><strong>初始化</strong>：每个 OCR 工作进程在 <code>_ocr_worker_init()</code> 中创建独立的 <code>PaddleOCR</code> 实例，设置 <code>lang='ch'</code>（中文），<code>device='cpu'</code></li>
+  <li><strong>模型</strong>：使用 <code>ocr_version="PP-OCRv5"</code> 统一框架。通过 <code>--mobile-ocr</code> 参数选择变体：
+    <ul>
+      <li><strong>Mobile 模型</strong>（<code>--mobile-ocr true</code>，Windows 默认）：<code>PP-OCRv5_mobile_det</code>（文字检测）+ <code>PP-OCRv5_mobile_rec</code>（文字识别）+ PP-LCNet_x1_0_doc_ori（方向分类）+ UVDoc（文档矫正）。内存占用低，适合资源受限环境</li>
+      <li><strong>Server 模型</strong>（<code>--mobile-ocr false</code>，Linux 默认）：<code>PP-OCRv5_server_det</code>（文字检测）+ <code>PP-OCRv5_server_rec</code>（文字识别）+ PP-LCNet_x1_0_doc_ori（方向分类）+ UVDoc（文档矫正）。精度更高，内存占用更多</li>
+    </ul>
+  </li>
+  <li><strong>初始化</strong>：每个 OCR 工作进程在 <code>_ocr_worker_init()</code> 中创建独立的 <code>PaddleOCR</code> 实例，设置 <code>lang='ch'</code>（中文），<code>device='cpu'</code>。启动时根据 <code>os.environ['OCR_MOBILE']</code> 选择 mobile/server 模型参数</li>
   <li><strong>调用流程</strong>：
     <ol>
       <li><code>extract_text_from_html_images()</code> 扫描 HTML 中的 <code>&lt;img&gt;</code> 标签</li>

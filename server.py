@@ -164,6 +164,7 @@ server_port = 9999
 force_index_target = None
 ocr_disabled = False
 ocr_debug = False
+ocr_mobile = False
 workers_ocr = 8
 workers_menu = 8
 _file_logger = None
@@ -198,7 +199,10 @@ def log_error(func_name: str, error: Exception, extra: str = ""):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Web of Mybase Knowledge Server')
+    _mobile_default_note = "enabled by default" if os.name == "nt" else "false by default"
+    parser = argparse.ArgumentParser(
+        description='Web of Mybase Knowledge Server',
+        epilog=f"Note: On Windows the mobile OCR model is enabled by default for compatibility.")
     parser.add_argument('--data', type=str, default='data',
                         help='Data root directory (default: data)')
     parser.add_argument('--port', type=int, default=9999,
@@ -207,6 +211,10 @@ def parse_args():
                         help='Force reindex a specific knowledge base. If no name given, reindex all.')
     parser.add_argument('--disable-ocr', action='store_true',
                         help='Disable OCR image text indexing.')
+    parser.add_argument('--mobile-ocr', type=str, default=None, dest='mobile_ocr',
+                        choices=['true', 'false'], metavar='true|false',
+                        help=f'Use lightweight mobile OCR model (less accurate but lower memory usage). '
+                             f'On Windows this is {_mobile_default_note}.')
     parser.add_argument('--workers-ocr', type=int, default=8,
                         help='Number of OCR worker processes (default: 8, each owns 1 PaddleOCR instance; Windows limited to 1)')
     parser.add_argument('--workers-menu', type=int, default=8,
@@ -217,7 +225,7 @@ def parse_args():
 
 
 def init_config():
-    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, workers_ocr, workers_menu, ocr_debug, _file_logger
+    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, ocr_mobile, workers_ocr, workers_menu, ocr_debug, _file_logger
     args = parse_args()
     data_dir = BASE_DIR / args.data
     mybase_dir = data_dir / 'mybase'
@@ -230,12 +238,21 @@ def init_config():
     workers_menu = args.workers_menu
     ocr_debug = args.debug
 
+    # --mobile-ocr true|false: tri-state (None = not explicitly set)
+    if args.mobile_ocr is None:
+        ocr_mobile = (os.name == "nt")   # Windows defaults to mobile
+    else:
+        ocr_mobile = (args.mobile_ocr == 'true')
+
     # Windows: limit workers to 1 to avoid multiprocessing & thread-pool issues
     if os.name == "nt":
         if workers_ocr > 1:
             workers_ocr = 1
         if workers_menu > 1:
             workers_menu = 1
+
+    # Propagate ocr_mobile to OCR worker processes via environment variable
+    os.environ['OCR_MOBILE'] = '1' if ocr_mobile else '0'
     data_dir.mkdir(exist_ok=True)
     (data_dir / 'db').mkdir(exist_ok=True)
     mybase_dir.mkdir(exist_ok=True)
@@ -931,19 +948,33 @@ def _ocr_worker_init():
     os.environ['FLAGS_print_ir'] = '0'
     os.environ['FLAGS_log_level'] = '3'
 
+    # Read ocr_mobile from the env var set by init_config() in the parent process.
+    # Default to mobile ('1') for safety if the var is somehow absent.
+    _use_mobile = os.environ.get('OCR_MOBILE', '1') == '1'
+
     from paddleocr import PaddleOCR
     try:
         import paddle as _paddle
         _paddle.disable_signal_handler()
     except (ImportError, AttributeError):
         pass
+
+    _kwargs = dict(
+        use_textline_orientation=True,
+        lang='ch',
+        device='cpu',
+        enable_mkldnn=False,
+        ocr_version="PP-OCRv5",
+    )
+    if _use_mobile:
+        _kwargs['text_detection_model_name'] = "PP-OCRv5_mobile_det"
+        _kwargs['text_recognition_model_name'] = "PP-OCRv5_mobile_rec"
+    else:
+        _kwargs['text_detection_model_name'] = "PP-OCRv5_server_det"
+        _kwargs['text_recognition_model_name'] = "PP-OCRv5_server_rec"
+
     with suppress_stdout_stderr():
-        return PaddleOCR(
-            use_textline_orientation=True,
-            lang='ch',
-            device='cpu',
-            enable_mkldnn=False,
-        )
+        return PaddleOCR(**_kwargs)
 
 
 def _ocr_worker(task_queue, result_queue):
@@ -3889,6 +3920,10 @@ if __name__ == '__main__':
             print(f"  Force reindex: {force_index_target}")
         if ocr_disabled:
             print(f"  OCR disabled via --disable-ocr")
+        elif ocr_mobile:
+            print(f"  OCR model: mobile (lightweight)")
+        else:
+            print(f"  OCR model: server (high accuracy)")
         print(f"  Server URL: http://0.0.0.0:{server_port}")
         print("=" * 60)
 
