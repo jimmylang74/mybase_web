@@ -770,7 +770,14 @@ server.py startup
 
 <h4>Search Implementation:</h4>
 <ul>
-  <li><strong>Plain Search</strong>: SQL <code>LIKE '%query%'</code> matching label and content_text, max 50 results</li>
+  <li><strong>Plain Search (simple mode)</strong>: SQL <code>LIKE '%query%'</code> matching label and content_text, max 50 results</li>
+  <li><strong>Plain Search (OR/AND/Exclude modes)</strong>: Full table scan, Python row-by-row filtering:
+    <ul>
+      <li><code>aaa | bbb | ccc</code> — OR mode, match any keyword (<code>|</code> separator)</li>
+      <li><code>aaa bbb ccc</code> or <code>aaa && bbb && ccc</code> — AND mode, all keywords must match (space or <code>&&</code> separator)</li>
+      <li><code>aaa ^ bbb</code> — Exclude mode, term before <code>^</code> must exist, term after must not exist</li>
+    </ul>
+  </li>
   <li><strong>Regex Search</strong>: Full table scan, Python <code>re.compile().search()</code> row by row, supports <code>|</code> syntax</li>
   <li><strong>Snippet</strong>: <code>make_snippet()</code> extracts 40-character context around match position</li>
   <li><strong>Scope</strong>: Current Tab or all Tabs (iterates index_db/*.db)</li>

@@ -323,10 +323,39 @@
     <li><strong>Global Search</strong> — Enable <strong>"Global Search"</strong> to search all KBs</li>
   </ul>
 
-  <h3>4.3 Search Results Panel</h3>
+  <h3>4.3 Smart Search Syntax (non-Regex Mode)</h3>
+  <p>When the <strong>"Regex"</strong> checkbox is <strong>not</strong> checked, the search box supports these formats:</p>
+  <table>
+    <tr><th>Format</th><th>Description</th><th>Example</th></tr>
+    <tr>
+      <td><code>xxxx</code></td>
+      <td>Simple search: match items containing the keyword</td>
+      <td><code>setup guide</code> → search "setup guide"</td>
+    </tr>
+    <tr>
+      <td><code>aaa | bbb | ccc</code></td>
+      <td>OR search: match items containing <strong>any</strong> keyword (<code>|</code> separator)</td>
+      <td><code>install | config | deploy</code> → match any</td>
+    </tr>
+    <tr>
+      <td><code>aaa bbb ccc</code> or<br><code>aaa && bbb && ccc</code></td>
+      <td>AND search: match items containing <strong>all</strong> keywords (space or <code>&&</code> separator)</td>
+      <td><code>Python install config</code> → all must match</td>
+    </tr>
+    <tr>
+      <td><code>aaa ^ bbb</code></td>
+      <td>Exclusion search: match items containing <code>aaa</code> but <strong>not</strong> <code>bbb</code> (<code>^</code> precedes excluded terms)</td>
+      <td><code>Python ^ Java</code> → has Python but not Java</td>
+    </tr>
+  </table>
+  <div class="tip">
+    <strong>Tip:</strong> Space-separated words default to AND logic. Use regex mode if you need to search for an exact phrase containing spaces.
+  </div>
+
+  <h3>4.4 Search Results Panel</h3>
   <p>Results show KB name, path, and content snippet. Click a result to navigate directly. The panel is resizable by dragging the splitter handle above it.</p>
 
-  <h3>4.4 Regex Syntax</h3>
+  <h3>4.5 Regex Syntax</h3>
   <p>Supports SQLite regex syntax (X REGEXP Y). Common patterns:</p>
   <ul>
     <li><code>^prefix</code> — Match at start</li>
@@ -651,7 +680,36 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <tr><td>正则搜索</td><td>勾选 <strong>"正则"</strong> 复选框，使用正则表达式进行高级搜索</td></tr>
   </table>
 
-  <h3>4.3 搜索结果面板</h3>
+  <h3>4.3 智能搜索语法（非正则模式）</h3>
+  <p>当 <strong>"正则"</strong> 复选框<strong>未</strong>勾选时，搜索框支持以下智能语法：</p>
+  <table>
+    <tr><th>格式</th><th>说明</th><th>示例</th></tr>
+    <tr>
+      <td><code>xxxx</code></td>
+      <td>简单搜索：匹配包含该关键词的内容</td>
+      <td><code>安装步骤</code> → 搜索"安装步骤"</td>
+    </tr>
+    <tr>
+      <td><code>aaa | bbb | ccc</code></td>
+      <td>OR 搜索：匹配包含<strong>任意一个</strong>关键词的内容（<code>|</code> 分隔）</td>
+      <td><code>安装 | 配置 | 部署</code> → 匹配任一</td>
+    </tr>
+    <tr>
+      <td><code>aaa bbb ccc</code> 或<br><code>aaa && bbb && ccc</code></td>
+      <td>AND 搜索：匹配<strong>同时包含</strong>所有关键词的内容（空格或 <code>&&</code> 分隔）</td>
+      <td><code>Python 安装 配置</code> → 全部匹配</td>
+    </tr>
+    <tr>
+      <td><code>aaa ^ bbb</code></td>
+      <td>排除搜索：匹配包含 <code>aaa</code> 但<strong>不包含</strong> <code>bbb</code> 的内容（<code>^</code> 后面的词被排除）</td>
+      <td><code>Python ^ Java</code> → 含 Python 但不含 Java</td>
+    </tr>
+  </table>
+  <div class="tip">
+    <strong>提示：</strong> 空格分隔的多个词默认按 AND 逻辑搜索。需要搜索包含空格的精确短语时，请启用正则模式。
+  </div>
+
+  <h3>4.4 搜索结果面板</h3>
   <ul>
     <li>结果按 <strong>知识库 | 路径 | 内容简述</strong> 三列展示</li>
     <li>点击结果项自动切换到对应知识库和菜单项</li>
@@ -660,7 +718,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <li>搜索结果面板可通过上边缘的 <strong>分割线</strong> 拖拽调整高度</li>
   </ul>
 
-  <h3>4.4 正则表达式语法</h3>
+  <h3>4.5 正则表达式语法</h3>
   <p>启用正则模式后，搜索框中支持：</p>
   <ul>
     <li><code>.</code> — 匹配任意单个字符</li>

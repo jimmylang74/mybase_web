@@ -825,7 +825,14 @@ server.py 启动
 
 <h4>搜索实现：</h4>
 <ul>
-  <li><strong>普通搜索</strong>：SQL <code>LIKE '%query%'</code> 匹配 label 和 content_text，限制返回 50 条</li>
+  <li><strong>普通搜索（简单模式）</strong>：SQL <code>LIKE '%query%'</code> 匹配 label 和 content_text，限制返回 50 条</li>
+  <li><strong>普通搜索（OR/AND/排除模式）</strong>：全表扫描，Python 逐行过滤：
+    <ul>
+      <li><code>aaa | bbb | ccc</code> — OR 模式，匹配任一关键词（<code>|</code> 分隔）</li>
+      <li><code>aaa bbb ccc</code> 或 <code>aaa && bbb && ccc</code> — AND 模式，所有关键词必须同时存在（空格或 <code>&&</code> 分隔）</li>
+      <li><code>aaa ^ bbb</code> — 排除模式，<code>^</code> 前的词必须存在，<code>^</code> 后的词必须不存在</li>
+    </ul>
+  </li>
   <li><strong>正则搜索</strong>：全表扫描，Python <code>re.compile().search()</code> 逐行匹配，支持 <code>|</code> 语法</li>
   <li><strong>片段生成</strong>：<code>make_snippet()</code> 在匹配位置前后截取 40 字符上下文</li>
   <li><strong>搜索范围</strong>：当前 Tab 或全部 Tab（遍历 index_db/*.db）</li>

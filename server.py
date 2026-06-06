@@ -44,7 +44,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v3.4.1'
+version = 'v3.5.1'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -629,6 +629,14 @@ def search_index(tab_name, query, use_regex=False):
 
     When *use_regex* is True, *query* is treated as a regular expression
     pattern (``re.IGNORECASE``).  Raises ``ValueError`` on invalid regex.
+
+    When *use_regex* is False, the query supports four formats:
+      - ``xxxx``                  — single-term simple search (SQL LIKE).
+      - ``aaa | bbb | ccc``       — OR mode: match any term (pipe-separated).
+      - ``aaa bbb ccc`` or
+        ``aaa && bbb && ccc``     — AND mode: all terms must match.
+      - ``aaa ^ bbb``             — EXCLUDE mode: ``aaa`` must exist AND
+                                    ``bbb`` must NOT exist.
     """
     db_path = get_index_db_path(tab_name)
     if not db_path.exists():
@@ -637,6 +645,36 @@ def search_index(tab_name, query, use_regex=False):
     if use_regex:
         return _search_index_regex(tab_name, query, db_path)
 
+    query = query.strip()
+
+    # ── OR mode: split by | ──────────────────────────────────────────
+    if '|' in query:
+        terms = [q.strip() for q in query.split('|') if q.strip()]
+        if len(terms) > 1:
+            return _search_index_multi(tab_name, terms, 'or', db_path)
+
+    # ── EXCLUDE mode: split by ^ (must have | must NOT have) ───────
+    if '^' in query:
+        parts = query.split('^')
+        include_str = parts[0].strip()
+        exclude_str = ' '.join(p.strip() for p in parts[1:]).strip()
+        if include_str and exclude_str:
+            _split_terms = lambda s: [t.strip() for t in s.replace('&&', ' ').split() if t.strip()]
+            include_terms = _split_terms(include_str)
+            exclude_terms = _split_terms(exclude_str)
+            if include_terms and exclude_terms:
+                return _search_index_exclude(tab_name, include_terms, exclude_terms, db_path)
+
+    # ── AND mode: split by && or whitespace ─────────────────────────
+    if '&&' in query:
+        terms = [q.strip() for q in query.split('&&') if q.strip()]
+    else:
+        terms = query.split()
+
+    if len(terms) > 1:
+        return _search_index_multi(tab_name, terms, 'and', db_path)
+
+    # ── Simple mode (single term) — fast SQL LIKE ───────────────────
     conn = sqlite3.connect(str(db_path))
     try:
         like_pattern = f'%{query}%'
@@ -663,6 +701,151 @@ def search_index(tab_name, query, use_regex=False):
                 'snippet': snippet,
                 'tab': tab_name,
             })
+        return results
+    finally:
+        conn.close()
+
+
+def _search_index_exclude(tab_name, include_terms, exclude_terms, db_path):
+    """Exclusion search — all *include_terms* must exist AND none of
+    *exclude_terms* may exist in a matching item.
+
+    Args:
+        tab_name: knowledge base tab name.
+        include_terms: terms that MUST be present (AND logic).
+        exclude_terms: terms that must NOT be present (any match excludes).
+        db_path: path to the SQLite index database.
+
+    Returns:
+        List of result dicts (same schema as :func:`search_index`).
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.execute(
+            "SELECT menu_item_id, label, content_text, menu_path FROM item_index "
+            "ORDER BY menu_path"
+        )
+        results = []
+        seen_ids = set()
+        include_lower = [t.lower() for t in include_terms if t]
+        exclude_lower = [t.lower() for t in exclude_terms if t]
+
+        for row in cursor.fetchall():
+            content_text = row[2] or ''
+            label_lower = row[1].lower()
+            content_lower = content_text.lower()
+
+            # All include terms must match
+            if not all(
+                tl in label_lower or tl in content_lower
+                for tl in include_lower
+            ):
+                continue
+
+            # No exclude term may match
+            if any(
+                tl in label_lower or tl in content_lower
+                for tl in exclude_lower
+            ):
+                continue
+
+            if row[0] in seen_ids:
+                continue
+            seen_ids.add(row[0])
+
+            # Snippet from first include term
+            matched_term = include_terms[0]
+            snippet = ''
+            if matched_term.lower() in row[1].lower():
+                snippet = row[1]
+            elif matched_term.lower() in content_text.lower():
+                snippet = make_snippet(content_text, matched_term)
+            else:
+                snippet = content_text[:80]
+
+            results.append({
+                'menu_item_id': row[0],
+                'label': row[1],
+                'menu_path': row[3],
+                'snippet': snippet,
+                'tab': tab_name,
+            })
+            if len(results) >= 50:
+                break
+
+        return results
+    finally:
+        conn.close()
+
+
+def _search_index_multi(tab_name, terms, mode, db_path):
+    """Multi-term search (OR/AND) — iterates all rows, filters in Python.
+
+    Args:
+        tab_name: knowledge base tab name.
+        terms: list of term strings to search for.
+        mode: ``'or'`` (match any) or ``'and'`` (match all).
+        db_path: path to the SQLite index database.
+
+    Returns:
+        List of result dicts (same schema as :func:`search_index`).
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.execute(
+            "SELECT menu_item_id, label, content_text, menu_path FROM item_index "
+            "ORDER BY menu_path"
+        )
+        results = []
+        seen_ids = set()
+        terms_lower = [t.lower() for t in terms if t]
+
+        for row in cursor.fetchall():
+            content_text = row[2] or ''
+            label_lower = row[1].lower()
+            content_lower = content_text.lower()
+
+            if mode == 'or':
+                # Match ANY term
+                match_idx = -1
+                for i, tl in enumerate(terms_lower):
+                    if tl in label_lower or tl in content_lower:
+                        match_idx = i
+                        break
+                if match_idx == -1:
+                    continue
+                if row[0] in seen_ids:
+                    continue
+                seen_ids.add(row[0])
+                matched_term = terms[match_idx]
+            else:  # 'and'
+                # Match ALL terms
+                if not all(
+                    tl in label_lower or tl in content_lower
+                    for tl in terms_lower
+                ):
+                    continue
+                matched_term = terms[0]
+
+            # Build snippet around the matched term
+            snippet = ''
+            if matched_term.lower() in row[1].lower():
+                snippet = row[1]
+            elif matched_term.lower() in content_text.lower():
+                snippet = make_snippet(content_text, matched_term)
+            else:
+                snippet = content_text[:80]
+
+            results.append({
+                'menu_item_id': row[0],
+                'label': row[1],
+                'menu_path': row[3],
+                'snippet': snippet,
+                'tab': tab_name,
+            })
+            if len(results) >= 50:
+                break
+
         return results
     finally:
         conn.close()
