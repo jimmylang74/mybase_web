@@ -44,7 +44,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v3.5.1'
+version = 'v4.0.1'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -4091,7 +4091,13 @@ def export_tree_item_zip(tab, item_id):
         return jsonify({'error': f'ZIP generation failed: {e}'}), 500
 
 
-if __name__ == '__main__':
+def main():
+    """Entry point: parse args, init, start server.
+
+    Extracted so that the compiled Cython module exposes a callable entry
+    point for ``main.py`` (the thin loader).  Also keeps ``python server.py``
+    working as before.
+    """
     try:
         init_config()
         print("=" * 60)
@@ -4126,3 +4132,7 @@ if __name__ == '__main__':
             ocr_process_pool.shutdown()
         print("\n  [EXIT] Shutdown complete. Bye.")
         sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
