@@ -13,6 +13,7 @@
   let kbVisibility = {}; // { tabName: true/false }
   let kbTabNames = []; // full list of all tab names
   let unlockedTabs = new Set(); // tab names unlocked in this session
+  let currentSearchQuery = ''; // current search query for highlighting
   let encryptedTabsCache = null; // null = not loaded, array = list of encrypted tab names
 
   // Socket.IO for real-time collaboration
@@ -316,10 +317,13 @@
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
       if (currentTab && currentItemId) {
+        clearSearchHighlights();
+        const cleanHtml = editor.innerHTML;
+        applySearchHighlights();
         socket.emit('content_change', {
           tab: currentTab,
           item_id: currentItemId,
-          content: editor.innerHTML
+          content: cleanHtml
         });
       }
     }, 1000);
@@ -331,8 +335,10 @@
   socket.on('content_update', (data) => {
     if (data.tab === currentTab && data.item_id === currentItemId) {
       isRemoteUpdate = true;
+      clearSearchHighlights();
       editor.innerHTML = data.content;
       constrainEditorImages();
+      applySearchHighlights();
       contentModified = false;
       const txt = editorStatus.textContent;
       if (txt.includes('(unsaved)')) {
@@ -353,8 +359,10 @@
   socket.on('content_saved', (data) => {
     if (data.tab === currentTab && data.item_id === currentItemId) {
       isRemoteUpdate = true;
+      clearSearchHighlights();
       editor.innerHTML = data.content;
       constrainEditorImages();
+      applySearchHighlights();
       contentModified = false;
       const txt = editorStatus.textContent;
       if (txt.includes('(unsaved)')) {
@@ -982,6 +990,7 @@
     try {
       const data = await api('GET', `/api/${encodeURIComponent(currentTab)}/content/${itemId}`);
       isRemoteUpdate = true;
+      clearSearchHighlights();
       const html = data.content.trim();
       if (html) {
         editor.innerHTML = html;
@@ -989,6 +998,7 @@
       } else {
         editor.innerHTML = '<p></p>';
       }
+      applySearchHighlights();
       isRemoteUpdate = false;
       const item = findNodeById(menuTree, itemId);
       editorStatus.textContent = `Editing: ${item ? item.label : 'Unknown'}`;
@@ -1000,6 +1010,7 @@
 
   async function saveContent(itemId) {
     if (!currentTab || !itemId) return;
+    clearSearchHighlights();
     const html = editor.innerHTML;
     try {
       await api('PUT', `/api/${encodeURIComponent(currentTab)}/content/${itemId}`, { content: html });
@@ -2106,6 +2117,33 @@
     input.click();
   });
 
+  // ─── Background Color (Highlight) ────────────────────────────────────────
+
+  $('#text-bgcolor').addEventListener('input', function() {
+    const swatch = $('#bgcolor-swatch');
+    if (swatch) swatch.style.background = this.value;
+    this.classList.remove('color-input-hidden--active');
+    this.style.left = '';
+    this.style.top = '';
+  });
+
+  $('#btn-apply-bgcolor').addEventListener('click', () => {
+    editor.focus();
+    const color = $('#text-bgcolor').value;
+    document.execCommand('backColor', false, color);
+    markModified();
+  });
+
+  $('#btn-bgcolor-arrow').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const input = $('#text-bgcolor');
+    const rect = e.currentTarget.getBoundingClientRect();
+    input.classList.add('color-input-hidden--active');
+    input.style.left = rect.left + 'px';
+    input.style.top = (rect.top + rect.height) + 'px';
+    input.click();
+  });
+
   $('#btn-insert-link').addEventListener('click', () => {
     const sel = window.getSelection().toString();
     if (sel) {
@@ -2757,6 +2795,67 @@
   // Periodic status polling (every 2 s, inexpensive)
   setInterval(checkIndexingStatus, 2000);
 
+  // ─── Search Highlight ──────────────────────────────────────────────────
+
+  function clearSearchHighlights() {
+    if (!editor) return;
+    const highlights = editor.querySelectorAll('.search-highlight');
+    highlights.forEach((span) => {
+      const parent = span.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(span.textContent), span);
+        parent.normalize();
+      }
+    });
+  }
+
+  function highlightInEditor(query) {
+    if (!query || !editor) return;
+    clearSearchHighlights();
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
+    const textNodes = [];
+    while (walker.nextNode()) {
+      if (walker.currentNode.parentNode &&
+          walker.currentNode.parentNode.closest &&
+          walker.currentNode.parentNode.closest('.search-highlight')) {
+        continue;
+      }
+      textNodes.push(walker.currentNode);
+    }
+
+    const lowerQuery = query.toLowerCase();
+    textNodes.forEach((node) => {
+      const text = node.textContent;
+      const lowerText = text.toLowerCase();
+      let idx = lowerText.indexOf(lowerQuery);
+      if (idx === -1) return;
+
+      const fragment = document.createDocumentFragment();
+      let lastIdx = 0;
+      while (idx !== -1) {
+        if (idx > lastIdx) {
+          fragment.appendChild(document.createTextNode(text.slice(lastIdx, idx)));
+        }
+        const mark = document.createElement('span');
+        mark.className = 'search-highlight';
+        mark.textContent = text.slice(idx, idx + query.length);
+        fragment.appendChild(mark);
+        lastIdx = idx + query.length;
+        idx = lowerText.indexOf(lowerQuery, lastIdx);
+      }
+      if (lastIdx < text.length) {
+        fragment.appendChild(document.createTextNode(text.slice(lastIdx)));
+      }
+      node.parentNode.replaceChild(fragment, node);
+    });
+  }
+
+  function applySearchHighlights() {
+    if (currentSearchQuery) {
+      highlightInEditor(currentSearchQuery);
+    }
+  }
+
   // ─── Search ────────────────────────────────────────────────────────────
 
   const searchInput = $('#search-input');
@@ -2772,6 +2871,9 @@
   async function performSearch() {
     const query = searchInput.value.trim();
     if (!query) return;
+    currentSearchQuery = query;
+    // Highlight the current content immediately if it contains the search term
+    applySearchHighlights();
 
     const globalMode = searchGlobal.checked;
     const tabParam = globalMode ? '' : (currentTab || '');
@@ -2869,6 +2971,8 @@
   searchResultsClose.addEventListener('click', () => {
     searchPanel.style.display = 'none';
     searchSplitter.style.display = 'none';
+    clearSearchHighlights();
+    currentSearchQuery = '';
   });
 
   // ─── Tab Scrolling (overflow arrows) ────────────────────────────────────

@@ -372,6 +372,17 @@ body {
   color: #aaa;
 }
 
+/* ─── Search Highlight in Editor ────────────────────────────────────────── */
+.search-highlight {
+  background-color: #ffff00;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.search-highlight.active {
+  background-color: #ff9900;
+}
+
 #editor-status {
   padding: 4px 12px;
   font-size: 12px;
