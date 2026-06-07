@@ -44,7 +44,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v4.1.1'
+version = 'v4.2.1'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -4098,6 +4098,7 @@ def main():
     point for ``main.py`` (the thin loader).  Also keeps ``python server.py``
     working as before.
     """
+    global ocr_process_pool
     try:
         init_config()
         print("=" * 60)
