@@ -326,7 +326,7 @@
     syncTimer = setTimeout(() => {
       if (currentTab && currentItemId) {
         clearSearchHighlights();
-        const cleanHtml = editor.innerHTML;
+        const cleanHtml = convertFontSizesToInline(editor.innerHTML);
         applySearchHighlights();
         socket.emit('content_change', {
           tab: currentTab,
@@ -1005,6 +1005,8 @@
         constrainEditorImages();
       } else {
         editor.innerHTML = '<p></p>';
+        editor.focus();
+        document.execCommand('fontSize', false, $('#font-size').value);
       }
       applySearchHighlights();
       isRemoteUpdate = false;
@@ -1016,10 +1018,28 @@
     }
   }
 
+  function convertFontSizesToInline(html) {
+    // Bake font sizes into HTML so they survive toolbar setting changes
+    html = html.replace(/<font\b([^>]*)>/gi, (match, attrs) => {
+      const sizeMatch = attrs.match(/\s+size\s*=\s*["'](\d+)["']/i);
+      if (!sizeMatch) return match;
+      const px = FONT_SIZE_MAP[sizeMatch[1]];
+      if (!px) return match;
+      const styles = [`font-size: ${px}`];
+      const colorMatch = attrs.match(/\s+color\s*=\s*["']([^"']*)["']/i);
+      if (colorMatch) styles.push(`color: ${colorMatch[1]}`);
+      const faceMatch = attrs.match(/\s+face\s*=\s*["']([^"']*)["']/i);
+      if (faceMatch) styles.push(`font-family: ${faceMatch[1]}`);
+      return `<span style="${styles.join('; ')}">`;
+    });
+    html = html.replace(/<\/font\s*>/gi, '</span>');
+    return html;
+  }
+
   async function saveContent(itemId) {
     if (!currentTab || !itemId) return;
     clearSearchHighlights();
-    const html = editor.innerHTML;
+    const html = convertFontSizesToInline(editor.innerHTML);
     try {
       await api('PUT', `/api/${encodeURIComponent(currentTab)}/content/${itemId}`, { content: html });
       contentModified = false;
@@ -2509,8 +2529,9 @@
       }
       if (cfg.font_size) {
         $('#font-size').value = cfg.font_size;
-        editor.style.fontSize = FONT_SIZE_MAP[cfg.font_size] || '16px';
       }
+      // Base font-size fixed to 24px (Large) — toolbar setting only affects new input
+      editor.style.fontSize = '24px';
     } catch (e) {
       // non-critical, use defaults
     }
@@ -2526,6 +2547,8 @@
   $('#font-size').addEventListener('change', function() {
     editor.focus();
     document.execCommand('fontSize', false, this.value);
+    // Must NOT set editor.style.fontSize — that changes the CSS base,
+    // affecting ALL existing content without inline font-size.
     markModified();
     saveFontConfig();
   });
