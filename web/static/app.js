@@ -1588,6 +1588,292 @@
     );
   }
 
+  // ─── Insert Table ─────────────────────────────────────────────────────
+
+  function promptInsertTable() {
+    const savedRange = (() => {
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+        return sel.getRangeAt(0).cloneRange();
+      }
+      return null;
+    })();
+
+    showDialog(
+      'Insert Table',
+      '<label>Columns:</label><input type="number" id="dialog-table-cols" value="3" min="1" max="20" style="width:80px;margin-right:16px"><label>Rows:</label><input type="number" id="dialog-table-rows" value="3" min="1" max="50" style="width:80px">',
+      () => {
+        const cols = parseInt($('#dialog-table-cols').value) || 3;
+        const rows = parseInt($('#dialog-table-rows').value) || 3;
+        editor.focus();
+
+        if (savedRange) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+        }
+
+        insertTable(cols, rows);
+        markModified();
+        return true;
+      }
+    );
+  }
+
+  function insertTable(cols, rows) {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+
+    let html = '<table><colgroup>';
+    for (let i = 0; i < cols; i++) {
+      html += '<col style="width:80px">';
+    }
+    html += '</colgroup><tbody>';
+    for (let r = 0; r < rows; r++) {
+      html += '<tr>';
+      const cellTag = r === 0 ? 'th' : 'td';
+      const cellStyle = r === 0 ? ' style="background:#3498db;font-weight:bold;color:#fff"' : '';
+      for (let c = 0; c < cols; c++) {
+        html += '<' + cellTag + cellStyle + '><br></' + cellTag + '>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    const tableEl = wrapper.firstElementChild;
+
+    range.deleteContents();
+    range.insertNode(tableEl);
+
+    // Move cursor to second row first cell (skip header row)
+    const firstCell = tableEl.querySelector('tbody tr:nth-child(2) td');
+    if (firstCell) {
+      const newRange = document.createRange();
+      newRange.setStart(firstCell, 0);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+  }
+
+  // ─── Table Keyboard Handlers ─────────────────────────────────────────
+
+  function findCell(node) {
+    while (node && node.nodeName !== 'TD' && node.nodeName !== 'TH') {
+      node = node.parentNode;
+    }
+    return node;
+  }
+
+  function handleTableEnter(e) {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+
+    const td = findCell(range.startContainer);
+    if (!td) return;
+
+    const tr = td.closest('tr');
+    if (!tr) return;
+
+    const cells = tr.querySelectorAll('td');
+    const isLastCell = td === cells[cells.length - 1];
+    if (!isLastCell) return;
+
+    if (range.startOffset < td.textContent.length) return;
+
+    e.preventDefault();
+    const table = td.closest('table');
+    const colCount = table.querySelectorAll('col').length || cells.length;
+    const newRow = document.createElement('tr');
+    for (let i = 0; i < colCount; i++) {
+      const newCell = document.createElement('td');
+      newCell.innerHTML = '<br>';
+      newRow.appendChild(newCell);
+    }
+    tr.parentNode.insertBefore(newRow, tr.nextSibling);
+
+    const firstCell = newRow.querySelector('td');
+    if (firstCell) {
+      const newRange = document.createRange();
+      newRange.setStart(firstCell, 0);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+    markModified();
+  }
+
+  function handleTableBackspace(e) {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+
+    if (range.startOffset !== 0) return;
+
+    const td = findCell(range.startContainer);
+    if (!td) return;
+
+    const tr = td.closest('tr');
+    if (!tr) return;
+    const firstCell = tr.querySelector('td');
+    if (td !== firstCell) return;
+
+    const tbody = tr.parentNode;
+    if (!tbody) return;
+
+    const rows = tbody.querySelectorAll('tr');
+    if (rows.length <= 1) return;
+
+    e.preventDefault();
+    tr.remove();
+    markModified();
+
+    const prevRow = tr.previousElementSibling || tbody.querySelector('tr');
+    if (prevRow) {
+      const prevCells = prevRow.querySelectorAll('td');
+      const targetCell = prevCells[prevCells.length - 1];
+      if (targetCell) {
+        const newRange = document.createRange();
+        newRange.setStart(targetCell, targetCell.childNodes.length || 0);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+    }
+  }
+
+  // ─── Table Column Resize ─────────────────────────────────────────────
+
+  let tableColResize = null;
+
+  function initTableColumnResize() {
+    editor.addEventListener('mousemove', function(e) {
+      if (tableColResize) return;
+      if (editor._resizeInfo) {
+        editor._resizeInfo = null;
+        editor.style.cursor = '';
+      }
+
+      const table = e.target.closest('table');
+      if (!table || !editor.contains(table)) return;
+
+      const cells = table.querySelectorAll('tr:first-child > td, tr:first-child > th');
+      if (cells.length < 2) return;
+
+      for (let i = 0; i < cells.length - 1; i++) {
+        const rect = cells[i].getBoundingClientRect();
+        if (Math.abs(e.clientX - rect.right) < 5) {
+          editor.style.cursor = 'col-resize';
+          editor._resizeInfo = { table, colIndex: i };
+          return;
+        }
+      }
+    });
+
+    editor.addEventListener('mouseleave', function() {
+      if (!tableColResize) {
+        editor.style.cursor = '';
+        editor._resizeInfo = null;
+      }
+    });
+
+    editor.addEventListener('mousedown', function(e) {
+      if (editor._resizeInfo) {
+        e.preventDefault();
+        const { table, colIndex } = editor._resizeInfo;
+        const cols = table.querySelectorAll('col');
+        if (cols[colIndex]) {
+          const currentW = parseFloat(cols[colIndex].style.width) || 80;
+          tableColResize = {
+            table, col: cols[colIndex], colIndex,
+            startX: e.clientX, startW: currentW,
+          };
+        }
+      }
+    });
+
+    // These document-level handlers track the drag globally
+    // (using ones already defined for splitter would conflict, so add new ones)
+  }
+
+  // Wire up document mouse events for table column resize
+  document.addEventListener('mousemove', function(e) {
+    if (tableColResize) {
+      const dx = e.clientX - tableColResize.startX;
+      const newW = Math.max(30, tableColResize.startW + dx);
+      tableColResize.col.style.width = newW + 'px';
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    }
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (tableColResize) {
+      if (!tableColResize._noModified) {
+        markModified();
+      }
+      tableColResize = null;
+      document.body.style.cursor = '';
+      if (editor) editor.style.cursor = '';
+    }
+  });
+
+  // ─── Integrate table key handlers into editor ────────────────────────
+
+  // Extend the existing keydown listener (already has Ctrl+S and Escape)
+  // We add table-specific handling by hooking into a secondary listener
+  function handleTableTab(e) {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+
+    const td = findCell(sel.anchorNode);
+    if (td) {
+      // Inside a table — navigate between cells
+      e.preventDefault();
+      const table = td.closest('table');
+      const allCells = table.querySelectorAll('td, th');
+      let currentIdx = -1;
+      for (let i = 0; i < allCells.length; i++) {
+        if (allCells[i] === td) { currentIdx = i; break; }
+      }
+      if (currentIdx === -1) return;
+
+      let targetIdx;
+      if (e.shiftKey) {
+        targetIdx = currentIdx - 1;
+      } else {
+        targetIdx = currentIdx + 1;
+      }
+      if (targetIdx < 0 || targetIdx >= allCells.length) return;
+
+      const targetCell = allCells[targetIdx];
+      const newRange = document.createRange();
+      newRange.setStart(targetCell, 0);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+      editor.focus();
+    } else {
+      // Outside table — insert 4 spaces
+      e.preventDefault();
+      document.execCommand('insertText', false, '    ');
+    }
+  }
+
+  editor.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      handleTableEnter(e);
+    } else if (e.key === 'Backspace') {
+      handleTableBackspace(e);
+    } else if (e.key === 'Tab') {
+      handleTableTab(e);
+    }
+  });
+
   // ─── New Tab ───────────────────────────────────────────────────────────
 
   $('#btn-new-tab').addEventListener('click', () => {
@@ -2152,6 +2438,10 @@
     promptInsertLink();
   });
 
+  $('#btn-insert-table').addEventListener('click', () => {
+    promptInsertTable();
+  });
+
   $('#btn-save').addEventListener('click', () => {
     if (currentItemId) {
       saveContent(currentItemId);
@@ -2254,6 +2544,12 @@
   editor.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const selection = window.getSelection();
+    // Save cursor position at right-click location for context menu actions
+    if (selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
+      ctxMenu._savedRange = selection.getRangeAt(0).cloneRange();
+    } else {
+      ctxMenu._savedRange = null;
+    }
     positionMenuAtEvent(ctxMenu, e);
     ctxMenu.dataset.hasSelection = selection.toString().length > 0 ? 'true' : 'false';
   });
@@ -2319,6 +2615,31 @@
     document.execCommand('removeFormat', false, null);
     markModified();
     ctxMenu.style.display = 'none';
+  });
+
+  function restoreContextMenuRange() {
+    if (ctxMenu._savedRange) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(ctxMenu._savedRange);
+      ctxMenu._savedRange = null;
+    }
+  }
+
+  $('#ctx-insert-table').addEventListener('click', () => {
+    ctxMenu.style.display = 'none';
+    restoreContextMenuRange();
+    promptInsertTable();
+  });
+
+  $('#ctx-insert-link').addEventListener('click', () => {
+    ctxMenu.style.display = 'none';
+    restoreContextMenuRange();
+    const sel = window.getSelection().toString();
+    if (sel) {
+      $('#dialog-link-text').value = sel;
+    }
+    promptInsertLink();
   });
 
   // ─── Splitter ──────────────────────────────────────────────────────────
@@ -3077,6 +3398,7 @@
     applyTranslations();
     loadTabs();
     loadFontConfig();
+    initTableColumnResize();
   })();
 
 })();
