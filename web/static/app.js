@@ -121,6 +121,10 @@
       unlock_prompt: '请输入密码解锁该知识库',
       remove_password_confirm: '确定要解密该知识库吗？',
       encrypted: '已加密',
+      insert_column: '插入列',
+      insert_row: '插入行',
+      delete_column: '删除列',
+      delete_row: '删除行',
     },
     en: {
       collapse_all: 'Collapse All',
@@ -206,6 +210,10 @@
       unlock_prompt: 'Enter password to unlock this knowledge base',
       remove_password_confirm: 'Are you sure you want to remove password protection?',
       encrypted: 'Encrypted',
+      insert_column: 'Insert Column',
+      insert_row: 'Insert Row',
+      delete_column: 'Delete Column',
+      delete_row: 'Delete Row',
     }
   };
 
@@ -2550,6 +2558,20 @@
     } else {
       ctxMenu._savedRange = null;
     }
+
+    // Detect if right-click is inside a table cell
+    const tableCell = e.target.closest('td, th');
+    const inTable = tableCell && editor.contains(tableCell);
+    ctxMenu._tableCell = inTable ? tableCell : null;
+
+    // Toggle context menu items based on context
+    ctxMenu.querySelectorAll('.ctx-item:not(.ctx-table-item), .ctx-separator:not(.ctx-table-sep)').forEach(el => {
+      el.style.display = inTable ? 'none' : '';
+    });
+    ctxMenu.querySelectorAll('.ctx-table-item, .ctx-table-sep').forEach(el => {
+      el.style.display = inTable ? '' : 'none';
+    });
+
     positionMenuAtEvent(ctxMenu, e);
     ctxMenu.dataset.hasSelection = selection.toString().length > 0 ? 'true' : 'false';
   });
@@ -2640,6 +2662,155 @@
       $('#dialog-link-text').value = sel;
     }
     promptInsertLink();
+  });
+
+  function getTableContext() {
+    const cell = ctxMenu._tableCell;
+    if (!cell) return null;
+    const table = cell.closest('table');
+    const tr = cell.closest('tr');
+    const tbody = tr.parentNode;
+    const rows = tbody.querySelectorAll('tr');
+    const cellsInRow = tr.querySelectorAll('td, th');
+    let colIndex = -1;
+    for (let i = 0; i < cellsInRow.length; i++) {
+      if (cellsInRow[i] === cell) { colIndex = i; break; }
+    }
+    const colgroup = table.querySelector('colgroup');
+    const cols = colgroup ? colgroup.querySelectorAll('col') : [];
+    return { table, cell, tr, tbody, rows, colIndex, colgroup, cols };
+  }
+
+  function insertTableColumn() {
+    const ctx = getTableContext();
+    if (!ctx || ctx.colIndex < 0) return;
+    const { table, colIndex, cols, colgroup } = ctx;
+
+    const newCol = document.createElement('col');
+    newCol.style.width = '80px';
+    if (cols[colIndex] && cols[colIndex].nextSibling) {
+      colgroup.insertBefore(newCol, cols[colIndex].nextSibling);
+    } else {
+      colgroup.appendChild(newCol);
+    }
+
+    const allRows = table.querySelectorAll('tr');
+    allRows.forEach(row => {
+      const refCell = row.querySelectorAll('td, th')[colIndex];
+      const newCell = document.createElement(refCell ? refCell.tagName : 'td');
+      if (refCell && refCell.style.cssText) {
+        newCell.style.cssText = refCell.style.cssText;
+      }
+      newCell.innerHTML = '<br>';
+      if (refCell && refCell.nextSibling) {
+        refCell.parentNode.insertBefore(newCell, refCell.nextSibling);
+      } else {
+        row.appendChild(newCell);
+      }
+    });
+
+    markModified();
+  }
+
+  function insertTableRow() {
+    const ctx = getTableContext();
+    if (!ctx || !ctx.tr) return;
+    const { table, tr } = ctx;
+    const colCount = table.querySelectorAll('col').length;
+
+    const newRow = document.createElement('tr');
+    for (let i = 0; i < colCount; i++) {
+      const newCell = document.createElement('td');
+      newCell.innerHTML = '<br>';
+      newRow.appendChild(newCell);
+    }
+
+    tr.parentNode.insertBefore(newRow, tr.nextSibling);
+
+    const firstCell = newRow.querySelector('td');
+    if (firstCell) {
+      const sel = window.getSelection();
+      const newRange = document.createRange();
+      newRange.setStart(firstCell, 0);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+
+    markModified();
+  }
+
+  function deleteTableColumn() {
+    const ctx = getTableContext();
+    if (!ctx || ctx.colIndex < 0) return;
+    const { table, colIndex, cols } = ctx;
+
+    if (cols.length <= 1) {
+      table.remove();
+      markModified();
+      return;
+    }
+
+    if (cols[colIndex]) cols[colIndex].remove();
+
+    const allRows = table.querySelectorAll('tr');
+    allRows.forEach(row => {
+      const cells = row.querySelectorAll('td, th');
+      if (cells[colIndex]) cells[colIndex].remove();
+    });
+
+    markModified();
+  }
+
+  function deleteTableRow() {
+    const ctx = getTableContext();
+    if (!ctx || !ctx.tr) return;
+    const { table, tr, rows } = ctx;
+
+    if (rows.length <= 1) {
+      table.remove();
+      markModified();
+      return;
+    }
+
+    const nextRow = tr.nextElementSibling || tr.previousElementSibling;
+    tr.remove();
+
+    if (nextRow) {
+      const targetCell = nextRow.querySelector('td, th');
+      if (targetCell) {
+        const sel = window.getSelection();
+        const newRange = document.createRange();
+        newRange.setStart(targetCell, 0);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+    }
+
+    markModified();
+  }
+
+  ctxMenu.querySelectorAll('.ctx-table-item').forEach(item => {
+    item.addEventListener('click', () => {
+      ctxMenu.style.display = 'none';
+      restoreContextMenuRange();
+
+      switch (item.dataset.tableAction) {
+        case 'insert-col':
+          insertTableColumn();
+          break;
+        case 'insert-row':
+          insertTableRow();
+          break;
+        case 'delete-col':
+          deleteTableColumn();
+          break;
+        case 'delete-row':
+          deleteTableRow();
+          break;
+      }
+    });
   });
 
   // ─── Splitter ──────────────────────────────────────────────────────────
