@@ -1764,7 +1764,7 @@
       const cells = table.querySelectorAll('tr:first-child > td, tr:first-child > th');
       if (cells.length < 2) return;
 
-      for (let i = 0; i < cells.length - 1; i++) {
+      for (let i = 0; i < cells.length; i++) {
         const rect = cells[i].getBoundingClientRect();
         if (Math.abs(e.clientX - rect.right) < 5) {
           editor.style.cursor = 'col-resize';
