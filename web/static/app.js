@@ -1772,6 +1772,11 @@
       const cells = table.querySelectorAll('tr:first-child > td, tr:first-child > th');
       if (cells.length < 2) return;
 
+      // Don't trigger column resize when near the bottom-right corner
+      // (element resize handle takes priority there)
+      const tableRect = table.getBoundingClientRect();
+      if (e.clientY > tableRect.bottom - 24) return;
+
       for (let i = 0; i < cells.length; i++) {
         const rect = cells[i].getBoundingClientRect();
         if (Math.abs(e.clientX - rect.right) < 5) {
@@ -1808,13 +1813,144 @@
     // (using ones already defined for splitter would conflict, so add new ones)
   }
 
-  // Wire up document mouse events for table column resize
+  // ─── Element resize handle (table & image) ───────────────────────────
+
+  let elementResizeHandle = null;
+  let elementResizeTarget = null;
+  let elementResizeStart = null;
+
+  function initElementResizeHandle() {
+    elementResizeHandle = document.createElement('div');
+    elementResizeHandle.className = 'editor-resize-handle';
+    document.body.appendChild(elementResizeHandle);
+
+    editor.addEventListener('mousemove', function(e) {
+      if (elementResizeTarget) return;
+
+      const editorRect = editor.getBoundingClientRect();
+      if (e.clientX < editorRect.left || e.clientX > editorRect.right ||
+          e.clientY < editorRect.top || e.clientY > editorRect.bottom) {
+        elementResizeHandle.style.display = 'none';
+        return;
+      }
+
+      let target = null;
+      if (e.target.tagName === 'IMG' && editor.contains(e.target)) {
+        target = e.target;
+      } else if (e.target.tagName === 'TABLE' && editor.contains(e.target)) {
+        target = e.target;
+      } else {
+        const img = e.target.closest('img');
+        const tbl = e.target.closest('table');
+        if (img && editor.contains(img)) target = img;
+        else if (tbl && editor.contains(tbl)) target = tbl;
+      }
+
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        const nearCorner = (e.clientX > rect.right - 24 && e.clientY > rect.bottom - 24);
+        if (nearCorner) {
+          elementResizeHandle.style.display = 'block';
+          elementResizeHandle.style.left = (rect.right - 16) + 'px';
+          elementResizeHandle.style.top = (rect.bottom - 16) + 'px';
+          elementResizeHandle._target = target;
+          return;
+        }
+      }
+      elementResizeHandle.style.display = 'none';
+    });
+
+    elementResizeHandle.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const target = elementResizeHandle._target;
+      if (!target || !editor.contains(target)) return;
+
+      elementResizeTarget = target;
+
+      if (target.tagName === 'IMG') {
+        let w = target.naturalWidth || 0;
+        let h = target.naturalHeight || 0;
+        if (!w || !h) {
+          w = target.width;
+          h = target.height;
+        }
+        const rect = target.getBoundingClientRect();
+        elementResizeStart = {
+          startX: e.clientX,
+          startY: e.clientY,
+          startW: rect.width,
+          startH: rect.height,
+          aspectRatio: w / (h || 1),
+          scaleCols: false,
+        };
+      } else if (target.tagName === 'TABLE') {
+        const cols = target.querySelectorAll('col');
+        const colWidths = [];
+        cols.forEach(col => {
+          colWidths.push(parseFloat(col.style.width) || 80);
+        });
+        const rect = target.getBoundingClientRect();
+        const cs = window.getComputedStyle(target);
+        const baseFontSize = parseFloat(cs.fontSize) || 16;
+        elementResizeStart = {
+          startX: e.clientX,
+          startY: e.clientY,
+          startW: rect.width,
+          startH: rect.height,
+          aspectRatio: rect.width / (rect.height || 1),
+          colWidths: colWidths.length ? colWidths : null,
+          scaleCols: true,
+          startFontSize: baseFontSize,
+        };
+      }
+    });
+  }
+
+  // Wire up document mouse events for element resize handle
   document.addEventListener('mousemove', function(e) {
     if (tableColResize) {
       const dx = e.clientX - tableColResize.startX;
       const newW = Math.max(30, tableColResize.startW + dx);
       tableColResize.col.style.width = newW + 'px';
       document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    }
+
+    if (elementResizeTarget && elementResizeStart) {
+      const dx = e.clientX - elementResizeStart.startX;
+      const dy = e.clientY - elementResizeStart.startY;
+      const scaleFromW = (elementResizeStart.startW + dx) / elementResizeStart.startW;
+      const scaleFromH = (elementResizeStart.startH + dy) / elementResizeStart.startH;
+      const scale = Math.max(scaleFromW, scaleFromH);
+      const newW = Math.max(60, Math.round(elementResizeStart.startW * scale));
+      const newH = Math.round(newW / elementResizeStart.aspectRatio);
+
+      if (elementResizeTarget.tagName === 'IMG') {
+        elementResizeTarget.style.width = newW + 'px';
+        elementResizeTarget.style.height = newH + 'px';
+      } else if (elementResizeTarget.tagName === 'TABLE') {
+        elementResizeTarget.style.width = newW + 'px';
+        if (elementResizeStart.scaleCols && elementResizeStart.colWidths) {
+          const s = newW / elementResizeStart.startW;
+          const cols = elementResizeTarget.querySelectorAll('col');
+          cols.forEach((col, i) => {
+            if (i < elementResizeStart.colWidths.length) {
+              col.style.width = Math.round(elementResizeStart.colWidths[i] * s) + 'px';
+            }
+          });
+        }
+        if (elementResizeStart.startFontSize) {
+          elementResizeTarget.style.fontSize =
+            Math.round(elementResizeStart.startFontSize * scale) + 'px';
+        }
+      }
+
+      const targetRect = elementResizeTarget.getBoundingClientRect();
+      elementResizeHandle.style.left = (targetRect.right - 16) + 'px';
+      elementResizeHandle.style.top = (targetRect.bottom - 16) + 'px';
+      document.body.style.cursor = 'nwse-resize';
       e.preventDefault();
     }
   });
@@ -1827,6 +1963,14 @@
       tableColResize = null;
       document.body.style.cursor = '';
       if (editor) editor.style.cursor = '';
+    }
+
+    if (elementResizeTarget) {
+      markModified();
+      elementResizeTarget = null;
+      elementResizeStart = null;
+      elementResizeHandle.style.display = 'none';
+      document.body.style.cursor = '';
     }
   });
 
@@ -2978,6 +3122,8 @@
 
   function constrainEditorImages() {
     editor.querySelectorAll('img').forEach((img) => {
+      // Skip images that have been manually resized (both width and height set to numbers)
+      if (img.style.height && img.style.height !== 'auto') return;
       if (img.complete && img.naturalWidth) {
         setImage50(img);
       } else {
@@ -3570,6 +3716,7 @@
     loadTabs();
     loadFontConfig();
     initTableColumnResize();
+    initElementResizeHandle();
   })();
 
 })();

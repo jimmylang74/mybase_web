@@ -423,6 +423,32 @@ body {
   left: 1px;
 }
 
+/* Element resize handle (table & image) */
+.editor-resize-handle {
+  position: fixed;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 9999;
+  pointer-events: auto;
+  display: none;
+}
+.editor-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #3498db;
+  border-bottom: 2px solid #3498db;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.editor-resize-handle:hover::before {
+  opacity: 1;
+}
+
 #editor:empty:before {
   content: attr(data-placeholder);
   color: #aaa;
