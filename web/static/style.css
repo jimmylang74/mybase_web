@@ -1315,8 +1315,16 @@ body {
 }
 .style-icon-wrapper .style-input-short {
   max-width: 140px;
-  cursor: pointer;
   background: #fff;
+}
+.icon-after-label {
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  white-space: nowrap;
+  border: none !important;
+}
+.icon-after-label:hover {
+  background: transparent !important;
 }
 .style-icon-btn {
   width: 32px;

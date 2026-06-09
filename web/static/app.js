@@ -873,7 +873,9 @@
     const label = document.createElement('span');
     label.className = 'label';
     const style = item.style || {};
-    label.textContent = (style.icon || '') + item.label;
+    label.textContent = style.iconAfter
+      ? item.label + (style.icon || '')
+      : (style.icon || '') + item.label;
 
     header.appendChild(toggle);
     header.appendChild(label);
@@ -2343,6 +2345,7 @@
   const styleBold = $('#style-bold');
   const styleUnderline = $('#style-underline');
   const styleStrikethrough = $('#style-strikethrough');
+  const styleIconAfter = $('#style-icon-after');
   let styleItemId = null;
 
   function showCustomStyleDialog(itemId) {
@@ -2360,6 +2363,7 @@
     styleBold.checked = !!s.bold;
     styleUnderline.checked = !!s.underline;
     styleStrikethrough.checked = !!s.strikethrough;
+    styleIconAfter.checked = !!s.iconAfter;
 
     styleDialog.style.display = 'flex';
   }
@@ -2374,6 +2378,7 @@
       bold: styleBold.checked,
       underline: styleUnderline.checked,
       strikethrough: styleStrikethrough.checked,
+      iconAfter: styleIconAfter.checked,
     };
   }
 
@@ -2387,6 +2392,7 @@
     if (s.bold) out.bold = true;
     if (s.underline) out.underline = true;
     if (s.strikethrough) out.strikethrough = true;
+    if (s.iconAfter) out.iconAfter = true;
     return out;
   }
 
@@ -2418,6 +2424,7 @@
     styleBold.checked = false;
     styleUnderline.checked = false;
     styleStrikethrough.checked = false;
+    styleIconAfter.checked = false;
   }
 
   // ─── Emoji Picker Dialog ──────────────────────────────────────
