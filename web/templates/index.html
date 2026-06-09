@@ -134,6 +134,8 @@
   <div class="ctx-separator ctx-table-sep" style="display:none"></div>
   <div class="ctx-item ctx-table-item" data-table-action="delete-col" data-i18n="delete_column" style="display:none">删除列</div>
   <div class="ctx-item ctx-table-item" data-table-action="delete-row" data-i18n="delete_row" style="display:none">删除行</div>
+  <div class="ctx-separator ctx-table-sep" style="display:none"></div>
+  <div class="ctx-item ctx-table-item" id="ctx-cell-format" data-i18n="cell_format" style="display:none">设置单元格格式</div>
 </div>
 
 <!-- Tree Right-Click Context Menu -->
@@ -251,6 +253,41 @@
       <button id="style-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
       <button id="style-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
       <button id="style-btn-reset" class="style-btn style-btn-danger" style="margin-left:auto" data-i18n="reset_style">重置样式</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cell Format Dialog -->
+<div id="cell-format-dialog" style="display:none">
+  <div id="cell-format-dialog-content">
+    <div id="cell-format-dialog-header" data-i18n="cell_format_title">设置单元格格式</div>
+    <div id="cell-format-dialog-body">
+      <div class="style-row">
+        <label data-i18n="bg_color">背景颜色:</label>
+        <input type="color" id="cell-format-bgcolor" value="#ffffff">
+        <button class="style-reset-btn" id="cell-format-bgcolor-reset" data-i18n="reset">重置</button>
+      </div>
+      <div class="style-row">
+        <label data-i18n="vertical_align">垂直对齐:</label>
+        <select id="cell-format-valign">
+          <option value="middle" selected data-i18n="align_middle">居中</option>
+          <option value="top" data-i18n="align_top">顶部</option>
+          <option value="bottom" data-i18n="align_bottom">底部</option>
+        </select>
+      </div>
+      <div class="style-row">
+        <label data-i18n="horizontal_align">水平对齐:</label>
+        <select id="cell-format-halign">
+          <option value="" data-i18n="default">默认</option>
+          <option value="left" data-i18n="align_left">左对齐</option>
+          <option value="center" data-i18n="align_center">居中</option>
+          <option value="right" data-i18n="align_right">右对齐</option>
+        </select>
+      </div>
+    </div>
+    <div id="cell-format-dialog-footer">
+      <button id="cell-format-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="cell-format-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
     </div>
   </div>
 </div>

@@ -125,6 +125,16 @@
       insert_row: '插入行',
       delete_column: '删除列',
       delete_row: '删除行',
+      cell_format: '设置单元格格式',
+      cell_format_title: '设置单元格格式',
+      vertical_align: '垂直对齐:',
+      horizontal_align: '水平对齐:',
+      align_top: '顶部',
+      align_middle: '居中',
+      align_bottom: '底部',
+      align_left: '左对齐',
+      align_center: '居中',
+      align_right: '右对齐',
     },
     en: {
       collapse_all: 'Collapse All',
@@ -214,6 +224,16 @@
       insert_row: 'Insert Row',
       delete_column: 'Delete Column',
       delete_row: 'Delete Row',
+      cell_format: 'Cell Format',
+      cell_format_title: 'Set Cell Format',
+      vertical_align: 'Vertical Align:',
+      horizontal_align: 'Horizontal Align:',
+      align_top: 'Top',
+      align_middle: 'Middle',
+      align_bottom: 'Bottom',
+      align_left: 'Left',
+      align_center: 'Center',
+      align_right: 'Right',
     }
   };
 
@@ -3090,6 +3110,92 @@
       }
     });
   });
+
+  $('#ctx-cell-format').addEventListener('click', () => {
+    ctxMenu.style.display = 'none';
+    restoreContextMenuRange();
+    showCellFormatDialog();
+  });
+
+  $('#cell-format-btn-ok').addEventListener('click', () => {
+    applyCellFormat();
+    $('#cell-format-dialog').style.display = 'none';
+  });
+  $('#cell-format-btn-cancel').addEventListener('click', () => {
+    $('#cell-format-dialog').style.display = 'none';
+  });
+  $('#cell-format-bgcolor-reset').addEventListener('click', () => {
+    $('#cell-format-bgcolor').value = '#ffffff';
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('#cell-format-dialog').style.display !== 'none') {
+      $('#cell-format-dialog').style.display = 'none';
+    }
+  });
+  $('#cell-format-dialog').addEventListener('click', (e) => {
+    if (e.target === $('#cell-format-dialog')) {
+      $('#cell-format-dialog').style.display = 'none';
+    }
+  });
+
+  function rgbToHex(rgb) {
+    const m = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    if (!m) return rgb;
+    return '#' + [1,2,3].map(i => parseInt(m[i], 10).toString(16).padStart(2, '0')).join('');
+  }
+
+  function showCellFormatDialog() {
+    const cell = ctxMenu._tableCell;
+    if (!cell) return;
+
+    const currentBg = cell.style.backgroundColor || '';
+    const currentVAlign = cell.style.verticalAlign || '';
+    const currentHAlign = cell.style.textAlign || '';
+
+    let hexColor = '#ffffff';
+    if (currentBg && currentBg !== 'transparent') {
+      hexColor = currentBg.startsWith('#') ? currentBg : rgbToHex(currentBg);
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(hexColor)) hexColor = '#ffffff';
+    $('#cell-format-bgcolor').value = hexColor;
+
+    const valignSelect = $('#cell-format-valign');
+    const halignSelect = $('#cell-format-halign');
+    valignSelect.value = currentVAlign || 'middle';
+    halignSelect.value = currentHAlign || '';
+
+    $('#cell-format-dialog').style.display = 'flex';
+  }
+
+  function applyCellFormat() {
+    const cell = ctxMenu._tableCell;
+    if (!cell) return;
+
+    const bgColor = $('#cell-format-bgcolor').value;
+    const vAlign = $('#cell-format-valign').value;
+    const hAlign = $('#cell-format-halign').value;
+
+    if (bgColor && bgColor !== '#ffffff') {
+      cell.style.backgroundColor = bgColor;
+    } else {
+      cell.style.backgroundColor = '';
+    }
+
+    if (vAlign) {
+      cell.style.verticalAlign = vAlign;
+    } else {
+      cell.style.verticalAlign = '';
+    }
+
+    if (hAlign) {
+      cell.style.textAlign = hAlign;
+    } else {
+      cell.style.textAlign = '';
+    }
+
+    markModified();
+    tableFormulaManager?.onTableModified();
+  }
 
   // ─── Splitter ──────────────────────────────────────────────────────────
 

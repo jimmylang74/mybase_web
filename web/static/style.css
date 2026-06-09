@@ -380,7 +380,7 @@ body {
   border: 1px solid #bbb;
   padding: 6px 10px;
   min-width: 40px;
-  vertical-align: top;
+  vertical-align: middle;
   position: relative;
   overflow-wrap: break-word;
   word-break: break-word;
@@ -1341,6 +1341,40 @@ body {
 }
 .style-icon-btn:hover {
   background: #f0f0f0;
+}
+
+/* ─── Cell Format Dialog ──────────────────────────────────── */
+#cell-format-dialog {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#cell-format-dialog-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 380px;
+  max-width: 440px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+#cell-format-dialog-header {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+#cell-format-dialog-body {
+  margin-bottom: 16px;
+}
+#cell-format-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #eee;
+  padding-top: 16px;
 }
 
 /* ─── Emoji Picker Dialog ──────────────────────────────────── */
