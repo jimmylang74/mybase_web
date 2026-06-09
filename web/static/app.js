@@ -2493,7 +2493,6 @@
     emojiDialog.style.display = 'none';
   }
 
-  styleIcon.addEventListener('click', openEmojiPicker);
   styleIconBtn.addEventListener('click', openEmojiPicker);
 
   emojiDialog.addEventListener('click', (e) => {
