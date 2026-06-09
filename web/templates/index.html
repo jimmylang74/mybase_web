@@ -196,7 +196,10 @@
     <div id="style-dialog-body">
       <div class="style-row">
         <label data-i18n="icon_emoji">图标 (Emoji):</label>
-        <input type="text" id="style-icon" class="style-input-short" data-i18n-placeholder="icon_placeholder" placeholder="如: 📁 🔖">
+        <div class="style-icon-wrapper">
+          <input type="text" id="style-icon" class="style-input-short" data-i18n-placeholder="icon_placeholder" placeholder="点击选择图标" readonly>
+          <button type="button" id="style-icon-btn" class="style-icon-btn" title="选择图标">📁</button>
+        </div>
       </div>
       <div class="style-row">
         <label data-i18n="font">字体:</label>
@@ -247,6 +250,21 @@
       <button id="style-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
       <button id="style-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
       <button id="style-btn-reset" class="style-btn style-btn-danger" style="margin-left:auto" data-i18n="reset_style">重置样式</button>
+    </div>
+  </div>
+</div>
+
+<!-- Emoji Picker Dialog -->
+<div id="emoji-dialog" style="display:none">
+  <div id="emoji-dialog-content">
+    <div id="emoji-dialog-header">选择图标</div>
+    <div id="emoji-dialog-search">
+      <input type="text" id="emoji-search" placeholder="搜索 Emoji...">
+    </div>
+    <div id="emoji-dialog-body">
+    </div>
+    <div id="emoji-dialog-footer">
+      <button id="emoji-btn-close" class="style-btn" data-i18n="cancel">取消</button>
     </div>
   </div>
 </div>

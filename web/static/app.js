@@ -2352,6 +2352,7 @@
 
     const s = item.style || {};
     styleIcon.value = s.icon || '';
+    styleIconBtn.textContent = s.icon || '📁';
     styleFontFamily.value = s.fontFamily || '';
     styleFontSize.value = s.fontSize || '';
     styleColor.value = s.color || '#000000';
@@ -2409,6 +2410,7 @@
 
   function resetStyleFields() {
     styleIcon.value = '';
+    styleIconBtn.textContent = '📁';
     styleFontFamily.value = '';
     styleFontSize.value = '';
     styleColor.value = '#000000';
@@ -2417,6 +2419,100 @@
     styleUnderline.checked = false;
     styleStrikethrough.checked = false;
   }
+
+  // ─── Emoji Picker Dialog ──────────────────────────────────────
+
+  const EMOJI_CATEGORIES = [
+    { name: '文件夹与文件', items: ['📁','📂','🗂️','📄','📑','📝','📃','📜','📋','📌','📎','🖇️','📏','📐','✂️','🗃️','🗄️','🧾','🏷️'] },
+    { name: '书签与标记', items: ['🔖','⭐','🌟','✨','💫','🏅','🥇','🥈','🥉','🎖️','🏆','🎯','📍','🚩','🎗️','🏵️','🎪'] },
+    { name: '沟通与消息', items: ['💬','💭','🗨️','🗯️','💌','📧','📨','📩','📤','📥','📫','📪','📬','📭','📢','📣','🔊','🔇'] },
+    { name: '编辑与写作', items: ['✏️','✒️','🖊️','🖋️','🖌️','🖍️','✍️','📝','📄','📃','📜','✂️','📎','🖇️','🔗','🧷','📏','📐'] },
+    { name: '图表与数据', items: ['📊','📈','📉','📋','📅','📆','🗓️','📇','🧮','📑','🗒️','🗃️','🗄️','📁','📂'] },
+    { name: '搜索与灵感', items: ['🔍','🔎','💡','🕯️','🔦','🧠','🧩','🔬','🔭','💭','🎯','🎲','♟️','🧿','⚗️'] },
+    { name: '技术与存储', items: ['💻','🖥️','🖨️','⌨️','🖱️','💿','📀','💾','💽','📼','📷','📹','🎥','📡','☁️','🖵','🖬'] },
+    { name: '工具与设置', items: ['⚙️','🔧','🛠️','🔩','⛏️','🪛','🪚','🔨','🧰','🧲','⚖️','🔗','⚡','🔄','🧪','🔬','🔭','🗜️'] },
+    { name: '安全与状态', items: ['🔒','🔓','🔐','🔑','🗝️','🛡️','✅','❌','⚠️','🚫','🔞','🚨','🚩','🏴','🔏','🔐','🛡️','✔️'] },
+    { name: '学习与书籍', items: ['📚','📖','📕','📗','📘','📙','📔','📓','📒','🔖','🏷️','🎓','📝','✏️','📑','📃','🎒','📏'] },
+    { name: '地点与导航', items: ['🏠','🏢','🏣','🏤','🏥','🏦','🏨','🏪','🏫','🏬','🏭','🏯','🏰','🗺️','🧭','🌍','🌎','🌏'] },
+    { name: '设计与创意', items: ['🎨','🖌️','🖍️','🖼️','🎭','🎬','🎵','🎶','🎧','🎤','🎹','🥁','🎷','🎸','🎺','🎻','🎯','🎪'] },
+    { name: '通知与提醒', items: ['🔔','🔕','📢','📣','🔊','🔇','📯','🛎️','🚨','⚠️','🚫','📛','🚸','🔞','📳','📴','🔅','🔆'] },
+    { name: '目标与成就', items: ['🎯','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎪','🎭','🎨','🎬','🎤','🎼','🎹','🥁','🎧','🎵'] },
+    { name: '自然与物品', items: ['🌟','⭐','🌈','☀️','🌙','🌍','🌎','🌏','🌐','🔥','💧','❄️','🌊','🌿','🌺','🌻','🌸','🌴','🌵','🍀'] },
+    { name: '符号与箭头', items: ['🔄','↩️','↪️','➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','➕','➖','➗','✖️','✔️','🔽','🔼','▶️','◀️'] },
+  ];
+
+  const emojiDialog = $('#emoji-dialog');
+  const emojiDialogBody = $('#emoji-dialog-body');
+  const emojiSearch = $('#emoji-search');
+  const styleIconBtn = $('#style-icon-btn');
+  let allEmojiItems = [];
+
+  function renderEmojiGrid(filter) {
+    emojiDialogBody.innerHTML = '';
+    allEmojiItems = [];
+    const lowerFilter = (filter || '').toLowerCase();
+
+    for (const cat of EMOJI_CATEGORIES) {
+      const matchingItems = lowerFilter
+        ? cat.items.filter((e) => e.includes(lowerFilter) || cat.name.includes(lowerFilter))
+        : cat.items;
+      if (matchingItems.length === 0) continue;
+
+      const section = document.createElement('div');
+      section.className = 'emoji-category';
+
+      const header = document.createElement('div');
+      header.className = 'emoji-category-header';
+      header.textContent = cat.name;
+      section.appendChild(header);
+
+      const grid = document.createElement('div');
+      grid.className = 'emoji-grid';
+
+      for (const emoji of matchingItems) {
+        const span = document.createElement('span');
+        span.className = 'emoji-item';
+        span.dataset.emoji = emoji;
+        span.textContent = emoji;
+        if (emoji === styleIcon.value) span.classList.add('selected');
+        grid.appendChild(span);
+        allEmojiItems.push(span);
+      }
+
+      section.appendChild(grid);
+      emojiDialogBody.appendChild(section);
+    }
+  }
+
+  function openEmojiPicker() {
+    renderEmojiGrid(emojiSearch.value);
+    emojiDialog.style.display = 'flex';
+  }
+
+  function closeEmojiPicker() {
+    emojiDialog.style.display = 'none';
+  }
+
+  styleIcon.addEventListener('click', openEmojiPicker);
+  styleIconBtn.addEventListener('click', openEmojiPicker);
+
+  emojiDialog.addEventListener('click', (e) => {
+    const item = e.target.closest('.emoji-item');
+    if (!item) return;
+    styleIcon.value = item.dataset.emoji;
+    styleIconBtn.textContent = item.dataset.emoji;
+    closeEmojiPicker();
+  });
+
+  emojiSearch.addEventListener('input', () => {
+    renderEmojiGrid(emojiSearch.value);
+  });
+
+  $('#emoji-btn-close').addEventListener('click', closeEmojiPicker);
+
+  emojiDialog.addEventListener('click', (e) => {
+    if (e.target === emojiDialog) closeEmojiPicker();
+  });
 
   $('#style-btn-ok').addEventListener('click', () => {
     if (!styleItemId) return;

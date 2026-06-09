@@ -1307,6 +1307,128 @@ body {
   max-width: 120px;
 }
 
+.style-icon-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.style-icon-wrapper .style-input-short {
+  max-width: 140px;
+  cursor: pointer;
+  background: #fff;
+}
+.style-icon-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+.style-icon-btn:hover {
+  background: #f0f0f0;
+}
+
+/* ─── Emoji Picker Dialog ──────────────────────────────────── */
+#emoji-dialog {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#emoji-dialog-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  width: 540px;
+  max-width: 94vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+#emoji-dialog-header {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+#emoji-dialog-search {
+  margin-bottom: 10px;
+}
+#emoji-dialog-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+#emoji-dialog-search input:focus {
+  border-color: #3498db;
+}
+#emoji-dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 200px;
+  max-height: 50vh;
+}
+#emoji-dialog-footer {
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+  margin-top: 8px;
+  text-align: right;
+}
+
+.emoji-category {
+  margin-bottom: 12px;
+}
+.emoji-category-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  padding: 4px 0 6px 0;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 6px;
+}
+.emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.emoji-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: 22px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.08s, transform 0.08s;
+  user-select: none;
+}
+.emoji-item:hover {
+  background: #e3f2fd;
+  transform: scale(1.25);
+}
+.emoji-item:active {
+  transform: scale(1.0);
+}
+.emoji-item.selected {
+  background: #bbdefb;
+  box-shadow: 0 0 0 2px #3498db;
+}
+
 .style-row input[type="color"] {
   width: 36px;
   height: 30px;
