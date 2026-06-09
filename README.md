@@ -1,18 +1,22 @@
-# 知识库 KBase v2.0
+# 知识库 KBase v4.5.4
 
-**Web of Mybase Knowledge Server** — 中文知识库管理系统，基于 Flask + PaddleOCR 构建。
+**Web of Mybase Knowledge Server**，中文知识库管理系统，基于 Flask + PaddleOCR 构建。
 
 支持多知识库（Tab）、树形菜单组织、富文本编辑、图片 OCR 文字识别、全文搜索、一键备份等功能。
 
 ## 功能特性
 
-- 📚 **多知识库管理** — 支持创建多个独立知识库 Tab，拖拽排序，独立索引
-- 🌳 **树形菜单** — 多级嵌套菜单组织内容，支持拖拽移动、内联重命名、自定义样式
-- ✏️ **富文本编辑器** — 所见即所得编辑，支持字体/颜色/大小/粗斜体/链接等格式
-- 🔍 **全文搜索** — SQLite 索引引擎，支持单库/全局搜索，支持正则表达式、OR（<code>|</code>）、AND（空格/<code>&&</code>）、排除（<code>^</code>）智能搜索语法
-- 🖼️ **OCR 图片文字识别** — 基于 PaddleOCR，自动提取图片文字并纳入索引
-- 📦 **一键备份** — ZIP 打包所有知识库数据，支持下载
-- 🌐 **独立导出** — 每个知识库可生成独立的单页 HTML（index.html）
+- 📚 **多知识库管理**，支持创建多个独立知识库 Tab，拖拽排序，独立索引
+- 🌳 **树形菜单**，多级嵌套菜单组织内容，支持拖拽移动、内联重命名、自定义样式
+- ✏️ **富文本编辑器**，所见即所得编辑，支持字体/颜色/大小/粗斜体/链接等格式
+- 🔍 **全文搜索**，SQLite 索引引擎，支持单库/全局搜索，支持正则表达式、OR（<code>|</code>）、AND（空格/<code>&&</code>）、排除（<code>^</code>）智能搜索语法
+- 🖼️ **OCR 图片文字识别**，基于 PaddleOCR，自动提取图片文字并纳入索引
+- 📦 **一键备份**，ZIP 打包所有知识库数据，支持下载
+- 🌐 **独立导出**，每个知识库可生成独立的单页 HTML（index.html）
+- **WebSocket 实时协作**，基于 flask-socketio 实现，支持多浏览器窗口自动同步、文档锁定防止冲突、加密库同步拒绝访问
+- **知识库加密**，采用 AES-256-GCM 文件加密 + BCrypt 密码哈希 + PBKDF2 密钥派生，支持一库一密，基于会话解锁
+- **PDF/ZIP 导出**，支持知识库级别和菜单项级别的 PDF/ZIP 格式导出，提供独立 HTML ZIP 输出
+- **Cython 编译与打包**，支持 Cython 编译加速，提供 Makefile 构建脚本（make build / make package）
 
 ## 安装
 
@@ -20,6 +24,7 @@
 
 - Python >= 3.8
 - 操作系统：Windows / Linux / macOS
+- 主要依赖：flask-socketio>=5.3.0, fpdf2>=2.8.0, bcrypt>=4.0.0, pycryptodome>=3.20.0
 
 ### 安装步骤
 
@@ -58,12 +63,12 @@ python server.py
 |------|--------|------|
 | `--port PORT` | 9999 | 服务器监听端口 |
 | `--data DIR` | data | 数据根目录 |
-| `--force-index [NAME]` | — | 强制重建索引（指定名称或全部） |
-| `--disable-ocr` | — | 禁用 OCR 图片文字识别 |
-| `--mobile-ocr` | — | 使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用 |
+| `--force-index [NAME]` | 无 | 强制重建索引（指定名称或全部） |
+| `--disable-ocr` | 无 | 禁用 OCR 图片文字识别 |
+| `--mobile-ocr` | 无 | 使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用 |
 | `--workers-ocr N` | 8 | OCR 工作进程数 |
 | `--workers-menu N` | 8 | 菜单项索引并行数 |
-| `--no-debug` | — | 关闭调试日志 |
+| `--no-debug` | 无 | 关闭调试日志 |
 
 ### 使用示例
 
@@ -85,7 +90,12 @@ python server.py --workers-ocr 2 --workers-menu 2
 
 ```
 ├── server.py              # 主服务器程序
+├── main.py                # Cython 加载器
+├── setup.py               # Cython 构建脚本
+├── Makefile               # 构建/清理/打包脚本
 ├── requirements.txt       # Python 依赖
+├── pdf_fonts/             # PDF 导出字体目录
+├── .sisyphus/             # 开发配置目录
 ├── web/
 │   ├── templates/         # HTML 模板
 │   │   ├── index.html     # 主界面
@@ -113,11 +123,11 @@ python server.py --workers-ocr 2 --workers-menu 2
 
 ### 基本操作
 
-1. **创建知识库** — 点击工具栏「新增知识库」按钮
-2. **添加菜单项** — 在侧边栏右键菜单选择「新增根菜单项」或「新增子菜单项」
-3. **编辑内容** — 点击菜单项，在右侧富文本编辑器中编辑
-4. **保存** — `Ctrl + S` 或点击「💾 Save」按钮
-5. **搜索** — 在搜索框输入关键词，支持全局搜索、正则搜索，以及智能语法：OR（<code>|</code>）、AND（空格/<code>&&</code>）、排除（<code>^</code>）
+1. **创建知识库**，点击工具栏「新增知识库」按钮
+2. **添加菜单项**，在侧边栏右键菜单选择「新增根菜单项」或「新增子菜单项」
+3. **编辑内容**，点击菜单项，在右侧富文本编辑器中编辑
+4. **保存**，`Ctrl + S` 或点击「💾 Save」按钮
+5. **搜索**，在搜索框输入关键词，支持全局搜索、正则搜索，以及智能语法：OR（<code>|</code>）、AND（空格/<code>&&</code>）、排除（<code>^</code>）
 
 ### 键盘快捷键
 

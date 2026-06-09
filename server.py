@@ -1505,7 +1505,7 @@ def init_common_db():
         """)
         conn.execute("""
             INSERT OR IGNORE INTO system_config (name, value)
-            VALUES ('version', 'v2.0')
+            VALUES ('version', 'v4.5.4')
         """)
         conn.commit()
     finally:

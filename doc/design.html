@@ -144,7 +144,7 @@
 
 <h1>知识库 KBase <small>设计文档</small></h1>
 <p style="color:#888;margin-bottom:24px">
-  项目名称：Web of Mybase Knowledge Server &nbsp;|&nbsp; 最后更新：2026-05-30
+  项目名称：Web of Mybase Knowledge Server &nbsp;|&nbsp; 版本：v4.5.4 &nbsp;|&nbsp; 最后更新：2026-06-09
 </p>
 
 <div class="toc">
@@ -155,6 +155,8 @@
   <a href="#sec4">4.4 项目详细设计</a>
   <a href="#sec4-1" class="l2">4.4.1 功能设计</a>
   <a href="#sec4-1-3" class="l3">4.4.1.3 导出系统</a>
+  <a href="#sec4-1-4" class="l3">4.4.1.4 WebSocket 实时同步</a>
+  <a href="#sec4-1-5" class="l3">4.4.1.5 Cython 编译与打包</a>
   <a href="#sec4-2" class="l2">4.4.2 UI界面设计</a>
   <a href="#sec4-3" class="l2">4.4.3 架构设计</a>
   <a href="#sec4-4" class="l2">4.4.4 关键技术设计</a>
@@ -202,7 +204,10 @@
 <h2 id="sec2">4.2 项目目录结构</h2>
 
 <pre>
-├── server.py                        # 主服务器程序（Flask 后端，~2371 行）
+├── server.py                        # 主服务器程序（Flask 后端，~4139 行）
+├── main.py                          # Cython 加载器
+├── setup.py                         # Cython 编译脚本
+├── Makefile                         # 编译/清理/打包脚本
 ├── requirements.txt                 # Python 依赖清单
 ├── read_version.py                  # 读取版本号的辅助工具
 ├── set_version.py                   # 更新版本号的辅助工具
@@ -214,8 +219,8 @@
 │   │   ├── index.html               # 主界面（单页应用）
 │   │   └── help.html                # 帮助文档页面
 │   └── static/                      # 静态资源
-│       ├── app.js                   # 前端 JavaScript 逻辑（~2014 行）
-│       └── style.css                # 前端样式表（~1166 行）
+│       ├── app.js                   # 前端 JavaScript 逻辑（~3847 行）
+│       └── style.css                # 前端样式表（~1607 行）
 │
 ├── data/                            # 数据存储根目录
 │   ├── mybase/                      # 知识库数据（每个子目录为一个知识库）
@@ -241,6 +246,8 @@
 │       │   └── PP-LCNet_x1_0_doc_ori/ # 文档方向分类模型
 │       └── ...
 │
+├── pdf_fonts/                       # PDF 导出字体目录
+│
 └── .sisyphus/                       # 开发工具配置（可忽略）
 </pre>
 
@@ -264,6 +271,8 @@
   <tr><td>paddlex</td><td>&gt;=3.0.0</td><td>Paddle 模型管理工具</td></tr>
   <tr><td>bcrypt</td><td>&gt;=4.0.0</td><td>密码哈希，知识库密码验证</td></tr>
   <tr><td>pycryptodome</td><td>&gt;=3.20.0</td><td>AES-256-GCM 文件加密解密</td></tr>
+  <tr><td>flask-socketio</td><td>&gt;=5.3.0</td><td>WebSocket 实时同步</td></tr>
+  <tr><td>fpdf2</td><td>&gt;=2.8.0</td><td>PDF 导出</td></tr>
   <tr><td>click</td><td>&gt;=8.0.0</td><td>Windows 平台兼容（可选）</td></tr>
 </table>
 
@@ -340,6 +349,12 @@ pip install -r requirements.txt</code></pre>
     <td>用户密码 → BCrypt 验证 → PBKDF2 派生 AES 密钥 → AES-256-GCM 文件加密</td>
   </tr>
   <tr>
+    <td>WebSocket 同步</td>
+    <td><code>server.py</code> (ws_* handlers, SocketIO events)</td>
+    <td><code>app.js</code> (WebSocket connection, room management, lock handling)</td>
+    <td>基于 flask-socketio 的跨浏览器窗口实时内容同步、文档锁定、加密知识库同步阻断</td>
+  </tr>
+  <tr>
     <td>导出系统</td>
     <td><code>server.py</code> (export_tab_pdf, export_tab_zip, export_tree_item_pdf, export_tree_item_zip)</td>
     <td><code>app.js</code> (handleTabExport, handleTreeExport, triggerDownload)</td>
@@ -380,6 +395,15 @@ pip install -r requirements.txt</code></pre>
   <tr><td>GET</td><td><code>/api/indexing-status</code></td><td><code>checkIndexingStatus()</code></td><td>查询索引状态</td></tr>
   <tr><td>PUT</td><td><code>/api/tab-order</code></td><td><code>doTabReorder()</code></td><td>保存 Tab 排序</td></tr>
   <tr><td>PUT</td><td><code>/api/tab-current-item</code></td><td><code>selectItem()</code></td><td>保存阅读位置</td></tr>
+  <tr><td>GET</td><td><code>/api/tab-current-items</code></td><td><code>loadTabs()</code></td><td>获取所有知识库的当前阅读位置</td></tr>
+  <tr><td>GET</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>获取系统配置</td></tr>
+  <tr><td>PUT</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>设置系统配置</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>加密对话框</td><td>设置/修改知识库密码</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/verify-password</code></td><td>解锁对话框</td><td>验证知识库密码（解锁）</td></tr>
+  <tr><td>DELETE</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>右键菜单</td><td>移除知识库密码</td></tr>
+  <tr><td>GET</td><td><code>/api/encrypted-tabs</code></td><td><code>loadTabs()</code></td><td>列出已加密的知识库</td></tr>
+  <tr><td>POST</td><td><code>/api/clear-encryption-cache</code></td><td>—</td><td>清除加密密钥缓存</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/tree</code></td><td>—</td><td>获取扁平化的树形数据</td></tr>
   <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf</code></td><td>Tab 右键菜单 → Export → PDF</td><td>导出整个知识库为 PDF</td></tr>
   <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/zip</code></td><td>Tab 右键菜单 → Export → ZIP</td><td>导出整个知识库文件夹为 ZIP</td></tr>
   <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf/&lt;id&gt;</code></td><td>菜单项右键菜单 → Export → PDF</td><td>导出菜单项及其子树为 PDF</td></tr>
@@ -403,7 +427,45 @@ pip install -r requirements.txt</code></pre>
   </li>
 </ul>
 
-<h4>4.4.1.4 关键功能时序图</h4>
+<h4 id="sec4-1-4">4.4.1.4 WebSocket 实时同步</h4>
+<p><span class="badge badge-purple">同步</span> 系统基于 <code>flask-socketio</code> 实现跨窗口实时同步：</p>
+<ul>
+  <li><strong>架构</strong>：采用 Socket.IO 协议，支持房间（Room）机制的广播通信</li>
+  <li><strong>房间结构</strong>：
+    <ul>
+      <li><code>tab:{tab_name}</code> — 用于同步菜单结构变更、知识库重命名/删除等</li>
+      <li><code>tab:{tab_name}:notify</code> — 用于同步生命周期事件（如加密知识库解锁/密码变更）</li>
+      <li><code>doc:{tab}:{item_id}</code> — 针对单个文档的编辑房间，用于实时内容同步和锁定</li>
+    </ul>
+  </li>
+  <li><strong>核心事件</strong>：
+    <ul>
+      <li><strong>客户端 → 服务端</strong>：<code>join_tab</code>, <code>leave_tab</code>, <code>join_document</code>, <code>leave_document</code>, <code>content_change</code>, <code>lock_document</code>, <code>unlock_document</code></li>
+      <li><strong>服务端 → 客户端</strong>：<code>content_update</code>, <code>menu_changed</code>, <code>content_saved</code>, <code>sync_denied</code>, <code>lock_acquired</code>, <code>lock_denied</code>, <code>tab_added</code>, <code>tab_renamed</code>, <code>tab_deleted</code>, <code>encrypted_tab_password_changed</code>, <code>encrypted_tab_decrypted</code></li>
+    </ul>
+  </li>
+  <li><strong>文档锁定机制</strong>：防止多人（或多窗口）同时编辑冲突。当用户开始输入时自动申请锁定，锁定状态与 Socket 会话绑定，断开连接自动释放</li>
+  <li><strong>安全性</strong>：<strong>加密知识库禁止通过 WebSocket 同步内容</strong>。所有同步请求会验证知识库是否加密，若已加密则拒绝同步内容变更，仅允许同步解锁状态</li>
+</ul>
+
+<h4 id="sec4-1-5">4.4.1.5 Cython 编译与打包</h4>
+<p><span class="badge badge-orange">构建</span> 为了提高性能和保护源代码，系统支持 Cython 编译：</p>
+<ul>
+  <li><strong>setup.py</strong>：使用 Cython 将 <code>server.py</code> 编译为二进制扩展模块（Linux/macOS 为 <code>.so</code>，Windows 为 <code>.pyd</code>）</li>
+  <li><strong>main.py</strong>：一个轻量级的加载器，负责导入编译后的模块并启动服务器</li>
+  <li><strong>Makefile 目标</strong>：
+    <ul>
+      <li><code>all</code> — 默认构建</li>
+      <li><code>build</code> — 执行 Cython 编译</li>
+      <li><code>clean</code> — 清理编译产物和临时文件</li>
+      <li><code>package</code> — 打包为适用于 Linux/macOS 的发布包</li>
+      <li><code>package-win</code> — 打包为适用于 Windows 的发布包</li>
+    </ul>
+  </li>
+  <li><strong>发布包内容</strong>：包含编译后的扩展模块、<code>web/</code> 目录、<code>doc/</code> 目录、<code>models/</code> 目录、<code>pdf_fonts/</code> 目录、<code>requirements.txt</code>、<code>main.py</code> 以及 <code>README.md</code></li>
+</ul>
+
+<h4>4.4.1.6 关键功能时序图</h4>
 
 <h4>时序图 1：内容保存与索引更新</h4>
 <div class="diagram">
@@ -589,6 +651,7 @@ server.py 启动
 │  │ /api/&lt;tab&gt;/cntnt│  │ 索引引擎          │  │ SQLite 数据库     │  │
 │  │ /api/search     │  │ OCR调度           │  │  (common.db,      │  │
 │  │ /api/backup     │  │ 备份系统          │  │   index_db/*.db)   │  │
+│  │ WebSocket/SIO   │  │ 实时同步          │  │                  │  │
 │  └─────────────────┘  └─────────────────┘  └──────────────────┘  │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────┐      │
@@ -597,6 +660,7 @@ server.py 启动
 │  │  │ Flask 主线程  │  │ 后台线程池    │  │ OCR 进程池    │  │      │
 │  │  │ (HTTP请求处理) │  │ (索引/备份)   │  │ (PaddleOCR)   │  │      │
 │  │  │ threaded=True │  │ Daemon=True   │  │ mp.Process   │  │      │
+│  │  │ SocketIO 线程  │  │               │  │              │  │      │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘  │      │
 │  └─────────────────────────────────────────────────────────┘      │
 └────────────────────────────────────────────────────────────────────┘
@@ -606,8 +670,8 @@ server.py 启动
 <p><span class="badge">前端</span> 采用 <strong>纯原生 JavaScript 单页应用（SPA）</strong> 架构，无任何前端框架依赖：</p>
 <ul>
   <li><strong>HTML</strong>（index.html）：单页面模板，包含所有界面元素和弹出对话框的 DOM 结构</li>
-  <li><strong>CSS</strong>（style.css）：层叠样式表，约 1166 行，采用 Flexbox 布局，响应式设计</li>
-  <li><strong>JavaScript</strong>（app.js）：约 2014 行，IIFE 模式封装，模块化组织：
+  <li><strong>CSS</strong>（style.css）：层叠样式表，约 1607 行，采用 Flexbox 布局，响应式设计</li>
+  <li><strong>JavaScript</strong>（app.js）：约 3847 行，IIFE 模式封装，模块化组织：
     <ul>
       <li>API 层：<code>api()</code> 和 <code>apiUpload()</code> 统一封装 fetch 请求</li>
       <li>Tab 管理：加载、切换、拖拽排序、右键菜单、增删改</li>
@@ -638,7 +702,7 @@ server.py 启动
 <div class="arch-box">
   <div>
     <h4>🔹 Flask 主线程</h4>
-    <p>单进程 + <code>threaded=True</code> 模式，每个 HTTP 请求由线程池处理。负责所有 REST API 的同步处理和响应返回。</p>
+    <p>单进程 + <code>threaded=True</code> 模式，每个 HTTP 请求由线程池处理。负责所有 REST API 的同步处理和响应返回。同时运行 SocketIO 事件循环，处理实时同步请求。</p>
   </div>
   <div>
     <h4>🔸 后台线程池</h4>
@@ -955,14 +1019,14 @@ server.py 启动
   <tr><td>10</td><td>网页剪藏</td><td>浏览器扩展或书签工具，一键保存网页内容到知识库</td><td>低</td></tr>
   <tr><td>11</td><td>图床集成</td><td>支持对接外部图床（如阿里云 OSS、MinIO）</td><td>低</td></tr>
   <tr><td>12</td><td>更多 AI 能力</td><td>集成大语言模型，实现智能摘要、问答、内容推荐等</td><td>低</td></tr>
-  <tr><td>13</td><td>WebSocket 实时同步</td><td>多端同时编辑时实时同步内容</td><td>低</td></tr>
+  <tr><td>13</td><td>WebSocket 实时同步</td><td><span class="badge badge-green">已实现</span> 多端同时编辑时实时同步内容</td><td>-</td></tr>
   <tr><td>14</td><td>Docker 部署</td><td>提供 Dockerfile 和 docker-compose 配置，简化部署</td><td>低</td></tr>
 </table>
 
 <div class="signature">
   <p>Design Document &mdash; 知识库 KBase</p>
   <p>Jimmy Lang by Opencode AI</p>
-  <p style="font-size:12px;color:#aaa;margin-top:8px">2026-05-30 &nbsp;|&nbsp; Email: jimmylang1974@126.com</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px">2026-06-09 &nbsp;|&nbsp; Email: jimmylang1974@126.com</p>
 </div>
 
 </div>

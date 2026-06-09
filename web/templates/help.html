@@ -163,6 +163,8 @@
     <a href="#server">6. Server Commands</a>
     <a href="#tips">7. Tips & Tricks</a>
     <a href="#export">8. Export</a>
+    <a href="#encrypt">9. Knowledge Base Encryption</a>
+    <a href="#sync">10. Real-time Sync (WebSocket)</a>
   </div>
 
   <!-- ============================================================ -->
@@ -465,7 +467,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <p><strong>Right-click</strong> a tab and choose <strong>"Export"</strong> → select format:</p>
   <ul>
     <li><strong>PDF</strong> — Recursively collects all menu items' content under the current KB and merges them into a single PDF document. Items are indented by depth. Uses NotoSansSC font for CJK character support.</li>
-    <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code>, and all other files.</li>
+    <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code>, and all other files. Unzip and browse as a standalone HTML page.</li>
   </ul>
 
   <h3>8.2 Menu Item-Level Export</h3>
@@ -478,6 +480,61 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <div class="tip">
     <strong>Tip:</strong> PDF export requires <code>pdf_fonts/NotoSansSC-Regular.ttf</code>. If missing, Courier monospace font is used as fallback.
   </div>
+
+  <!-- ============================================================ -->
+  <h2 id="encrypt">9. Knowledge Base Encryption</h2>
+
+  <p>The system supports password protection for <strong>individual knowledge bases (Tabs)</strong>. Encrypted content is stored on disk using the AES-256-GCM algorithm and cannot be viewed or synced until unlocked.</p>
+
+  <h3>9.1 Setting a Password</h3>
+  <ul>
+    <li><strong>Right-click</strong> a tab → <strong>"Set Password"</strong></li>
+    <li>Enter a password (at least 4 characters) and confirm</li>
+    <li>Once set, all existing content is automatically encrypted, and new content is stored in encrypted form</li>
+  </ul>
+
+  <h3>9.2 Unlocking a Knowledge Base</h3>
+  <ul>
+    <li>Click an encrypted tab, and the system will automatically prompt for a password</li>
+    <li>Enter the correct password to unlock. You can then view and edit normally <strong>within the same browser tab</strong></li>
+    <li>After closing the tab or browser window, you must enter the password again to re-access</li>
+  </ul>
+
+  <h3>9.3 Changing / Removing Password</h3>
+  <ul>
+    <li><strong>Right-click</strong> an unlocked encrypted tab → <strong>"Change Password"</strong> (requires original password)</li>
+    <li><strong>Right-click</strong> an unlocked encrypted tab → <strong>"Remove Password"</strong> (decrypts all files)</li>
+  </ul>
+
+  <h3>9.4 Important Notes</h3>
+  <ul>
+    <li><strong>Passwords cannot be recovered</strong> — If you forget the password, you will lose access to the knowledge base content</li>
+    <li><strong>Encryption does not affect search indexing</strong> — Content can be searched normally once unlocked</li>
+    <li><strong>Encrypted KBs do not support real-time sync</strong> — WebSocket synchronization is blocked for security</li>
+    <li><strong>Standalone export is unavailable</strong> — Encrypted KBs cannot generate public standalone HTML pages</li>
+    <li><strong>Backups include encrypted files</strong> — Encrypted files in the backup ZIP remain encrypted</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="sync">10. Real-time Sync (WebSocket)</h2>
+
+  <p>The system uses WebSocket technology to enable real-time collaboration and content synchronization across multiple windows or browsers.</p>
+
+  <h3>10.1 Multi-window Collaboration</h3>
+  <ul>
+    <li><strong>Content Sync</strong> — Content changes are broadcast to all clients viewing the same document in real-time</li>
+    <li><strong>Menu Sync</strong> — Menu structure changes (add, rename, move, delete) are broadcast to all clients viewing the same KB</li>
+    <li><strong>Tab Lifecycle</strong> — Tab operations (create, rename, delete) are broadcast to all connected clients</li>
+  </ul>
+
+  <h3>10.2 Document Locking</h3>
+  <p>To prevent concurrent editing conflicts, the system implements a document locking mechanism. When a user starts editing a document, it is locked for other users. The lock is released when the user saves or navigates away.</p>
+
+  <h3>10.3 Security & Limitations</h3>
+  <ul>
+    <li><strong>Encrypted KBs</strong> — For security reasons, encrypted knowledge bases cannot use real-time sync</li>
+    <li><strong>Connection Status</strong> — The system automatically handles connect, disconnect, and room management (join/leave) for tabs and documents</li>
+  </ul>
 
 {% else %}
   <h1>知识库 KBase {{ version }} 使用帮助</h1>
@@ -494,6 +551,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <a href="#tips">七、使用技巧</a>
     <a href="#export">八、导出功能</a>
     <a href="#encrypt">九、知识库加密</a>
+    <a href="#sync">十、WebSocket 实时同步</a>
   </div>
 
   <!-- ============================================================ -->
@@ -907,7 +965,7 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   <p>在 Tab 标签上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
   <ul>
     <li><strong>PDF</strong> — 将当前知识库下所有菜单项的内容递归收集，合并生成一个 PDF 文档。菜单项按深度缩进，使用 NotoSansSC 字体支持中文显示。</li>
-    <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code> 等所有文件。</li>
+    <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code> 等所有文件。解压后可作为独立 HTML 页面浏览。</li>
   </ul>
 
   <h3>8.2 菜单项级导出</h3>
@@ -953,6 +1011,27 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
     <li><strong>加密知识库不支持实时同步</strong> — WebSocket 同步被阻止，保证数据安全</li>
     <li><strong>独立导出不可用</strong> — 加密知识库无法生成公开的独立 HTML 页面</li>
     <li><strong>备份包含加密文件</strong> — 备份 ZIP 中的加密文件保持加密状态</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="sync">十、WebSocket 实时同步</h2>
+
+  <p>系统采用 WebSocket 技术，支持多窗口或多浏览器之间的实时协作与内容同步。</p>
+
+  <h3>10.1 多窗口协作</h3>
+  <ul>
+    <li><strong>内容同步</strong> — 文档内容的修改会实时广播给所有正在查看该文档的客户端</li>
+    <li><strong>菜单同步</strong> — 菜单结构的变更（新增、重命名、移动、删除）会实时同步给所有查看该知识库的客户端</li>
+    <li><strong>标签页生命周期</strong> — 知识库标签页的创建、重命名、删除等操作会广播给所有在线客户端</li>
+  </ul>
+
+  <h3>10.2 文档锁定机制</h3>
+  <p>为防止多人同时编辑同一文档造成冲突，系统引入了文档锁定机制。当一名用户开始编辑文档时，该文档会对其他用户锁定。用户保存内容或离开页面后，锁定会自动解除。</p>
+
+  <h3>10.3 安全与限制</h3>
+  <ul>
+    <li><strong>加密知识库</strong> — 出于安全考虑，已加密的知识库不支持 WebSocket 实时同步</li>
+    <li><strong>连接管理</strong> — 系统自动处理 WebSocket 的连接、断开以及 Tab/文档的加入与退出管理</li>
   </ul>
 
   <hr style="margin:40px 0;border:none;border-top:1px solid #ddd;">

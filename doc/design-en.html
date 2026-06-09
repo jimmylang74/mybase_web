@@ -144,7 +144,7 @@
 
 <h1>KBase <small>Design Document</small></h1>
 <p style="color:#888;margin-bottom:24px">
-  Project: Web of Mybase Knowledge Server &nbsp;|&nbsp; Last Updated: 2026-05-30
+  Project: Web of Mybase Knowledge Server &nbsp;|&nbsp; Version: v4.5.4 &nbsp;|&nbsp; Last Updated: 2026-06-09
 </p>
 
 <div class="toc">
@@ -155,6 +155,8 @@
   <a href="#sec4">4.4 Detailed Design</a>
   <a href="#sec4-1" class="l2">4.4.1 Feature Design</a>
   <a href="#sec4-1-3" class="l3">4.4.1.3 Export System</a>
+  <a href="#sec4-1-4" class="l3">4.4.1.4 WebSocket Real-time Sync</a>
+  <a href="#sec4-1-5" class="l3">4.4.1.5 Cython Build & Packaging</a>
   <a href="#sec4-2" class="l2">4.4.2 UI Design</a>
   <a href="#sec4-3" class="l2">4.4.3 Architecture Design</a>
   <a href="#sec4-4" class="l2">4.4.4 Key Technical Design</a>
@@ -206,7 +208,10 @@
 <h2 id="sec2">4.2 Project Directory Structure</h2>
 
 <pre>
-├── server.py                        # Main server (Flask backend, ~2918 lines)
+├── server.py                        # Main server (Flask backend, ~4139 lines)
+├── main.py                          # Cython loader
+├── setup.py                         # Cython build script
+├── Makefile                         # Build/clean/package script
 ├── requirements.txt                 # Python dependency list
 ├── read_version.py                  # Version read utility
 ├── set_version.py                   # Version update utility
@@ -218,8 +223,8 @@
 │   │   ├── index.html               # Main SPA page
 │   │   └── help.html                # Help documentation page
 │   └── static/                      # Static assets
-│       ├── app.js                   # Frontend JavaScript (~2306 lines)
-│       └── style.css                # Stylesheet (~1166 lines)
+│       ├── app.js                   # Frontend JavaScript (~3847 lines)
+│       └── style.css                # Stylesheet (~1607 lines)
 │
 ├── data/                            # Data storage root
 │   ├── mybase/                      # KB data (one subdirectory per KB)
@@ -244,6 +249,8 @@
 │       │   └── PP-LCNet_x1_0_doc_ori/ # Document orientation model
 │       └── ...
 │
+├── pdf_fonts/                       # PDF export fonts directory
+│
 └── .sisyphus/                       # Dev tool config (ignorable)
 </pre>
 
@@ -267,6 +274,8 @@
   <tr><td>paddlex</td><td>&gt;=3.0.0</td><td>Paddle model management tool</td></tr>
   <tr><td>bcrypt</td><td>&gt;=4.0.0</td><td>Password hashing, KB password verification</td></tr>
   <tr><td>pycryptodome</td><td>&gt;=3.20.0</td><td>AES-256-GCM file encryption/decryption</td></tr>
+  <tr><td>flask-socketio</td><td>&gt;=5.3.0</td><td>WebSocket real-time sync</td></tr>
+  <tr><td>fpdf2</td><td>&gt;=2.8.0</td><td>PDF export</td></tr>
   <tr><td>click</td><td>&gt;=8.0.0</td><td>Windows platform compatibility (optional)</td></tr>
 </table>
 
@@ -343,6 +352,12 @@ pip install -r requirements.txt</code></pre>
     <td>User password → BCrypt verify → PBKDF2 derive AES key → AES-256-GCM file encryption</td>
   </tr>
   <tr>
+    <td>WebSocket Sync</td>
+    <td><code>server.py</code> (ws_* handlers, SocketIO events)</td>
+    <td><code>app.js</code> (WebSocket connection, room management, lock handling)</td>
+    <td>Real-time content sync across browser windows via flask-socketio, document locking, encrypted KB sync denial</td>
+  </tr>
+  <tr>
     <td>Export System</td>
     <td><code>server.py</code> (export_tab_pdf, export_tab_zip, export_tree_item_pdf, export_tree_item_zip)</td>
     <td><code>app.js</code> (handleTabExport, handleTreeExport, triggerDownload)</td>
@@ -383,6 +398,15 @@ pip install -r requirements.txt</code></pre>
   <tr><td>GET</td><td><code>/api/indexing-status</code></td><td><code>checkIndexingStatus()</code></td><td>Query indexing status</td></tr>
   <tr><td>PUT</td><td><code>/api/tab-order</code></td><td><code>doTabReorder()</code></td><td>Save tab order</td></tr>
   <tr><td>PUT</td><td><code>/api/tab-current-item</code></td><td><code>selectItem()</code></td><td>Save reading position</td></tr>
+  <tr><td>GET</td><td><code>/api/tab-current-items</code></td><td><code>loadTabs()</code></td><td>Get current items for all tabs</td></tr>
+  <tr><td>GET</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>Get system config</td></tr>
+  <tr><td>PUT</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>Set system config</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>Password dialog</td><td>Set/change KB password</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/verify-password</code></td><td>Unlock dialog</td><td>Verify KB password (unlock)</td></tr>
+  <tr><td>DELETE</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>Context menu</td><td>Remove KB password</td></tr>
+  <tr><td>GET</td><td><code>/api/encrypted-tabs</code></td><td><code>loadTabs()</code></td><td>List encrypted tabs</td></tr>
+  <tr><td>POST</td><td><code>/api/clear-encryption-cache</code></td><td>—</td><td>Clear encryption cache</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/tree</code></td><td>—</td><td>Get flattened tree data</td></tr>
   <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf</code></td><td>Tab right-click → Export → PDF</td><td>Export entire KB as PDF</td></tr>
   <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/zip</code></td><td>Tab right-click → Export → ZIP</td><td>Export entire KB folder as ZIP</td></tr>
   <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf/&lt;id&gt;</code></td><td>Menu item right-click → Export → PDF</td><td>Export menu item + subtree as PDF</td></tr>
@@ -406,7 +430,45 @@ pip install -r requirements.txt</code></pre>
   </li>
 </ul>
 
-<h4>4.4.1.4 Key Sequence Diagrams</h4>
+<h4 id="sec4-1-4">4.4.1.4 WebSocket Real-time Sync</h4>
+<p><span class="badge badge-purple">Sync</span> The system implements cross-window real-time synchronization based on <code>flask-socketio</code>:</p>
+<ul>
+  <li><strong>Architecture</strong>: Uses the Socket.IO protocol, supporting broadcast communication via a Room mechanism</li>
+  <li><strong>Room Structure</strong>:
+    <ul>
+      <li><code>tab:{tab_name}</code> — For syncing menu structure changes, KB renaming/deletion, etc.</li>
+      <li><code>tab:{tab_name}:notify</code> — For syncing lifecycle events (e.g., encrypted KB unlock/password change)</li>
+      <li><code>doc:{tab}:{item_id}</code> — Per-document rooms for real-time content sync and locking</li>
+    </ul>
+  </li>
+  <li><strong>Core Events</strong>:
+    <ul>
+      <li><strong>Client → Server</strong>: <code>join_tab</code>, <code>leave_tab</code>, <code>join_document</code>, <code>leave_document</code>, <code>content_change</code>, <code>lock_document</code>, <code>unlock_document</code></li>
+      <li><strong>Server → Client</strong>: <code>content_update</code>, <code>menu_changed</code>, <code>content_saved</code>, <code>sync_denied</code>, <code>lock_acquired</code>, <code>lock_denied</code>, <code>tab_added</code>, <code>tab_renamed</code>, <code>tab_deleted</code>, <code>encrypted_tab_password_changed</code>, <code>encrypted_tab_decrypted</code></li>
+    </ul>
+  </li>
+  <li><strong>Document Locking</strong>: Prevents concurrent editing conflicts. A lock is automatically requested when a user starts typing; the lock is bound to the Socket session and released upon disconnection</li>
+  <li><strong>Security</strong>: <strong>Encrypted KBs are forbidden from syncing content via WebSocket</strong>. All sync requests verify if the KB is encrypted; if so, content sync is denied, and only lifecycle events (like unlock status) are permitted</li>
+</ul>
+
+<h4 id="sec4-1-5">4.4.1.5 Cython Build & Packaging</h4>
+<p><span class="badge badge-orange">Build</span> For performance and source protection, the system supports Cython compilation:</p>
+<ul>
+  <li><strong>setup.py</strong>: Uses Cython to compile <code>server.py</code> into a binary extension module (<code>.so</code> for Linux/macOS, <code>.pyd</code> for Windows)</li>
+  <li><strong>main.py</strong>: A thin loader that imports the compiled module and starts the server</li>
+  <li><strong>Makefile Targets</strong>:
+    <ul>
+      <li><code>all</code> — Default build</li>
+      <li><code>build</code> — Execute Cython compilation</li>
+      <li><code>clean</code> — Clean up build artifacts and temporary files</li>
+      <li><code>package</code> — Package for Linux/macOS distribution</li>
+      <li><code>package-win</code> — Package for Windows distribution</li>
+    </ul>
+  </li>
+  <li><strong>Package Contents</strong>: Includes the compiled extension, <code>web/</code>, <code>doc/</code>, <code>models/</code>, <code>pdf_fonts/</code>, <code>requirements.txt</code>, <code>main.py</code>, and <code>README.md</code></li>
+</ul>
+
+<h4>4.4.1.6 Key Sequence Diagrams</h4>
 
 <h4>Sequence 1: Content Save & Index Update</h4>
 <div class="diagram">
@@ -595,6 +657,7 @@ server.py startup
 │  │ /api/&lt;tab&gt;/cntnt│  │ Index Engine      │  │ SQLite Database   │  │
 │  │ /api/search      │  │ OCR Scheduler    │  │ (common.db,       │  │
 │  │ /api/backup      │  │ Backup System    │  │  index_db/*.db)   │  │
+│  │ WebSocket/SIO    │  │ Real-time Sync   │  │                   │  │
 │  └─────────────────┘  └─────────────────┘  └──────────────────┘  │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────┐      │
@@ -604,6 +667,7 @@ server.py startup
 │  │  │ Thread        │  │ Thread Pool  │  │ Pool          │  │      │
 │  │  │ (HTTP Req)    │  │ (Index/Backup)│  │ (PaddleOCR)   │  │      │
 │  │  │ threaded=True │  │ Daemon=True  │  │ mp.Process   │  │      │
+│  │  │ SocketIO Thrd │  │              │  │              │  │      │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘  │      │
 │  └─────────────────────────────────────────────────────────┘      │
 └────────────────────────────────────────────────────────────────────┘
@@ -613,8 +677,8 @@ server.py startup
 <p><span class="badge">Frontend</span> Built as a <strong>pure vanilla JavaScript SPA</strong> with no framework dependencies:</p>
 <ul>
   <li><strong>HTML</strong> (index.html): Single-page template with all UI elements and dialog DOM structures</li>
-  <li><strong>CSS</strong> (style.css): ~1166 lines, Flexbox layout, responsive design</li>
-  <li><strong>JavaScript</strong> (app.js): ~2306 lines, IIFE module pattern:
+  <li><strong>CSS</strong> (style.css): ~1607 lines, Flexbox layout, responsive design</li>
+  <li><strong>JavaScript</strong> (app.js): ~3847 lines, IIFE module pattern:
     <ul>
       <li>API layer: <code>api()</code> and <code>apiUpload()</code> wrapping fetch</li>
       <li>Tab management: load, switch, drag-to-reorder, right-click menu, CRUD</li>
@@ -645,7 +709,7 @@ server.py startup
 <div class="arch-box">
   <div>
     <h4>🔹 Flask Main Thread</h4>
-    <p>Single process + <code>threaded=True</code> mode, each HTTP request handled by a thread pool thread. Handles all synchronous REST API responses.</p>
+    <p>Single process + <code>threaded=True</code> mode, each HTTP request handled by a thread pool thread. Handles all synchronous REST API responses. Also runs the SocketIO event loop for real-time sync.</p>
   </div>
   <div>
     <h4>🔸 Background Thread Pool</h4>
@@ -900,14 +964,14 @@ server.py startup
   <tr><td>10</td><td>Web Clipper</td><td>Browser extension to save web pages into KB with one click</td><td>Low</td></tr>
   <tr><td>11</td><td>Image Hosting Integration</td><td>Support external image hosting (OSS, MinIO, etc.)</td><td>Low</td></tr>
   <tr><td>12</td><td>More AI Capabilities</td><td>Integrate LLMs for smart summarization, Q&A, content recommendation</td><td>Low</td></tr>
-  <tr><td>13</td><td>WebSocket Real-Time Sync</td><td>Real-time content sync across multiple clients</td><td>Low</td></tr>
+  <tr><td>13</td><td>WebSocket Real-Time Sync</td><td><span class="badge badge-green">IMPLEMENTED</span> Real-time content sync across multiple clients</td><td>-</td></tr>
   <tr><td>14</td><td>Docker Deployment</td><td>Provide Dockerfile and docker-compose for easy deployment</td><td>Low</td></tr>
 </table>
 
 <div class="signature">
   <p>Design Document &mdash; KBase</p>
   <p>Jimmy Lang by Opencode AI</p>
-  <p style="font-size:12px;color:#aaa;margin-top:8px">2026-05-30 &nbsp;|&nbsp; Email: jimmylang1974@126.com</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px">2026-06-09 &nbsp;|&nbsp; Email: jimmylang1974@126.com</p>
 </div>
 
 </div>

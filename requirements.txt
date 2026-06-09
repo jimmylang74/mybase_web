@@ -1,5 +1,5 @@
 # ============================================================
-# Web of Mybase Knowledge Server — 知识库KBase v2.0
+# Web of Mybase Knowledge Server，知识库KBase v4.5.4
 # ============================================================
 # 核心 Web 框架
 flask>=3.0.0
