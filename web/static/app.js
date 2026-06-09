@@ -3874,6 +3874,7 @@
     }
 
     destroy() {
+      console.log('[Formula] destroy() called, clearing', this.hfInstances.size, 'entries');
       for (const [, data] of this.hfInstances) {
         try { data.hf.destroy(); } catch(e) {}
       }
@@ -3884,7 +3885,9 @@
     }
 
     scanTables() {
+      console.log('[Formula] scanTables() called');
       const tables = editor.querySelectorAll('table');
+      console.log('[Formula] found', tables.length, 'tables');
       tables.forEach(table => {
         if (editor.contains(table)) {
           this.initTableFormulas(table);
@@ -3964,16 +3967,30 @@
         const escaped = this.escapeRegex(name);
 
         for (const func of AGGREGATE_FUNCS) {
-          // SUM(Header) -> SUM($B$2:$B$N) — full column range
+          // SUM(Header) -> SUM($B$2:$B$N) — full column range, exclude formula's own row
           const fullRegex = new RegExp(
             '(?<=' + func + '\\()' + escaped + '(?=\\))', 'gi'
           );
           const dataRowStart = 1;
           const dataRowEnd = totalRows - 1;
-          result = result.replace(
-            fullRegex,
-            colLetter + '$' + (dataRowStart + 1) + ':' + colLetter + '$' + (dataRowEnd + 1)
-          );
+          let fullRange = '';
+          if (currentRow >= dataRowEnd) {
+            const end = Math.min(currentRow - 1, dataRowEnd);
+            if (end >= dataRowStart) {
+              fullRange = colLetter + '$' + (dataRowStart + 1) + ':' + colLetter + '$' + (end + 1);
+            }
+          } else if (currentRow <= dataRowStart) {
+            if (currentRow + 1 <= dataRowEnd) {
+              fullRange = colLetter + '$' + (currentRow + 2) + ':' + colLetter + '$' + (dataRowEnd + 1);
+            }
+          } else {
+            const above = colLetter + '$' + (dataRowStart + 1) + ':' + colLetter + '$' + currentRow;
+            const below = colLetter + '$' + (currentRow + 2) + ':' + colLetter + '$' + (dataRowEnd + 1);
+            fullRange = above + ',' + below;
+          }
+          if (fullRange) {
+            result = result.replace(fullRegex, fullRange);
+          }
 
           // SUM(Header1:Header5) -> SUM($B$2:$B$6) — range with 1-indexed row numbers
           const rangeRegex = new RegExp(
@@ -4084,11 +4101,21 @@
     }
 
     rebuildTable(table) {
-      const entry = this.hfInstances.get(table);
-      if (!entry) return;
+      let entry = this.hfInstances.get(table);
+      if (!entry) {
+        console.log('[Formula] rebuildTable: entry missing, re-initializing');
+        this.initTableFormulas(table);
+        entry = this.hfInstances.get(table);
+        if (!entry) {
+          console.log('[Formula] rebuildTable: re-init failed, aborting');
+          return;
+        }
+        return;
+      }
 
       const headers = this.getHeaders(table);
       const data = this.getDataRows(table);
+      console.log('[Formula] rebuildTable data:', JSON.stringify(data));
       const totalRows = data.length;
       const maxCols = Math.max(...data.map(r => r.length), 1);
 
