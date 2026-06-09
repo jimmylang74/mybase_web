@@ -1003,16 +1003,19 @@
       clearSearchHighlights();
       const html = data.content.trim();
       if (html) {
-        editor.innerHTML = html;
-        constrainEditorImages();
-      } else {
-        editor.innerHTML = '<p></p>';
-        editor.focus();
-        document.execCommand('fontSize', false, $('#font-size').value);
-      }
-      applySearchHighlights();
-      isRemoteUpdate = false;
-      const item = findNodeById(menuTree, itemId);
+      editor.innerHTML = html;
+      constrainEditorImages();
+    } else {
+      editor.innerHTML = '<p></p>';
+      editor.focus();
+      document.execCommand('fontSize', false, $('#font-size').value);
+    }
+    if (tableFormulaManager) {
+      tableFormulaManager.refresh();
+    }
+    applySearchHighlights();
+    isRemoteUpdate = false;
+    const item = findNodeById(menuTree, itemId);
       editorStatus.textContent = `Editing: ${item ? item.label : 'Unknown'}`;
     } catch (e) {
       editor.innerHTML = '<p>Error loading content</p>';
@@ -2979,6 +2982,7 @@
     });
 
     markModified();
+    tableFormulaManager?.onTableModified();
   }
 
   function insertTableRow() {
@@ -3007,6 +3011,7 @@
     }
 
     markModified();
+    tableFormulaManager?.onTableModified();
   }
 
   function deleteTableColumn() {
@@ -3017,6 +3022,7 @@
     if (cols.length <= 1) {
       table.remove();
       markModified();
+      tableFormulaManager?.onTableModified();
       return;
     }
 
@@ -3029,6 +3035,7 @@
     });
 
     markModified();
+    tableFormulaManager?.onTableModified();
   }
 
   function deleteTableRow() {
@@ -3039,6 +3046,7 @@
     if (rows.length <= 1) {
       table.remove();
       markModified();
+      tableFormulaManager?.onTableModified();
       return;
     }
 
@@ -3058,6 +3066,7 @@
     }
 
     markModified();
+    tableFormulaManager?.onTableModified();
   }
 
   ctxMenu.querySelectorAll('.ctx-table-item').forEach(item => {
@@ -3833,6 +3842,427 @@
     unlockedTabs.clear();
   });
 
+  // ─── Table Formula Manager (Excel-like calculations) ──────────────
+
+  const AGGREGATE_FUNCS = ['SUM','AVERAGE','AVERAGEA','COUNT','COUNTA','MAX','MIN','PRODUCT','STDEV','STDEVP','VAR','VARP','MEDIAN','MODE'];
+  const formulaBar = $('#formula-bar');
+  const formulaInput = $('#formula-bar-formula');
+  const cellRefDisplay = $('#formula-bar-cell-ref');
+
+  let tableFormulaManager = null;
+
+  class TableFormulaManager {
+    constructor() {
+      this.hfInstances = new Map();
+      this.activeCell = null;
+      this.activeTable = null;
+      this.isUpdating = false;
+      this._formulaChangeHandler = null;
+      this._cellClickHandler = null;
+      this._editorInputHandler = null;
+    }
+
+    init() {
+      this.scanTables();
+      this.bindEvents();
+    }
+
+    refresh() {
+      this.destroy();
+      this.scanTables();
+      formulaBar.style.display = this.hfInstances.size > 0 ? '' : 'none';
+    }
+
+    destroy() {
+      for (const [, data] of this.hfInstances) {
+        try { data.hf.destroy(); } catch(e) {}
+      }
+      this.hfInstances.clear();
+      this.activeCell = null;
+      this.activeTable = null;
+      this.hideFormulaBar();
+    }
+
+    scanTables() {
+      const tables = editor.querySelectorAll('table');
+      tables.forEach(table => {
+        if (editor.contains(table)) {
+          this.initTableFormulas(table);
+        }
+      });
+      formulaBar.style.display = this.hfInstances.size > 0 ? '' : 'none';
+    }
+
+    colLetter(index) {
+      let l = '';
+      let i = index;
+      while (i >= 0) {
+        l = String.fromCharCode(65 + (i % 26)) + l;
+        i = Math.floor(i / 26) - 1;
+      }
+      return l;
+    }
+
+    escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    getDataRows(table) {
+      const trs = table.querySelectorAll('tr');
+      const result = [];
+      trs.forEach((tr, ri) => {
+        const cells = tr.querySelectorAll('td, th');
+        const row = [];
+        cells.forEach((cell, ci) => {
+          if (cell.getAttribute('data-formula')) {
+            row.push(cell.getAttribute('data-formula'));
+          } else {
+            const txt = cell.textContent.trim();
+            if (txt === '') {
+              row.push(null);
+            } else {
+              const num = parseFloat(txt);
+              if (!isNaN(num) && /^-?\d+(\.\d+)?$/.test(txt)) {
+                row.push(num);
+              } else {
+                row.push(txt);
+              }
+            }
+          }
+        });
+        result.push(row);
+      });
+      return result;
+    }
+
+    getHeaders(table) {
+      const firstRow = table.querySelector('tr:first-child');
+      const headers = [];
+      if (firstRow) {
+        firstRow.querySelectorAll('th, td').forEach((cell, idx) => {
+          const name = cell.textContent.replace(/\s+/g, ' ').trim();
+          headers[idx] = name || ('Col' + (idx + 1));
+        });
+      }
+      return headers;
+    }
+
+    resolveFormula(formula, headers, currentRow, totalRows) {
+      if (!formula || !formula.startsWith('=')) return formula;
+
+      let result = formula;
+      const sortedHeaders = [];
+      for (let i = 0; i < headers.length; i++) {
+        if (headers[i] && headers[i] !== ('Col' + (i + 1))) {
+          sortedHeaders.push({ idx: i, name: headers[i] });
+        }
+      }
+      sortedHeaders.sort((a, b) => b.name.length - a.name.length);
+
+      for (const { idx, name } of sortedHeaders) {
+        const colLetter = this.colLetter(idx);
+        const escaped = this.escapeRegex(name);
+
+        for (const func of AGGREGATE_FUNCS) {
+          // SUM(Header) -> SUM($B$2:$B$N) — full column range
+          const fullRegex = new RegExp(
+            '(?<=' + func + '\\()' + escaped + '(?=\\))', 'gi'
+          );
+          const dataRowStart = 1;
+          const dataRowEnd = totalRows - 1;
+          result = result.replace(
+            fullRegex,
+            colLetter + '$' + (dataRowStart + 1) + ':' + colLetter + '$' + (dataRowEnd + 1)
+          );
+
+          // SUM(Header1:Header5) -> SUM($B$2:$B$6) — range with 1-indexed row numbers
+          const rangeRegex = new RegExp(
+            '(' + escaped + ')(\\d+)\\s*:\\s*\\1(\\d+)', 'gi'
+          );
+          result = result.replace(rangeRegex, (_m, _name, r1, r2) => {
+            return colLetter + '$' + (parseInt(r1) + 1) + ':' + colLetter + '$' + (parseInt(r2) + 1);
+          });
+        }
+
+        const standaloneRegex = new RegExp(
+          '(?<![\\w$"\'])(' + escaped + ')(?![\\w"\'(])', 'g'
+        );
+        result = result.replace(standaloneRegex, '$' + colLetter + (currentRow + 1));
+      }
+
+      return result;
+    }
+
+    initTableFormulas(table) {
+      const headers = this.getHeaders(table);
+      const data = this.getDataRows(table);
+      const maxCols = Math.max(...data.map(r => r.length), 1);
+      const totalRows = data.length;
+
+      const resolvedData = data.map((row, ri) => {
+        return row.map((cell) => {
+          if (typeof cell === 'string' && cell.startsWith('=')) {
+            const resolved = this.resolveFormula(cell, headers, ri, totalRows);
+            console.log('[Formula]', cell, '→', resolved);
+            return resolved;
+          }
+          return cell;
+        });
+      });
+      console.log('[Formula] resolvedData:', JSON.stringify(resolvedData));
+
+      for (const row of resolvedData) {
+        while (row.length < maxCols) row.push(null);
+      }
+
+      let hf;
+      try {
+        hf = HyperFormula.buildFromArray(resolvedData, { licenseKey: 'gpl-v3' });
+      } catch (e) {
+        console.warn('HyperFormula init failed:', e);
+        const statusEl = document.getElementById('formula-bar-status');
+        if (statusEl) statusEl.textContent = '✗';
+        return;
+      }
+
+      this.hfInstances.set(table, {
+        hf, headers, maxCols, totalRows,
+      });
+
+      const statusEl = document.getElementById('formula-bar-status');
+      if (statusEl) statusEl.textContent = '✓';
+
+      this.updateTableDisplay(table);
+    }
+
+    updateTableDisplay(table) {
+      const prevUpdating = this.isUpdating;
+      this.isUpdating = true;
+      const entry = this.hfInstances.get(table);
+      if (!entry) {
+        this.isUpdating = prevUpdating;
+        return;
+      }
+
+      const { hf, headers } = entry;
+      const rows = table.querySelectorAll('tr');
+      const sheetId = 0;
+
+      rows.forEach((row, ri) => {
+        const cells = row.querySelectorAll('td, th');
+        cells.forEach((cell, ci) => {
+          const formula = cell.getAttribute('data-formula');
+          if (formula) {
+            let value;
+            try {
+              value = hf.getCellValue({ sheet: sheetId, row: ri, col: ci });
+            } catch(e) {
+              value = '#REF!';
+            }
+
+            const isError = value !== null && typeof value === 'object';
+            const displayText = isError
+              ? formula
+              : (value != null ? String(value) : '');
+
+            if (cell.textContent !== displayText) {
+              console.log('[Formula] Setting cell', ri, ci, 'to', displayText);
+              cell.textContent = displayText;
+            }
+            cell.classList.remove('formula-cell', 'formula-error');
+            if (isError) {
+              cell.classList.add('formula-error');
+            } else if (formula) {
+              cell.classList.add('formula-cell');
+            }
+          } else {
+            cell.classList.remove('formula-cell', 'formula-error');
+          }
+        });
+      });
+      this.isUpdating = prevUpdating;
+    }
+
+    rebuildTable(table) {
+      const entry = this.hfInstances.get(table);
+      if (!entry) return;
+
+      const headers = this.getHeaders(table);
+      const data = this.getDataRows(table);
+      const totalRows = data.length;
+      const maxCols = Math.max(...data.map(r => r.length), 1);
+
+      const resolvedData = data.map((row, ri) => {
+        return row.map((cell) => {
+          if (typeof cell === 'string' && cell.startsWith('=')) {
+            return this.resolveFormula(cell, headers, ri, totalRows);
+          }
+          return cell;
+        });
+      });
+      for (const row of resolvedData) {
+        while (row.length < maxCols) row.push(null);
+      }
+
+      try {
+        const oldHf = entry.hf;
+        const newHf = HyperFormula.buildFromArray(resolvedData, { licenseKey: 'gpl-v3' });
+        entry.hf = newHf;
+        entry.headers = headers;
+        entry.totalRows = totalRows;
+        entry.maxCols = maxCols;
+        oldHf.destroy();
+        this.updateTableDisplay(table);
+      } catch(e) {
+        console.warn('HyperFormula rebuild failed:', e);
+      }
+    }
+
+    findCellTable(cell) {
+      if (!cell) return null;
+      return cell.closest('table');
+    }
+
+    showFormulaBar(cell) {
+      if (!cell || !this.findCellTable(cell)) return;
+      this.activeCell = cell;
+      this.activeTable = this.findCellTable(cell);
+
+      const table = this.activeTable;
+      const tr = cell.closest('tr');
+      const allRows = table.querySelectorAll('tr');
+      const allCells = tr ? tr.querySelectorAll('td, th') : [];
+      let rowIdx = -1;
+      let colIdx = -1;
+      if (tr) {
+        for (let i = 0; i < allRows.length; i++) {
+          if (allRows[i] === tr) { rowIdx = i; break; }
+        }
+      }
+      for (let i = 0; i < allCells.length; i++) {
+        if (allCells[i] === cell) { colIdx = i; break; }
+      }
+      if (rowIdx >= 0 && colIdx >= 0) {
+        const colLetter = this.colLetter(colIdx);
+        cellRefDisplay.textContent = colLetter + (rowIdx + 1);
+      } else {
+        cellRefDisplay.textContent = '';
+      }
+
+      const formula = cell.getAttribute('data-formula');
+      formulaInput.textContent = formula || cell.textContent;
+
+      table.querySelectorAll('td.formula-active-cell, th.formula-active-cell').forEach(el => {
+        el.classList.remove('formula-active-cell');
+      });
+      cell.classList.add('formula-active-cell');
+
+      formulaBar.style.display = '';
+    }
+
+    hideFormulaBar() {
+      this.activeCell = null;
+      this.activeTable = null;
+      formulaBar.style.display = 'none';
+      formulaInput.textContent = '';
+      cellRefDisplay.textContent = '';
+    }
+
+    onCellClick(e) {
+      const cell = e.target.closest('td, th');
+      if (cell && editor.contains(cell) && this.findCellTable(cell)) {
+        this.showFormulaBar(cell);
+      }
+    }
+
+    onFormulaInputChange(skipRebuild = false) {
+      if (this.isUpdating || !this.activeCell || !this.activeTable) return;
+      const newValue = formulaInput.textContent.trim();
+      const cell = this.activeCell;
+      const table = this.activeTable;
+
+      this.isUpdating = true;
+
+      if (newValue === '') {
+        cell.removeAttribute('data-formula');
+        cell.textContent = '';
+      } else if (newValue.startsWith('=')) {
+        cell.setAttribute('data-formula', newValue);
+        cell.textContent = newValue;
+      } else {
+        cell.removeAttribute('data-formula');
+        cell.textContent = newValue;
+      }
+
+      if (!skipRebuild) {
+        this.rebuildTable(table);
+      }
+      this.isUpdating = false;
+    }
+
+    onEditorInput() {
+      if (this.isUpdating) return;
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0) {
+        let node = sel.anchorNode;
+        if (node) {
+          const cell = node.nodeType === 3 ? node.parentNode?.closest('td, th') : node.closest('td, th');
+          if (cell && this.findCellTable(cell)) {
+            const table = this.findCellTable(cell);
+            const text = cell.textContent.trim();
+            if (text.startsWith('=')) {
+              console.log('[Formula] Detected formula in cell:', text);
+              cell.setAttribute('data-formula', text);
+            } else {
+              const existingFormula = cell.getAttribute('data-formula');
+              if (existingFormula) {
+                cell.removeAttribute('data-formula');
+              }
+            }
+            if (this._rebuildTimer) clearTimeout(this._rebuildTimer);
+            this._rebuildTimer = setTimeout(() => {
+              this.rebuildTable(table);
+              this._rebuildTimer = null;
+            }, 300);
+          }
+        }
+      }
+    }
+
+    bindEvents() {
+      editor.addEventListener('click', (e) => this.onCellClick(e));
+
+      formulaInput.addEventListener('blur', () => {
+        this.onFormulaInputChange(true);
+      });
+
+      formulaInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.onFormulaInputChange(false);
+        }
+      });
+
+      editor.addEventListener('input', () => {
+        this.onEditorInput();
+      });
+    }
+
+    onTableModified() {
+      if (this.activeTable && document.contains(this.activeTable)) {
+        this.rebuildTable(this.activeTable);
+      } else {
+        for (const [table] of this.hfInstances) {
+          if (document.contains(table)) {
+            this.rebuildTable(table);
+          } else {
+            this.hfInstances.delete(table);
+          }
+        }
+      }
+    }
+  }
+
   // ─── Init ──────────────────────────────────────────────────────────────
 
   (async function init() {
@@ -3842,6 +4272,10 @@
     loadFontConfig();
     initTableColumnResize();
     initElementResizeHandle();
+
+    // Initialize formula engine
+    tableFormulaManager = new TableFormulaManager();
+    tableFormulaManager.init();
   })();
 
 })();

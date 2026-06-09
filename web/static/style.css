@@ -1605,3 +1605,98 @@ body {
   border-top: 1px solid #eee;
   padding-top: 16px;
 }
+
+/* ─── Formula Bar for Excel-like Calculations ────────────────────────── */
+#formula-bar {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #ddd;
+  background: #f8f9fa;
+  padding: 3px 8px;
+  flex-shrink: 0;
+  gap: 6px;
+  min-height: 32px;
+}
+#formula-bar-cell-ref {
+  width: 48px;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: #666;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  text-align: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#formula-bar-formula {
+  flex: 1;
+  padding: 2px 8px;
+  font-size: 13px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  outline: none;
+  min-height: 24px;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#formula-bar-formula:focus {
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52,152,219,0.15);
+}
+#formula-bar-formula:empty:before {
+  content: attr(data-placeholder);
+  color: #aaa;
+}
+
+/* ─── Formula Cell Styles ───────────────────────────────────────────── */
+/* Formula cell indicator - show formula icon when cell has formula */
+#editor td.formula-cell::after,
+#editor th.formula-cell::after {
+  content: 'ƒ';
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  font-size: 9px;
+  color: #3498db;
+  opacity: 0.5;
+  pointer-events: none;
+  font-family: 'Georgia', serif;
+  font-style: italic;
+}
+/* Formula error cell */
+#editor td.formula-error,
+#editor th.formula-error {
+  background: #fff0f0;
+}
+#editor td.formula-error::after,
+#editor th.formula-error::after {
+  content: '⚠';
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  font-size: 10px;
+  color: #e74c3c;
+  pointer-events: none;
+}
+/* Highlight active cell when formula bar is active */
+#editor td.formula-active-cell,
+#editor th.formula-active-cell {
+  outline: 2px solid #3498db;
+  outline-offset: -1px;
+}
+
+#formula-bar-status {
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #27ae60;
+  cursor: help;
+  user-select: none;
+}
