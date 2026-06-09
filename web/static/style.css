@@ -1657,6 +1657,10 @@ body {
 
 /* ─── Formula Cell Styles ───────────────────────────────────────────── */
 /* Formula cell indicator - show formula icon when cell has formula */
+#editor td.formula-cell,
+#editor th.formula-cell {
+  background: #fff3e0; /* light orange to visually distinguish formula cells */
+}
 #editor td.formula-cell::after,
 #editor th.formula-cell::after {
   content: 'ƒ';

@@ -4052,6 +4052,21 @@
       this.updateTableDisplay(table);
     }
 
+    /** Find the deepest text node containing the display value, so we can
+        update it in-place without destroying formatting wrappers. */
+    _findDisplayTextNode(cell) {
+      for (let i = 0; i < cell.childNodes.length; i++) {
+        const child = cell.childNodes[i];
+        if (child.nodeType === Node.TEXT_NODE) {
+          if (child.textContent.trim()) return child;
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          const found = this._findDisplayTextNode(child);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
     updateTableDisplay(table) {
       const prevUpdating = this.isUpdating;
       this.isUpdating = true;
@@ -4084,7 +4099,12 @@
 
             if (cell.textContent !== displayText) {
               console.log('[Formula] Setting cell', ri, ci, 'to', displayText);
-              cell.textContent = displayText;
+              const textNode = this._findDisplayTextNode(cell);
+              if (textNode) {
+                textNode.textContent = displayText;
+              } else {
+                cell.textContent = displayText;
+              }
             }
             cell.classList.remove('formula-cell', 'formula-error');
             if (isError) {
@@ -4240,10 +4260,32 @@
             if (text.startsWith('=')) {
               console.log('[Formula] Detected formula in cell:', text);
               cell.setAttribute('data-formula', text);
-            } else {
-              const existingFormula = cell.getAttribute('data-formula');
-              if (existingFormula) {
-                cell.removeAttribute('data-formula');
+            }
+            // If cell has a formula and text still matches its computed value,
+            // this is a formatting-only change (backColor etc.) so skip rebuild.
+            const existingFormula = cell.getAttribute('data-formula');
+            if (existingFormula) {
+              const entry = this.hfInstances.get(table);
+              if (entry) {
+                const tr = cell.closest('tr');
+                if (tr) {
+                  const allRows = table.querySelectorAll('tr');
+                  const rowCells = tr.querySelectorAll('td, th');
+                  let ri = -1, ci = -1;
+                  for (let i = 0; i < allRows.length; i++) {
+                    if (allRows[i] === tr) { ri = i; break; }
+                  }
+                  for (let i = 0; i < rowCells.length; i++) {
+                    if (rowCells[i] === cell) { ci = i; break; }
+                  }
+                  if (ri >= 0 && ci >= 0) {
+                    try {
+                      const value = entry.hf.getCellValue({ sheet: 0, row: ri, col: ci });
+                      const expectedText = value != null ? String(value) : '';
+                      if (text === expectedText) return;
+                    } catch(e) {}
+                  }
+                }
               }
             }
             if (this._rebuildTimer) clearTimeout(this._rebuildTimer);
