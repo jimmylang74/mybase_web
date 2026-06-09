@@ -125,6 +125,7 @@
       insert_row: '插入行',
       delete_column: '删除列',
       delete_row: '删除行',
+      clear_bgcolor: '清除背景颜色 (设为透明)',
       cell_format: '设置单元格格式',
       cell_format_title: '设置单元格格式',
       vertical_align: '垂直对齐:',
@@ -224,6 +225,7 @@
       insert_row: 'Insert Row',
       delete_column: 'Delete Column',
       delete_row: 'Delete Row',
+      clear_bgcolor: 'Clear Background Color (Transparent)',
       cell_format: 'Cell Format',
       cell_format_title: 'Set Cell Format',
       vertical_align: 'Vertical Align:',
@@ -2728,6 +2730,12 @@
     input.style.left = rect.left + 'px';
     input.style.top = (rect.top + rect.height) + 'px';
     input.click();
+  });
+
+  $('#btn-clear-bgcolor').addEventListener('click', () => {
+    editor.focus();
+    document.execCommand('backColor', false, 'transparent');
+    markModified();
   });
 
   $('#btn-insert-link').addEventListener('click', () => {

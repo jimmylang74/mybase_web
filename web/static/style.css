@@ -354,6 +354,26 @@ body {
   pointer-events: auto;
 }
 
+.btn-clear-bgcolor {
+  margin-left: 2px;
+  padding: 3px 6px;
+  min-height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  color: #666;
+  transition: background 0.15s;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-clear-bgcolor:hover {
+  background: #e8e8e8;
+  color: #c0392b;
+}
+
 #editor {
   flex: 1;
   padding: 20px;
