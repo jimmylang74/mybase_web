@@ -1041,8 +1041,10 @@
       constrainEditorImages();
     } else {
       editor.innerHTML = '<p></p>';
-      editor.focus();
-      document.execCommand('fontSize', false, $('#font-size').value);
+      if (!inlineEditInput) {
+        editor.focus();
+        document.execCommand('fontSize', false, $('#font-size').value);
+      }
     }
     if (tableFormulaManager) {
       tableFormulaManager.refresh();
@@ -3617,7 +3619,7 @@
     }
 
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
       if (e.key === 'Escape') finish(false);
     });
     input.addEventListener('blur', () => finish(true));
@@ -4185,7 +4187,6 @@
     refresh() {
       this.destroy();
       this.scanTables();
-      formulaBar.style.display = this.hfInstances.size > 0 ? '' : 'none';
     }
 
     destroy() {
@@ -4208,7 +4209,7 @@
           this.initTableFormulas(table);
         }
       });
-      formulaBar.style.display = this.hfInstances.size > 0 ? '' : 'none';
+      formulaBar.style.display = 'none';
     }
 
     colLetter(index) {
@@ -4226,7 +4227,13 @@
     }
 
     normalizeFormula(formula) {
-      return formula.replace(/（/g, '(').replace(/）/g, ')');
+      let result = formula.replace(/（/g, '(').replace(/）/g, ')');
+      // Normalize aggregate function names to uppercase for consistent matching
+      for (const func of AGGREGATE_FUNCS) {
+        const re = new RegExp('(?<![\\w"\'])(' + this.escapeRegex(func) + ')(?=\\()', 'gi');
+        result = result.replace(re, func);
+      }
+      return result;
     }
 
     getDataRows(table) {
@@ -4329,7 +4336,7 @@
       // Resolve bare column-letter references (e.g. SUM(B) → SUM(B:B))
       for (const func of AGGREGATE_FUNCS) {
         const colRegex = new RegExp(
-          '(?<=' + func + '\\()([A-Z])(?=\\))', 'g'
+          '(?<=' + func + '\\()([A-Z])(?=\\))', 'gi'
         );
         result = result.replace(colRegex, (match) => {
           const colIdx = match.charCodeAt(0) - 65;
