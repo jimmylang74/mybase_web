@@ -91,9 +91,21 @@
         <span id="indexing-status" style="display:none"></span>
 
       </div>
+      <!-- Formula Bar for Excel-like calculations -->
+      <div id="formula-bar" style="display:none">
+        <div id="formula-bar-cell-ref">A1</div>
+        <div id="formula-bar-formula" contenteditable="true" data-placeholder="Enter formula (e.g. =SUM(A2:A10) or use header names)"></div>
+        <div id="formula-bar-status" title="HyperFormula engine status">✓</div>
+        <div id="formula-dropdown" style="display:none"></div>
+      </div>
       <div id="editor" contenteditable="true">
         <p>Select a menu item to edit its content...</p>
       </div>
+      <div id="editor-status">No item selected</div>
+    </div>
+  </div>
+  <div id="search-splitter" style="display:none"></div>
+  <div id="search-results-panel" style="display:none"></div>
       <div id="editor-status">No item selected</div>
     </div>
   </div>
@@ -390,6 +402,7 @@
   <div id="formula-bar-cell-ref">A1</div>
   <div id="formula-bar-formula" contenteditable="true" data-placeholder="Enter formula (e.g. =SUM(A2:A10) or use header names)"></div>
   <div id="formula-bar-status" title="HyperFormula engine status">✓</div>
+  <div id="formula-dropdown" style="display:none"></div>
 </div>
 
 <script src="/static/socket.io.min.js"></script>

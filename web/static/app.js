@@ -2096,6 +2096,29 @@
   }
 
   editor.addEventListener('keydown', function(e) {
+    // Intercept dropdown navigation when dropdown is visible
+    if (tableFormulaManager && tableFormulaManager._dropdownItems && tableFormulaManager._dropdownItems.length) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        tableFormulaManager._navigateDropdown(1);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        tableFormulaManager._navigateDropdown(-1);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        tableFormulaManager._applyFormulaDropdown();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        tableFormulaManager._hideFormulaDropdown();
+        return;
+      }
+    }
     if (e.key === 'Enter') {
       handleTableEnter(e);
     } else if (e.key === 'Backspace') {
@@ -4149,6 +4172,9 @@
       this._formulaChangeHandler = null;
       this._cellClickHandler = null;
       this._editorInputHandler = null;
+      this._dropdownIndex = -1;
+      this._dropdownItems = null;
+      this._cachedFnNames = null;
     }
 
     init() {
@@ -4199,6 +4225,10 @@
       return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    normalizeFormula(formula) {
+      return formula.replace(/（/g, '(').replace(/）/g, ')');
+    }
+
     getDataRows(table) {
       const trs = table.querySelectorAll('tr');
       const result = [];
@@ -4242,7 +4272,7 @@
     resolveFormula(formula, headers, currentRow, totalRows) {
       if (!formula || !formula.startsWith('=')) return formula;
 
-      let result = formula;
+      let result = this.normalizeFormula(formula);
       const sortedHeaders = [];
       for (let i = 0; i < headers.length; i++) {
         if (headers[i] && headers[i] !== ('Col' + (i + 1))) {
@@ -4294,6 +4324,21 @@
           '(?<![\\w$"\'])(' + escaped + ')(?![\\w"\'(])', 'g'
         );
         result = result.replace(standaloneRegex, '$' + colLetter + (currentRow + 1));
+      }
+
+      // Resolve bare column-letter references (e.g. SUM(B) → SUM(B:B))
+      for (const func of AGGREGATE_FUNCS) {
+        const colRegex = new RegExp(
+          '(?<=' + func + '\\()([A-Z])(?=\\))', 'g'
+        );
+        result = result.replace(colRegex, (match) => {
+          const colIdx = match.charCodeAt(0) - 65;
+          if (colIdx >= 0 && colIdx < 26) {
+            const colLetter = this.colLetter(colIdx);
+            return colLetter + ':' + colLetter;
+          }
+          return match;
+        });
       }
 
       return result;
@@ -4486,7 +4531,15 @@
       }
 
       const formula = cell.getAttribute('data-formula');
-      formulaInput.textContent = formula || cell.textContent;
+      const cellText = formula || cell.textContent;
+      formulaInput.textContent = cellText;
+
+      // Show autocomplete if this cell already has a formula
+      if (cellText.startsWith('=')) {
+        this._showFormulaDropdown(cellText);
+      } else {
+        this._hideFormulaDropdown();
+      }
 
       table.querySelectorAll('td.formula-active-cell, th.formula-active-cell').forEach(el => {
         el.classList.remove('formula-active-cell');
@@ -4508,6 +4561,10 @@
       const cell = e.target.closest('td, th');
       if (cell && editor.contains(cell) && this.findCellTable(cell)) {
         this.showFormulaBar(cell);
+        // Hide formula bar for cells without formulas
+        if (!cell.hasAttribute('data-formula') && !(cell.textContent || '').trim().startsWith('=')) {
+          formulaBar.style.display = 'none';
+        }
       }
     }
 
@@ -4522,12 +4579,15 @@
       if (newValue === '') {
         cell.removeAttribute('data-formula');
         cell.textContent = '';
+        this._hideFormulaDropdown();
       } else if (newValue.startsWith('=')) {
-        cell.setAttribute('data-formula', newValue);
-        cell.textContent = newValue;
+        const normalized = this.normalizeFormula(newValue);
+        cell.setAttribute('data-formula', normalized);
+        cell.textContent = normalized;
       } else {
         cell.removeAttribute('data-formula');
         cell.textContent = newValue;
+        this._hideFormulaDropdown();
       }
 
       if (!skipRebuild) {
@@ -4545,10 +4605,21 @@
           const cell = node.nodeType === 3 ? node.parentNode?.closest('td, th') : node.closest('td, th');
           if (cell && this.findCellTable(cell)) {
             const table = this.findCellTable(cell);
-            const text = cell.textContent.trim();
+            const text = this.normalizeFormula(cell.textContent.trim());
             if (text.startsWith('=')) {
               console.log('[Formula] Detected formula in cell:', text);
               cell.setAttribute('data-formula', text);
+              formulaInput.textContent = text;
+              if (this.activeCell !== cell || formulaBar.style.display === 'none') {
+                this.activeCell = cell;
+                this.activeTable = this.findCellTable(cell);
+                formulaBar.style.display = '';
+              }
+              this._showFormulaDropdown(text);
+            } else if (cell.getAttribute('data-formula')) {
+              cell.removeAttribute('data-formula');
+              formulaInput.textContent = '';
+              this._hideFormulaDropdown();
             }
             // If cell has a formula and text still matches its computed value,
             // this is a formatting-only change (backColor etc.) so skip rebuild.
@@ -4587,17 +4658,185 @@
       }
     }
 
+    // ─── Formula Autocomplete ────────────────────────────────────────────
+
+    _getFormulaFunctionNames() {
+      if (this._cachedFnNames) return this._cachedFnNames;
+      try {
+        const names = HyperFormula.getRegisteredFunctionNames
+          ? HyperFormula.getRegisteredFunctionNames()
+          : null;
+        if (names && names.length) {
+          this._cachedFnNames = names.slice().sort();
+        } else {
+          this._cachedFnNames = AGGREGATE_FUNCS.slice();
+        }
+      } catch (e) {
+        this._cachedFnNames = AGGREGATE_FUNCS.slice();
+      }
+      return this._cachedFnNames;
+    }
+
+    _renderDropdownItems(items) {
+      const dropdown = $('#formula-dropdown');
+      if (!items || !items.length) {
+        dropdown.innerHTML = '<div class="fd-empty">—</div>';
+        dropdown.style.display = '';
+        this._dropdownIndex = -1;
+        this._dropdownItems = null;
+        return;
+      }
+      dropdown.innerHTML = items.map((name, i) =>
+        '<div class="fd-item' + (i === 0 ? ' fd-active' : '') + '" data-index="' + i + '">' +
+          '<span class="fd-name">' + name + '</span>' +
+          '<span class="fd-desc">function</span>' +
+        '</div>'
+      ).join('');
+      dropdown.style.display = '';
+      this._dropdownIndex = 0;
+      this._dropdownItems = items;
+    }
+
+    _showFormulaDropdown(formulaText) {
+      const dropdown = $('#formula-dropdown');
+      formulaText = this.normalizeFormula(formulaText || '');
+      if (!formulaText || !formulaText.startsWith('=')) {
+        dropdown.style.display = 'none';
+        return;
+      }
+
+      // Extract the partial token after '=' (last word if cursor is mid-formula)
+      const eq = formulaText.indexOf('=');
+      const after = formulaText.slice(eq + 1);
+      const tokenMatch = after.match(/([A-Za-z]\w*)$/);
+      const partial = tokenMatch ? tokenMatch[1].toUpperCase() : '';
+
+      const allFns = this._getFormulaFunctionNames();
+
+      if (!partial) {
+        // No word token at cursor — show all functions only when just "=" or "=("
+        const trimmed = after.trim();
+        if (!trimmed || trimmed === '(' || trimmed.endsWith('(')) {
+          this._renderDropdownItems(allFns);
+        } else {
+          dropdown.style.display = 'none';
+        }
+        return;
+      }
+
+      const matched = allFns.filter(n => n.startsWith(partial));
+      this._renderDropdownItems(matched);
+    }
+
+    _hideFormulaDropdown() {
+      $('#formula-dropdown').style.display = 'none';
+      this._dropdownIndex = -1;
+      this._dropdownItems = null;
+    }
+
+    _applyFormulaDropdown() {
+      if (this._dropdownIndex < 0 || !this._dropdownItems) return;
+      const selected = this._dropdownItems[this._dropdownIndex];
+      const text = formulaInput.textContent || '';
+      const eqIdx = text.indexOf('=');
+      if (eqIdx === -1) return;
+
+      const after = text.slice(eqIdx + 1);
+      const tokenMatch = after.match(/([A-Za-z]\w*)$/);
+
+      let newText, cursorPos;
+      if (tokenMatch) {
+        const beforeToken = text.slice(0, eqIdx + 1 + after.length - tokenMatch[1].length);
+        const afterToken = text.slice(eqIdx + 1 + after.length);
+        newText = beforeToken + selected + '(' + afterToken;
+        cursorPos = beforeToken.length + selected.length + 1;
+      } else {
+        // No partial token (e.g. just "="): insert selected function after "="
+        newText = '=' + selected + '(';
+        cursorPos = newText.length;
+      }
+      formulaInput.textContent = newText;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      if (formulaInput.firstChild) {
+        range.setStart(formulaInput.firstChild, Math.min(cursorPos, newText.length));
+        range.collapse(true);
+      } else {
+        range.selectNodeContents(formulaInput);
+        range.collapse(false);
+      }
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      this._hideFormulaDropdown();
+      formulaInput.focus();
+    }
+
+    _navigateDropdown(direction) {
+      const items = $('#formula-dropdown').querySelectorAll('.fd-item');
+      if (!items.length) return;
+      const prev = this._dropdownIndex;
+      const next = Math.max(0, Math.min(items.length - 1, prev + direction));
+      if (prev === next) return;
+      if (prev >= 0) items[prev].classList.remove('fd-active');
+      items[next].classList.add('fd-active');
+      items[next].scrollIntoView({ block: 'nearest' });
+      this._dropdownIndex = next;
+    }
+
     bindEvents() {
       editor.addEventListener('click', (e) => this.onCellClick(e));
 
       formulaInput.addEventListener('blur', () => {
-        this.onFormulaInputChange(true);
+        // Delay hiding so click on dropdown item registers first
+        setTimeout(() => this._hideFormulaDropdown(), 200);
+        this.onFormulaInputChange(false);
       });
 
       formulaInput.addEventListener('keydown', (e) => {
+        if (this._dropdownItems && this._dropdownItems.length) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            this._navigateDropdown(1);
+            return;
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            this._navigateDropdown(-1);
+            return;
+          }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this._applyFormulaDropdown();
+            return;
+          }
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            this._applyFormulaDropdown();
+            return;
+          }
+          if (e.key === 'Escape') {
+            this._hideFormulaDropdown();
+            return;
+          }
+        }
         if (e.key === 'Enter') {
           e.preventDefault();
           this.onFormulaInputChange(false);
+        }
+      });
+
+      formulaInput.addEventListener('input', () => {
+        this._showFormulaDropdown(formulaInput.textContent || '');
+      });
+
+      $('#formula-dropdown').addEventListener('click', (e) => {
+        const item = e.target.closest('.fd-item');
+        if (!item) return;
+        const idx = parseInt(item.dataset.index, 10);
+        if (!isNaN(idx)) {
+          this._dropdownIndex = idx;
+          this._applyFormulaDropdown();
         }
       });
 

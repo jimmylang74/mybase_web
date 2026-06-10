@@ -1773,6 +1773,7 @@ body {
 #formula-bar {
   display: flex;
   align-items: center;
+  position: relative;
   border-bottom: 1px solid #ddd;
   background: #f8f9fa;
   padding: 3px 8px;
@@ -1866,4 +1867,50 @@ body {
   color: #27ae60;
   cursor: help;
   user-select: none;
+}
+
+/* ─── Formula Autocomplete Dropdown ───────────────────────── */
+#formula-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 58px;
+  right: 40px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 1000;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+#formula-dropdown .fd-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#formula-dropdown .fd-item:hover,
+#formula-dropdown .fd-item.fd-active {
+  background: #e8f0fe;
+  color: #1967d2;
+}
+#formula-dropdown .fd-item .fd-name {
+  font-weight: 600;
+}
+#formula-dropdown .fd-item .fd-desc {
+  font-size: 11px;
+  color: #888;
+  margin-left: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#formula-dropdown .fd-empty {
+  padding: 8px 10px;
+  color: #999;
+  font-style: italic;
 }
