@@ -1052,17 +1052,22 @@
   }
 
   function convertFontSizesToInline(html) {
-    // Bake font sizes into HTML so they survive toolbar setting changes
+    // Convert ALL <font> tags to <span style="..."> so tags always pair correctly.
+    // document.execCommand('foreColor') produces <font color="..."> without size,
+    // and the old code only converted <font>→<span> when size was present, causing
+    // unclosed <font> tags that leaked formatting to subsequent text after save.
     html = html.replace(/<font\b([^>]*)>/gi, (match, attrs) => {
+      const styles = [];
       const sizeMatch = attrs.match(/\s+size\s*=\s*["'](\d+)["']/i);
-      if (!sizeMatch) return match;
-      const px = FONT_SIZE_MAP[sizeMatch[1]];
-      if (!px) return match;
-      const styles = [`font-size: ${px}`];
+      if (sizeMatch) {
+        const px = FONT_SIZE_MAP[sizeMatch[1]];
+        if (px) styles.push(`font-size: ${px}`);
+      }
       const colorMatch = attrs.match(/\s+color\s*=\s*["']([^"']*)["']/i);
       if (colorMatch) styles.push(`color: ${colorMatch[1]}`);
       const faceMatch = attrs.match(/\s+face\s*=\s*["']([^"']*)["']/i);
       if (faceMatch) styles.push(`font-family: ${faceMatch[1]}`);
+      if (styles.length === 0) return '<span>';
       return `<span style="${styles.join('; ')}">`;
     });
     html = html.replace(/<\/font\s*>/gi, '</span>');

@@ -44,7 +44,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v5.0.0'
+version = 'v5.0.1'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
