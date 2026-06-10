@@ -126,6 +126,9 @@
       delete_column: '删除列',
       delete_row: '删除行',
       clear_bgcolor: '清除背景颜色 (设为透明)',
+      choose_color: '选择颜色',
+      quick_colors: '常用颜色',
+      custom_color: '自定义颜色...',
       cell_format: '设置单元格格式',
       cell_format_title: '设置单元格格式',
       vertical_align: '垂直对齐:',
@@ -226,6 +229,9 @@
       delete_column: 'Delete Column',
       delete_row: 'Delete Row',
       clear_bgcolor: 'Clear Background Color (Transparent)',
+      choose_color: 'Choose Color',
+      quick_colors: 'Quick Colors',
+      custom_color: 'Custom Color...',
       cell_format: 'Cell Format',
       cell_format_title: 'Set Cell Format',
       vertical_align: 'Vertical Align:',
@@ -2706,13 +2712,116 @@
     saveFontConfig();
   });
 
-  $('#text-color').addEventListener('input', function() {
-    const swatch = $('#color-swatch');
-    if (swatch) swatch.style.background = this.value;
-    this.classList.remove('color-input-hidden--active');
-    this.style.left = '';
-    this.style.top = '';
+  // ─── Color Picker Popup ─────────────────────────────────────────────────
+
+  let colorPickerTarget = null;
+  let colorPickerColor = '#ff0000';
+
+  function openColorPicker(e, mode) {
+    e.stopPropagation();
+
+    const sel = window.getSelection();
+    if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+      editor._savedRange = sel.getRangeAt(0).cloneRange();
+    } else {
+      editor._savedRange = null;
+    }
+
+    const popup = $('#color-picker-popup');
+    const content = $('#color-picker-popup-content');
+    const header = $('#color-picker-popup-header');
+    const customInput = $('#cp-custom-input');
+    const btn = e.currentTarget;
+
+    colorPickerTarget = mode;
+    colorPickerColor = mode === 'foreColor' ? $('#text-color').value : $('#text-bgcolor').value;
+    header.textContent = mode === 'foreColor' ? '选择文字颜色' : '选择背景颜色';
+    customInput.value = colorPickerColor;
+
+    popup.querySelectorAll('.cp-color-swatch').forEach((s) => s.classList.remove('selected'));
+    popup.querySelectorAll('.cp-color-swatch').forEach((s) => {
+      if (s.dataset.color === colorPickerColor) s.classList.add('selected');
+    });
+
+    const rect = btn.getBoundingClientRect();
+    content.style.left = Math.max(4, rect.left) + 'px';
+    content.style.top = (rect.bottom + 4) + 'px';
+
+    const contentRect = content.getBoundingClientRect();
+    if (contentRect.right > window.innerWidth - 4) {
+      content.style.left = Math.max(4, window.innerWidth - contentRect.width - 4) + 'px';
+    }
+
+    popup.style.display = 'block';
+  }
+
+  $('#color-picker-popup').addEventListener('click', (e) => {
+    const swatch = e.target.closest('.cp-color-swatch');
+    if (!swatch) return;
+    const color = swatch.dataset.color;
+    if (!color) return;
+
+    const popup = $('#color-picker-popup');
+    popup.querySelectorAll('.cp-color-swatch').forEach((s) => s.classList.remove('selected'));
+    swatch.classList.add('selected');
+    colorPickerColor = color;
+    $('#cp-custom-input').value = color === 'transparent' ? '#ffffff' : color;
   });
+
+  $('#cp-custom-btn').addEventListener('click', () => {
+    $('#cp-custom-input').click();
+  });
+
+  $('#cp-custom-input').addEventListener('input', function() {
+    colorPickerColor = this.value;
+    const popup = $('#color-picker-popup');
+    popup.querySelectorAll('.cp-color-swatch').forEach((s) => s.classList.remove('selected'));
+    popup.querySelectorAll('.cp-color-swatch').forEach((s) => {
+      if (s.dataset.color === this.value) s.classList.add('selected');
+    });
+  });
+
+  $('#cp-btn-ok').addEventListener('click', () => {
+    const popup = $('#color-picker-popup');
+    popup.style.display = 'none';
+
+    if (editor._savedRange) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(editor._savedRange);
+      editor._savedRange = null;
+    }
+
+    if (colorPickerTarget === 'foreColor') {
+      const swatch = $('#color-swatch');
+      if (swatch) swatch.style.background = colorPickerColor === 'transparent' ? 'transparent' : colorPickerColor;
+      $('#text-color').value = colorPickerColor === 'transparent' ? '#ffffff' : colorPickerColor;
+      editor.focus();
+      document.execCommand('foreColor', false, colorPickerColor === 'transparent' ? '#000000' : colorPickerColor);
+    } else {
+      const swatch = $('#bgcolor-swatch');
+      if (swatch) swatch.style.background = colorPickerColor === 'transparent' ? 'transparent' : colorPickerColor;
+      $('#text-bgcolor').value = colorPickerColor === 'transparent' ? '#ffffff' : colorPickerColor;
+      editor.focus();
+      document.execCommand('backColor', false, colorPickerColor);
+    }
+    markModified();
+    colorPickerTarget = null;
+  });
+
+  $('#cp-btn-cancel').addEventListener('click', () => {
+    $('#color-picker-popup').style.display = 'none';
+    colorPickerTarget = null;
+  });
+
+  $('#color-picker-popup').addEventListener('click', (e) => {
+    if (e.target === $('#color-picker-popup')) {
+      $('#color-picker-popup').style.display = 'none';
+      colorPickerTarget = null;
+    }
+  });
+
+  // ─── Text Color ─────────────────────────────────────────────────────────
 
   $('#btn-apply-color').addEventListener('click', () => {
     editor.focus();
@@ -2722,24 +2831,10 @@
   });
 
   $('#btn-color-arrow').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const input = $('#text-color');
-    const rect = e.currentTarget.getBoundingClientRect();
-    input.classList.add('color-input-hidden--active');
-    input.style.left = rect.left + 'px';
-    input.style.top = (rect.top + rect.height) + 'px';
-    input.click();
+    openColorPicker(e, 'foreColor');
   });
 
   // ─── Background Color (Highlight) ────────────────────────────────────────
-
-  $('#text-bgcolor').addEventListener('input', function() {
-    const swatch = $('#bgcolor-swatch');
-    if (swatch) swatch.style.background = this.value;
-    this.classList.remove('color-input-hidden--active');
-    this.style.left = '';
-    this.style.top = '';
-  });
 
   $('#btn-apply-bgcolor').addEventListener('click', () => {
     editor.focus();
@@ -2749,19 +2844,7 @@
   });
 
   $('#btn-bgcolor-arrow').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const input = $('#text-bgcolor');
-    const rect = e.currentTarget.getBoundingClientRect();
-    input.classList.add('color-input-hidden--active');
-    input.style.left = rect.left + 'px';
-    input.style.top = (rect.top + rect.height) + 'px';
-    input.click();
-  });
-
-  $('#btn-clear-bgcolor').addEventListener('click', () => {
-    editor.focus();
-    document.execCommand('backColor', false, 'transparent');
-    markModified();
+    openColorPicker(e, 'backColor');
   });
 
   $('#btn-insert-link').addEventListener('click', () => {
@@ -2980,9 +3063,22 @@
 
   $('#ctx-font-color').addEventListener('click', () => {
     ctxMenu.style.display = 'none';
+    const colors = ['#ffffff','#000000','#ff0000','#00ff00','#0000ff','transparent'];
+    const colorLabels = ['White','Black','Red','Green','Blue','Transparent'];
+    let swatchesHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+    colors.forEach((c, i) => {
+      const isTransparent = c === 'transparent';
+      const swatchStyle = isTransparent
+        ? 'background:repeating-conic-gradient(#e0e0e0 0% 25%, transparent 0% 50%) 50% / 12px 12px;border:1px solid #ccc;'
+        : `background:${c};`;
+      const content = isTransparent ? '<span style="color:#e74c3c;font-size:16px;font-weight:bold">⊘</span>' : '';
+      swatchesHtml += `<div class="ctx-color-swatch" data-color="${c}" title="${colorLabels[i]}" style="width:32px;height:32px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;${swatchStyle}">${content}</div>`;
+    });
+    swatchesHtml += '</div>';
+
     showDialog(
       'Set Font Color',
-      '<label>Color:</label><input type="color" id="dialog-font-color" value="#ff0000">',
+      `<div id="ctx-color-picker">${swatchesHtml}<label>Custom:</label><input type="color" id="dialog-font-color" value="#ff0000" style="width:100%;height:32px;padding:1px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:none;margin-top:4px"></div>`,
       () => {
         const val = $('#dialog-font-color').value;
         editor.focus();
@@ -2991,6 +3087,24 @@
         return true;
       }
     );
+
+    setTimeout(() => {
+      $('#ctx-color-picker').querySelectorAll('.ctx-color-swatch').forEach((s) => {
+        s.addEventListener('click', () => {
+          const color = s.dataset.color;
+          if (color === 'transparent') {
+            editor.focus();
+            document.execCommand('foreColor', false, '#000000');
+          } else {
+            $('#dialog-font-color').value = color;
+            editor.focus();
+            document.execCommand('foreColor', false, color);
+          }
+          markModified();
+          $('#dialog-overlay').style.display = 'none';
+        });
+      });
+    }, 0);
   });
 
   $('#ctx-remove-format').addEventListener('click', () => {

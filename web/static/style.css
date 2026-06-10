@@ -1584,6 +1584,115 @@ body {
   background: #fdf0ef;
 }
 
+/* ─── Color Picker Popup ──────────────────────────────────────────────────── */
+#color-picker-popup {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 5000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+#color-picker-popup-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 240px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  position: absolute;
+}
+#color-picker-popup-header {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #333;
+}
+#color-picker-popup-body {
+  margin-bottom: 12px;
+}
+.cp-preset-label {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+}
+.cp-preset-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.cp-color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  position: relative;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+.cp-color-swatch:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  z-index: 1;
+}
+.cp-color-swatch.selected {
+  box-shadow: 0 0 0 2px #3498db, 0 0 0 4px rgba(52,152,219,0.25);
+  transform: scale(1.1);
+}
+.cp-color-transparent {
+  background: repeating-conic-gradient(#e0e0e0 0% 25%, transparent 0% 50%) 50% / 12px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-transparent-icon {
+  font-size: 16px;
+  color: #e74c3c;
+  font-weight: bold;
+  line-height: 1;
+}
+.cp-transparent-icon::after {
+  content: '⊘';
+}
+.cp-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cp-custom-row input[type="color"] {
+  width: 36px;
+  height: 30px;
+  padding: 1px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  flex-shrink: 0;
+}
+#cp-custom-btn {
+  padding: 5px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f8f8f8;
+  cursor: pointer;
+  font-size: 12px;
+  color: #555;
+  flex: 1;
+  white-space: nowrap;
+}
+#cp-custom-btn:hover {
+  background: #e8e8e8;
+  color: #333;
+}
+#color-picker-popup-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+}
+
 /* ─── Settings Dialog ──────────────────────────────────────────────────── */
 #settings-dialog {
   position: fixed;

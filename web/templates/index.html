@@ -65,7 +65,6 @@
           </button>
           <button class="color-arrow" id="btn-bgcolor-arrow" title="Choose Background Color">▾</button>
           <input type="color" id="text-bgcolor" value="#ffff00" class="color-input-hidden">
-          <button class="tool-btn btn-clear-bgcolor" id="btn-clear-bgcolor" data-i18n-title="clear_bgcolor" title="清除背景颜色 (设为透明)">×</button>
         </span>
         <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
         <button class="tool-btn" id="btn-insert-table" title="Insert Table">⊞ Table</button>
@@ -304,6 +303,34 @@
     </div>
     <div id="emoji-dialog-footer">
       <button id="emoji-btn-close" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Color Picker Popup -->
+<div id="color-picker-popup" style="display:none">
+  <div id="color-picker-popup-content">
+    <div id="color-picker-popup-header" data-i18n="choose_color">选择颜色</div>
+    <div id="color-picker-popup-body">
+      <div class="cp-preset-label" data-i18n="quick_colors">常用颜色</div>
+      <div class="cp-preset-colors">
+        <div class="cp-color-swatch" data-color="#ffffff" title="White (白色)" style="background:#ffffff;border:1px solid #ccc;"></div>
+        <div class="cp-color-swatch" data-color="#000000" title="Black (黑色)" style="background:#000000;"></div>
+        <div class="cp-color-swatch" data-color="#ff0000" title="Red (红色)" style="background:#ff0000;"></div>
+        <div class="cp-color-swatch" data-color="#00ff00" title="Green (绿色)" style="background:#00ff00;"></div>
+        <div class="cp-color-swatch" data-color="#0000ff" title="Blue (蓝色)" style="background:#0000ff;"></div>
+        <div class="cp-color-swatch cp-color-transparent" data-color="transparent" title="Transparent (透明)">
+          <span class="cp-transparent-icon"></span>
+        </div>
+      </div>
+      <div class="cp-custom-row">
+        <input type="color" id="cp-custom-input" value="#ff0000">
+        <button type="button" id="cp-custom-btn" data-i18n="custom_color">自定义颜色...</button>
+      </div>
+    </div>
+    <div id="color-picker-popup-footer">
+      <button id="cp-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="cp-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
     </div>
   </div>
 </div>
