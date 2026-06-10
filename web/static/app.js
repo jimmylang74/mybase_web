@@ -375,6 +375,9 @@
         editorStatus.textContent = txt.replace(' (unsaved)', '');
       }
       isRemoteUpdate = false;
+      if (tableFormulaManager) {
+        tableFormulaManager.refresh();
+      }
     }
   });
 
@@ -399,6 +402,9 @@
         editorStatus.textContent = txt.replace(' (unsaved)', '');
       }
       isRemoteUpdate = false;
+      if (tableFormulaManager) {
+        tableFormulaManager.refresh();
+      }
     }
   });
 
@@ -1845,7 +1851,22 @@
       if (editor._resizeInfo) {
         e.preventDefault();
         const { table, colIndex } = editor._resizeInfo;
-        const cols = table.querySelectorAll('col');
+        let cols = table.querySelectorAll('col');
+        // If <col> elements were stripped (e.g. by browser copy-paste),
+        // dynamically create them based on current cell widths
+        if (!cols.length) {
+          const cells = table.querySelectorAll('tr:first-child > td, tr:first-child > th');
+          if (cells.length) {
+            const colgroup = document.createElement('colgroup');
+            cells.forEach((cell) => {
+              const col = document.createElement('col');
+              col.style.width = Math.round(cell.getBoundingClientRect().width) + 'px';
+              colgroup.appendChild(col);
+            });
+            table.insertBefore(colgroup, table.firstChild);
+            cols = colgroup.querySelectorAll('col');
+          }
+        }
         if (cols[colIndex]) {
           const currentW = parseFloat(cols[colIndex].style.width) || 80;
           tableColResize = {
@@ -2831,6 +2852,15 @@
         document.execCommand('insertText', false, textContent);
         markModified();
       }
+      // For HTML paste (e.g. tables), let browser handle it natively then
+      // re-initialize formula engine on the newly inserted content
+      if (htmlContent) {
+        requestAnimationFrame(() => {
+          if (tableFormulaManager) {
+            tableFormulaManager.refresh();
+          }
+        });
+      }
     }
   }
 
@@ -2846,6 +2876,32 @@
       console.error('Image paste upload failed:', e);
     }
   }
+
+  // ─── Copy/Clipboard Handling for Formula Cells ──────────────────────
+
+  editor.addEventListener('copy', function(e) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+
+    // Check if selection is inside a single table cell
+    const startCell = range.startContainer.nodeType === 3
+      ? range.startContainer.parentNode?.closest('td, th')
+      : range.startContainer.closest('td, th');
+    const endCell = range.endContainer.nodeType === 3
+      ? range.endContainer.parentNode?.closest('td, th')
+      : range.endContainer.closest('td, th');
+
+    // Only intercept when copying from a single cell that has a formula
+    if (startCell && startCell === endCell && startCell.getAttribute('data-formula')) {
+      const formula = startCell.getAttribute('data-formula');
+      e.preventDefault();
+      e.clipboardData.setData('text/plain', startCell.textContent);
+      e.clipboardData.setData('text/html',
+        '<td data-formula="' + formula.replace(/"/g, '&quot;') + '">' + startCell.innerHTML + '</td>');
+    }
+  });
 
   // ─── Editor Context Menu ───────────────────────────────────────────────
 
