@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, request, render_template, send_from_directory, send_file, abort
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.utils import secure_filename
+import html.parser
 from fpdf import FPDF
 
 # Password hashing and encryption
@@ -44,7 +45,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v5.2.2'
+version = 'v5.2.3'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -3575,6 +3576,51 @@ _EXPORT_DIR.mkdir(exist_ok=True)
 _PDF_FONT_DIR = BASE_DIR / 'pdf_fonts'
 
 
+class _TableParser(html.parser.HTMLParser):
+    """Parse a <table> HTML fragment into a list of rows of cell text."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.rows = []
+        self._current_row = None
+        self._current_cell_data = None
+        self.has_th = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'tr':
+            self._current_row = []
+        elif tag in ('td', 'th'):
+            self._current_cell_data = []
+            if tag == 'th':
+                self.has_th = True
+        elif tag == 'br' and self._current_cell_data is not None:
+            self._current_cell_data.append(' ')
+
+    def handle_endtag(self, tag):
+        if tag == 'tr' and self._current_row is not None:
+            self.rows.append(self._current_row)
+            self._current_row = None
+        elif tag in ('td', 'th') and self._current_row is not None:
+            cell_text = ''.join(self._current_cell_data).strip() if self._current_cell_data else ''
+            cell_text = re.sub(r'\s+', ' ', cell_text)
+            self._current_row.append(cell_text)
+            self._current_cell_data = None
+
+    def handle_data(self, data):
+        if self._current_cell_data is not None:
+            self._current_cell_data.append(data)
+
+
+def _parse_html_table(table_html):
+    """Parse an HTML <table> string into (rows, has_th).
+
+    *rows* is a list of rows, each row is a list of cell text strings.
+    *has_th* is True if any <th> element was found.
+    """
+    parser = _TableParser()
+    parser.feed(table_html)
+    return parser.rows, parser.has_th
+
+
 def _cleanup_old_exports(max_age_seconds: int = 600):
     """Remove export files older than *max_age_seconds*."""
     now = time.time()
@@ -3678,25 +3724,56 @@ def _generate_pdf(items, title, tab_name=None):
         pdf.ln(1)
 
         if content_html and content_html.strip():
-            # Text (strip img tags)
-            text_only = re.sub(r'<img[^>]+>', '', content_html)
-            text = _html_to_pdf_text(text_only)
-            if text:
-                pdf.set_x(pdf.l_margin + indent + 4)
-                pdf.set_font('CJK', '', 9)
-                pdf.multi_cell(pdf.epw - indent - 4, 5, text)
-                pdf.ln(2)
-            for match in re.finditer(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', content_html):
-                src = match.group(1)
-                img_data = _resolve_img_data(src)
-                if img_data:
-                    max_w = min(pdf.epw - indent - 20, 60)
-                    if max_w > 20:
-                        try:
-                            pdf.image(io.BytesIO(img_data), w=max_w)
-                            pdf.ln(3)
-                        except Exception:
-                            pass
+            # Split by <table> boundaries so tables interleave correctly with text/images
+            segments = re.split(
+                r'(<table\b[^>]*>.*?</table>)',
+                content_html,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+            for segment in segments:
+                segment = segment.strip()
+                if not segment:
+                    continue
+                if re.match(r'<table\b', segment, re.IGNORECASE):
+                    # ── Render HTML table via fpdf2 table() ──
+                    cells, has_th = _parse_html_table(segment)
+                    if cells:
+                        pdf.set_x(pdf.l_margin + indent + 4)
+                        pdf.set_font('CJK', '', 9)
+                        tw = pdf.epw - indent - 4
+                        with pdf.table(
+                            first_row_as_headings=has_th,
+                            text_align='LEFT',
+                            width=tw,
+                            borders_layout='ALL',
+                            line_height=5,
+                            padding=1,
+                        ) as tbl:
+                            for row_data in cells:
+                                row = tbl.row()
+                                for cell_text in row_data:
+                                    row.cell(cell_text)
+                        pdf.ln(3)
+                else:
+                    # ── Text + images (existing logic) ──
+                    text_only = re.sub(r'<img[^>]+>', '', segment)
+                    text = _html_to_pdf_text(text_only)
+                    if text:
+                        pdf.set_x(pdf.l_margin + indent + 4)
+                        pdf.set_font('CJK', '', 9)
+                        pdf.multi_cell(pdf.epw - indent - 4, 5, text)
+                        pdf.ln(2)
+                    for match in re.finditer(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', segment):
+                        src = match.group(1)
+                        img_data = _resolve_img_data(src)
+                        if img_data:
+                            max_w = min(pdf.epw - indent - 20, 180)
+                            if max_w > 20:
+                                try:
+                                    pdf.image(io.BytesIO(img_data), w=max_w)
+                                    pdf.ln(3)
+                                except Exception:
+                                    pass
         if sep:
             pdf.ln(2)
             pdf.set_draw_color(200, 200, 200)
