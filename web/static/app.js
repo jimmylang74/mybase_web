@@ -2650,32 +2650,182 @@
     const currentItem = findNodeById(menuTree, itemId);
     const currentLabel = currentItem ? currentItem.label : 'Unknown';
 
-    let html = `<p style="margin-bottom:8px;font-size:13px;color:#555">Move "<strong>${escapeHtml(currentLabel)}</strong>" to:</p>`;
+    // ── Build hierarchical tree from flat API data ──
+    function buildHierarchy(flat, excludeId) {
+      const roots = [];
+      const map = {};
+      for (const n of flat) {
+        if (n.id === excludeId) continue;
+        map[n.id] = { id: n.id, label: n.label, parent_id: n.parent_id, children: [] };
+      }
+      for (const n of flat) {
+        if (n.id === excludeId) continue;
+        const node = map[n.id];
+        if (n.parent_id && map[n.parent_id]) {
+          map[n.parent_id].children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+      return roots;
+    }
+
+    const tree = buildHierarchy(treeData, itemId);
+
+    // ── Recursive node HTML renderer ──
+    function renderNodeHtml(node, depth) {
+      const hasCh = node.children.length > 0;
+      const pad = depth * 20;
+      let h = `<div class="move-tree-node" data-id="${node.id}">`;
+      h += `<div class="move-tree-header" style="padding-left:${8 + pad}px">`;
+      h += hasCh
+        ? `<span class="move-toggle">\u25B8</span>`
+        : `<span class="move-toggle move-toggle-empty"></span>`;
+      h += `<span class="move-label">${escapeHtml(node.label)}</span>`;
+      h += '</div>';
+      if (hasCh) {
+        h += '<div class="move-children" style="display:none">';
+        for (const child of node.children) h += renderNodeHtml(child, depth + 1);
+        h += '</div>';
+      }
+      h += '</div>';
+      return h;
+    }
+
+    // ── Assemble dialog HTML ──
+    let html = `<p style="margin-bottom:6px;font-size:13px;color:#555">${escapeHtml(currentLabel)} \u2192</p>`;
+
+    // Search + toolbar
+    html += '<div class="move-tree-toolbar">';
+    html += `<input type="text" id="move-search-input" class="move-search-input" placeholder="${t('search_placeholder')}">`;
+    html += `<button type="button" id="move-collapse-all" class="move-tool-btn" title="${t('collapse_all')}">\u25B8\u25B8</button>`;
+    html += `<button type="button" id="move-expand-all" class="move-tool-btn" title="${t('expand_all')}">\u25BE\u25BE</button>`;
+    html += '</div>';
+
     html += '<div id="move-tree">';
-    html += '<div class="move-tree-item" data-id="">&lt;Root (top level)&gt;</div>';
-    treeData.forEach((n) => {
-      if (n.id === itemId) return;
-      const indent = n.depth * 20;
-      html += `<div class="move-tree-item" data-id="${n.id}" style="padding-left:${10 + indent}px">${escapeHtml(n.label)}</div>`;
-    });
+    // Root sentinel
+    html += '<div class="move-tree-node" data-id="">';
+    html += '<div class="move-tree-header" style="padding-left:8px">';
+    html += '<span class="move-toggle move-toggle-empty"></span>';
+    html += '<span class="move-label">&lt;Root (top level)&gt;</span>';
+    html += '</div></div>';
+    for (const node of tree) html += renderNodeHtml(node, 0);
     html += '</div>';
 
     let selectedTargetId = null;
 
-    showDialog('Move Item', html, () => {
+    showDialog(t('move_item_title'), html, () => {
       if (selectedTargetId === undefined) return false;
       moveMenuItemToTarget(itemId, selectedTargetId);
       return true;
     });
 
     const moveTreeEl = $('#move-tree');
-    if (moveTreeEl) {
-      moveTreeEl.querySelectorAll('.move-tree-item').forEach((el) => {
-        el.addEventListener('click', () => {
-          moveTreeEl.querySelectorAll('.move-tree-item').forEach((x) => x.classList.remove('selected'));
-          el.classList.add('selected');
-          selectedTargetId = el.dataset.id === '' ? null : el.dataset.id;
-        });
+    if (!moveTreeEl) return;
+
+    // ── Click header to select (delegated) ──
+    moveTreeEl.addEventListener('click', (e) => {
+      const header = e.target.closest('.move-tree-header');
+      if (!header) return;
+      // Ignore clicks on toggle button (handled separately)
+      if (e.target.closest('.move-toggle') && !e.target.closest('.move-toggle-empty')) return;
+
+      moveTreeEl.querySelectorAll('.move-tree-header').forEach((h) => h.classList.remove('selected'));
+      header.classList.add('selected');
+      const nodeId = header.closest('.move-tree-node').dataset.id;
+      selectedTargetId = nodeId === '' ? null : nodeId;
+    });
+
+    // ── Toggle expand/collapse (delegated) ──
+    moveTreeEl.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.move-toggle:not(.move-toggle-empty)');
+      if (!toggle) return;
+      e.stopPropagation();
+      const nodeEl = toggle.closest('.move-tree-node');
+      const childrenDiv = nodeEl.querySelector('.move-children');
+      if (!childrenDiv) return;
+      const isHidden = childrenDiv.style.display === 'none';
+      childrenDiv.style.display = isHidden ? '' : 'none';
+      toggle.textContent = isHidden ? '\u25BE' : '\u25B8';
+    });
+
+    // ── Collapse All ──
+    const collapseBtn = $('#move-collapse-all');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => {
+        moveTreeEl.querySelectorAll('.move-children').forEach((el) => { el.style.display = 'none'; });
+        moveTreeEl.querySelectorAll('.move-toggle:not(.move-toggle-empty)').forEach((t) => { t.textContent = '\u25B8'; });
+      });
+    }
+
+    // ── Expand All ──
+    const expandBtn = $('#move-expand-all');
+    if (expandBtn) {
+      expandBtn.addEventListener('click', () => {
+        moveTreeEl.querySelectorAll('.move-children').forEach((el) => { el.style.display = ''; });
+        moveTreeEl.querySelectorAll('.move-toggle:not(.move-toggle-empty)').forEach((t) => { t.textContent = '\u25BE'; });
+      });
+    }
+
+    // ── Search / Filter ──
+    const searchInput = $('#move-search-input');
+    if (searchInput) {
+      let searchTimer;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          const q = searchInput.value.trim().toLowerCase();
+          const allNodes = [...moveTreeEl.querySelectorAll('.move-tree-node')];
+
+          if (q === '') {
+            // Reset: show all, collapse children
+            allNodes.forEach((el) => { el.style.display = ''; });
+            moveTreeEl.querySelectorAll('.move-children').forEach((el) => { el.style.display = 'none'; });
+            moveTreeEl.querySelectorAll('.move-toggle:not(.move-toggle-empty)').forEach((t) => { t.textContent = '\u25B8'; });
+            return;
+          }
+
+          const nodeMap = {};
+          allNodes.forEach((el) => {
+            const id = el.dataset.id;
+            const labelEl = el.querySelector('.move-label');
+            nodeMap[id] = {
+              el,
+              label: labelEl ? labelEl.textContent.toLowerCase() : '',
+              childrenEl: el.querySelector('.move-children'),
+            };
+          });
+
+          const matchingIds = new Set();
+          allNodes.forEach((el) => {
+            if (nodeMap[el.dataset.id]?.label.includes(q)) matchingIds.add(el.dataset.id);
+          });
+
+          const visibleIds = new Set();
+          matchingIds.forEach((id) => {
+            visibleIds.add(id);
+            let cur = nodeMap[id]?.el;
+            while (cur) {
+              const parent = cur.parentElement?.closest('.move-tree-node');
+              if (parent) { visibleIds.add(parent.dataset.id); cur = parent; }
+              else break;
+            }
+          });
+
+          allNodes.forEach((el) => {
+            el.style.display = visibleIds.has(el.dataset.id) ? '' : 'none';
+            const info = nodeMap[el.dataset.id];
+            if (info?.childrenEl) {
+              const hasVisible = [...info.childrenEl.querySelectorAll(':scope > .move-tree-node')]
+                .some((c) => c.style.display !== 'none');
+              if (hasVisible) {
+                info.childrenEl.style.display = '';
+                const toggle = el.querySelector('.move-toggle:not(.move-toggle-empty)');
+                if (toggle) toggle.textContent = '\u25BE';
+              }
+            }
+          });
+        }, 150);
       });
     }
   }

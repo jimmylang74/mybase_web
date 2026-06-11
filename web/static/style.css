@@ -555,17 +555,60 @@ body {
 }
 
 /* ─── Move-To Dialog Tree ─────────────────────────────────────────────── */
+
+.move-tree-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.move-search-input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.move-search-input:focus {
+  border-color: #4285f4;
+}
+
+.move-tool-btn {
+  padding: 3px 6px;
+  font-size: 11px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #f8f9fa;
+  cursor: pointer;
+  line-height: 1.4;
+  color: #444;
+}
+.move-tool-btn:hover {
+  background: #e8e8e8;
+}
+.move-tool-btn:active {
+  background: #ddd;
+}
+
 #move-tree {
-  max-height: 300px;
+  max-height: 320px;
   overflow-y: auto;
   border: 1px solid #ddd;
   border-radius: 4px;
   padding: 4px 0;
-  margin-bottom: 8px;
 }
 
-.move-tree-item {
-  padding: 6px 10px;
+.move-tree-node {
+  user-select: none;
+}
+
+.move-tree-header {
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
   cursor: pointer;
   font-size: 13px;
   border-radius: 3px;
@@ -574,14 +617,40 @@ body {
   white-space: nowrap;
 }
 
-.move-tree-item:hover {
+.move-tree-header:hover {
   background: #e8f0fe;
 }
 
-.move-tree-item.selected {
+.move-tree-header.selected {
   background: #d4e4fc;
   font-weight: 600;
 }
+
+.move-toggle {
+  display: inline-block;
+  width: 16px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #888;
+  cursor: pointer;
+  text-align: center;
+  line-height: 1.6;
+}
+.move-toggle:hover {
+  color: #333;
+}
+.move-toggle-empty {
+  cursor: default;
+  visibility: hidden;
+}
+
+.move-label {
+  margin-left: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
 
 /* ─── Password Dialog ─────────────────────────────────────────────────── */
 #password-dialog {
