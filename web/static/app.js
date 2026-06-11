@@ -33,6 +33,21 @@
   const ctxMenu = $('#context-menu');
   const treeCtxMenu = $('#tree-context-menu');
   const tabCtxMenu = $('#tab-context-menu');
+  const sidebarToggle = $('#btn-sidebar-toggle');
+  const sidebarBackdrop = $('#sidebar-backdrop');
+  const mobileSidebarHint = $('#mobile-sidebar-hint');
+
+  // ─── Mobile viewport height fix ─────────────────────────────────────────
+  // Prevents content from being hidden behind mobile browser chrome (URL bar, nav bar)
+  function refreshViewportHeight() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty('--vh', vh + 'px');
+  }
+  refreshViewportHeight();
+  window.addEventListener('resize', refreshViewportHeight);
+  window.addEventListener('orientationchange', function() {
+    setTimeout(refreshViewportHeight, 100);
+  });
 
   // ─── i18n ──────────────────────────────────────────────────────────────
 
@@ -740,6 +755,9 @@
         e.stopPropagation();
         showTabContextMenu(e, name);
       });
+      attachLongPress(el, function(touch) {
+        showTabContextMenu(touch, name);
+      });
       makeTabDraggable(el);
       tabsEl.appendChild(el);
     });
@@ -936,6 +954,9 @@
       e.preventDefault();
       e.stopPropagation();
       showTreeContextMenu(e, item.id);
+    });
+    attachLongPress(header, function(touch) {
+      showTreeContextMenu(touch, item.id);
     });
 
     nodeDiv.appendChild(header);
@@ -2366,6 +2387,71 @@
     });
   }
 
+  // ─── Mobile long-press → context menu ──────────────────────────────────
+  // On touch devices, a 500ms hold simulates right-click.
+  // We suppress native text selection by temporarily disabling user-select
+  // on the body when long-press fires, then restoring it on release.
+  function attachLongPress(el, onLongPress) {
+    var timer = null;
+    var startX = 0, startY = 0;
+    var fired = false;
+    var threshold = 10;
+    var delay = 500;
+
+    function cancel() {
+      if (timer) { clearTimeout(timer); timer = null; }
+    }
+
+    function restoreBodySelect() {
+      document.body.style.webkitUserSelect = '';
+      document.body.style.userSelect = '';
+    }
+
+    el.addEventListener('touchstart', function(e) {
+      fired = false;
+      var t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      timer = setTimeout(function() {
+        timer = null;
+        fired = true;
+        // Forcibly stop any in-progress text selection by disabling
+        // selection at the body level while the context menu is shown
+        document.body.style.webkitUserSelect = 'none';
+        document.body.style.userSelect = 'none';
+        window.getSelection().removeAllRanges();
+        if (navigator.vibrate) navigator.vibrate(15);
+        onLongPress({ clientX: startX, clientY: startY });
+      }, delay);
+    }, { passive: true });
+
+    el.addEventListener('touchmove', function(e) {
+      if (timer) {
+        var t = e.touches[0];
+        if (Math.abs(t.clientX - startX) > threshold || Math.abs(t.clientY - startY) > threshold) {
+          cancel();
+        }
+      }
+    }, { passive: true });
+
+    el.addEventListener('touchend', function(e) {
+      if (fired) {
+        e.preventDefault();
+        e.stopPropagation();
+        fired = false;
+        // Restore selection on next tick so the context menu stays functional
+        setTimeout(restoreBodySelect, 0);
+      }
+      cancel();
+    });
+
+    el.addEventListener('touchcancel', function() {
+      if (fired) fired = false;
+      cancel();
+      restoreBodySelect();
+    });
+  }
+
   // ─── Tree Right-Click Context Menu ─────────────────────────────────────
 
   function showTreeContextMenu(e, itemId) {
@@ -3707,6 +3793,36 @@
       document.body.style.userSelect = '';
     }
   });
+
+  // ─── Mobile Sidebar Toggle ────────────────────────────────────────────
+  if (sidebarToggle && sidebarBackdrop) {
+    function toggleSidebar(open) {
+      const sidebar = $('#sidebar');
+      if (!sidebar) return;
+      const isOpen = open !== undefined ? open : !sidebar.classList.contains('sidebar-open');
+      sidebar.classList.toggle('sidebar-open', isOpen);
+      sidebarBackdrop.classList.toggle('active', isOpen);
+      document.body.style.overflow = isOpen ? 'hidden' : '';
+    }
+    sidebarToggle.addEventListener('click', function() { toggleSidebar(); });
+    if (mobileSidebarHint) {
+      mobileSidebarHint.addEventListener('click', function() {
+        toggleSidebar();
+        mobileSidebarHint.style.display = 'none';
+      });
+    }
+    sidebarBackdrop.addEventListener('click', function() { toggleSidebar(false); });
+    window.addEventListener('resize', function() {
+      if (window.innerWidth > 768) {
+        const sidebar = $('#sidebar');
+        if (sidebar && sidebar.classList.contains('sidebar-open')) {
+          sidebar.classList.remove('sidebar-open');
+          sidebarBackdrop.classList.remove('active');
+          document.body.style.overflow = '';
+        }
+      }
+    });
+  }
 
   // ─── Utilities ─────────────────────────────────────────────────────────
 

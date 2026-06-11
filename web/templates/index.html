@@ -9,6 +9,7 @@
 <body>
 <div id="app">
     <div id="tab-bar">
+      <span id="btn-sidebar-toggle" title="Toggle sidebar">☰</span>
       <span id="tab-scroll-left" class="tab-scroll-btn">&#x2039;</span>
       <div id="tabs"></div>
       <span id="tab-scroll-right" class="tab-scroll-btn">&#x203A;</span>
@@ -16,6 +17,7 @@
       <div id="tab-help" title="Help">?</div>
     </div>
   <div id="main-content">
+    <div id="sidebar-backdrop" style="display:none"></div>
     <div id="sidebar">
       <div id="tree-toolbar">
         <div id="toolbar-dropdown-wrap">
@@ -98,6 +100,7 @@
         <div id="formula-bar-status" title="HyperFormula engine status">✓</div>
         <div id="formula-dropdown" style="display:none"></div>
       </div>
+      <div id="mobile-sidebar-hint">☰ 点击此处打开菜单</div>
       <div id="editor" contenteditable="true">
         <p>Select a menu item to edit its content...</p>
       </div>
