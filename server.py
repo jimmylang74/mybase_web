@@ -45,7 +45,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v5.5.6'
+version = 'v5.6.6'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -221,11 +221,16 @@ def parse_args():
                         help='Number of parallel menu item indexing workers (default: 8; Windows limited to 1)')
     parser.add_argument('--no-debug', action='store_false', dest='debug', default=True,
                         help='Disable verbose debug logging to mybase.log.')
+    parser.add_argument('--single-user', action='store_true',
+                        help='Single-user mode: skip login, auto-admin. Hides login UI.')
     return parser.parse_args()
 
 
+_single_user_mode = False
+
+
 def init_config():
-    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, ocr_mobile, workers_ocr, workers_menu, ocr_debug, _file_logger
+    global data_dir, mybase_dir, index_db_dir, common_db, server_port, force_index_target, ocr_disabled, ocr_mobile, workers_ocr, workers_menu, ocr_debug, _file_logger, _single_user_mode
     args = parse_args()
     data_dir = BASE_DIR / args.data
     mybase_dir = data_dir / 'mybase'
@@ -237,6 +242,7 @@ def init_config():
     workers_ocr = args.workers_ocr
     workers_menu = args.workers_menu
     ocr_debug = args.debug
+    _single_user_mode = args.single_user
 
     ocr_mobile = (args.mobile_ocr == 'true')
 
@@ -2153,11 +2159,16 @@ def get_session_user(token: str) -> dict | None:
             if sid:
                 sess['sid'] = sid
             return {'username': sess['username'], 'role': sess['role']}
+    # Single-user mode: no token needed, act as admin
+    if _single_user_mode and not token:
+        return {'username': 'admin', 'role': 'admin'}
     return None
 
 
 def require_auth():
     """Check request for valid auth. Returns user dict or sends 401."""
+    if _single_user_mode:
+        return {'username': 'admin', 'role': 'admin'}
     token = request.headers.get('X-Auth-Token', '')
     user = get_session_user(token)
     if not user:
@@ -3136,7 +3147,7 @@ def delete_menu_item(items, item_id):
 
 @app.route('/')
 def index():
-    return render_template('index.html', version=version)
+    return render_template('index.html', version=version, single_user=_single_user_mode)
 
 
 @app.route('/help')
@@ -3180,6 +3191,8 @@ def _auth_check_read(tab):
     """Check read access for a tab. Returns user dict or None.
     Anonymous users can read admin-owned (public) tabs.
     Others must be authenticated and authorized."""
+    if _single_user_mode:
+        return {'username': 'admin', 'role': 'admin'}
     token = request.headers.get('X-Auth-Token', '')
     user = get_session_user(token)
     if not user:
@@ -3195,6 +3208,8 @@ def _auth_check_read(tab):
 
 def _auth_check_write(tab):
     """Check write access for a tab. Returns user dict or abort response."""
+    if _single_user_mode:
+        return {'username': 'admin', 'role': 'admin'}
     token = request.headers.get('X-Auth-Token', '')
     user = get_session_user(token)
     if not user:
@@ -3442,6 +3457,15 @@ def search():
         visible_tabs = set(get_user_visible_tabs(user['username'], user['role']))
     else:
         visible_tabs = _get_visible_tab_names()
+        if visible_tabs is not None:
+            # Anonymous: only admin-owned tabs (match list_tabs behavior)
+            _conn = sqlite3.connect(str(common_db))
+            try:
+                _cursor = _conn.execute("SELECT tab_name, owner FROM tab_owner")
+                _owned = dict(_cursor.fetchall())
+            finally:
+                _conn.close()
+            visible_tabs = {t for t in visible_tabs if t not in _owned or _owned.get(t) == ''}
 
     if visible_tabs is not None:
         vis = get_tab_visibility()
@@ -4334,7 +4358,7 @@ def get_backup_status(task_id):
 
 @app.route('/api/backup/download/<task_id>')
 def download_backup(task_id):
-    token = request.headers.get('X-Auth-Token', '')
+    token = request.headers.get('X-Auth-Token', '') or request.args.get('token', '')
     user = get_session_user(token)
     if not user:
         abort(401, description='未登录')
@@ -5285,6 +5309,8 @@ def main():
         else:
             print(f"  OCR model: server (high accuracy)")
         print(f"  Server URL: http://0.0.0.0:{server_port}")
+        if _single_user_mode:
+            print(f"  Single-user mode: login disabled (auto-admin)")
         print("=" * 60)
 
         # Start OCR process pool

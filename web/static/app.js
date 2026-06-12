@@ -386,11 +386,17 @@
     if (currentUser) {
       indicator.textContent = currentUser.username;
       indicator.style.display = '';
-      btn.textContent = t('logout');
-      btn.title = t('logout');
-      btn.classList.add('logged-in');
+      if (typeof singleUserMode !== 'undefined' && singleUserMode) {
+        btn.style.display = 'none';
+      } else {
+        btn.style.display = '';
+        btn.textContent = t('logout');
+        btn.title = t('logout');
+        btn.classList.add('logged-in');
+      }
     } else {
       indicator.style.display = 'none';
+      btn.style.display = '';
       btn.textContent = '🔑';
       btn.title = t('login');
       btn.classList.remove('logged-in');
@@ -399,8 +405,33 @@
 
 
 
+  function updateToolbarButtons() {
+    // Backup button: admin only
+    const backupBtn = $('#btn-backup');
+    if (backupBtn) {
+      backupBtn.style.display = (currentUser && currentUser.role === 'admin') ? 'inline-flex' : 'none';
+    }
+    // Save / New Tab / 知识库选择器: hide for anonymous users
+    const isLoggedIn = !!currentUser;
+    const saveBtn = $('#btn-save');
+    if (saveBtn) saveBtn.style.display = isLoggedIn ? '' : 'none';
+    const newTabBtn = $('#btn-new-tab');
+    if (newTabBtn) newTabBtn.style.display = isLoggedIn ? '' : 'none';
+    const kbSelector = document.querySelector('.kb-selector-wrap');
+    if (kbSelector) kbSelector.style.display = isLoggedIn ? '' : 'none';
+  }
+
   async function checkAuth() {
-    if (!authToken) return;
+    if (typeof singleUserMode !== 'undefined' && singleUserMode) {
+      currentUser = { username: 'admin', role: 'admin' };
+      updateUserIndicator();
+      updateToolbarButtons();
+      return;
+    }
+    if (!authToken) {
+      updateToolbarButtons();
+      return;
+    }
     try {
       const data = await api('GET', '/api/auth/me');
       currentUser = data.user;
@@ -411,6 +442,7 @@
       sessionStorage.removeItem('kbase_auth_token');
     }
     updateUserIndicator();
+    updateToolbarButtons();
   }
 
   async function doLogin(username, password) {
@@ -437,6 +469,7 @@
     $('#btn-login').textContent = '🔑';
     $('#btn-login').title = t('login');
     $('#btn-login').classList.remove('logged-in');
+    updateToolbarButtons();
     // Reconnect socket without auth
     if (socket.connected) socket.disconnect();
     socket.io.opts.query = {};
@@ -2442,12 +2475,18 @@
     // Populate user section
     if (currentUser) {
       $('#settings-current-user').textContent = currentUser.username;
-      $('#settings-user-section').style.display = '';
-      if (currentUser.role === 'admin') {
-        $('#settings-admin-section').style.display = '';
-        loadUserList();
-      } else {
+      if (typeof singleUserMode !== 'undefined' && singleUserMode) {
+        // Single-user mode: hide password/ logout / user management UI
+        $('#settings-user-section').style.display = 'none';
         $('#settings-admin-section').style.display = 'none';
+      } else {
+        $('#settings-user-section').style.display = '';
+        if (currentUser.role === 'admin') {
+          $('#settings-admin-section').style.display = '';
+          loadUserList();
+        } else {
+          $('#settings-admin-section').style.display = 'none';
+        }
       }
     } else {
       $('#settings-user-section').style.display = 'none';
@@ -2749,6 +2788,7 @@
     `;
     $('#dialog-ok').style.display = 'none';
     $('#dialog-cancel').textContent = t('backup_background');
+    $('#dialog-cancel').onclick = () => { overlay.style.display = 'none'; };
     overlay.style.display = 'flex';
 
     try {
@@ -2775,7 +2815,7 @@
             }
 
             const a = document.createElement('a');
-            a.href = `/api/backup/download/${task_id}`;
+            a.href = `/api/backup/download/${task_id}?token=${encodeURIComponent(authToken || '')}`;
             a.download = status.filename || 'mybase-backup.zip';
             document.body.appendChild(a);
             a.click();

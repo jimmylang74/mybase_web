@@ -106,6 +106,7 @@ python server.py
 | `--workers-ocr N` | 8 | OCR 工作进程数 |
 | `--workers-menu N` | 8 | 菜单项索引并行数 |
 | `--no-debug` | 无 | 关闭调试日志 |
+| `--single-user` | 无 | 单用户模式，跳过登录直接以 admin 身份使用，隐藏登录/用户管理界面 |
 
 ### 使用示例
 
@@ -118,6 +119,9 @@ python server.py --force-index
 
 # 重建指定知识库索引 + 禁用 OCR
 python server.py --force-index my_kb --disable-ocr
+
+# 单用户模式（免登录，默认以 admin 身份使用）
+python server.py --single-user
 
 # 低资源环境（减少并行数）
 python server.py --workers-ocr 2 --workers-menu 2
@@ -184,7 +188,7 @@ python server.py --workers-ocr 2 --workers-menu 2
 
 ### 数据备份
 
-点击工具栏「📦 备份知识库」按钮，系统将打包所有数据为 ZIP 文件并提供下载。
+点击工具栏「📦 备份知识库」按钮（仅 Admin 可见），系统将打包所有数据为 ZIP 文件并提供下载。普通用户无备份权限。
 
 ## 索引系统
 

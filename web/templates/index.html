@@ -83,7 +83,7 @@
         <button class="tool-btn" id="btn-search" title="Search">🔍 <span data-i18n="search">搜索</span></button>
         <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
         <button class="tool-btn" id="btn-new-tab" title="New Tab" data-i18n="new_kb">新增知识库</button>
-        <button class="tool-btn" id="btn-backup" data-i18n-title="backup_kb" title="备份知识库">📦 <span data-i18n="backup_kb">备份知识库</span></button>
+        <button class="tool-btn" id="btn-backup" data-i18n-title="backup_kb" title="备份知识库"{% if single_user %} style="display:inline-flex"{% endif %}>📦 <span data-i18n="backup_kb">备份知识库</span></button>
         <div class="kb-selector-wrap">
           <label class="kb-all-checkbox-label" id="kb-all-label" data-i18n-title="all_kb" title="全部知识库">
             <input type="checkbox" id="kb-all-checkbox">
@@ -492,6 +492,7 @@
   <div id="formula-dropdown" style="display:none"></div>
 </div>
 
+<script>var singleUserMode = {{ 'true' if single_user else 'false' }};</script>
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/hyperformula.full.min.js"></script>
 <script src="/static/app.js"></script>
