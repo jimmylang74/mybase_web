@@ -43,9 +43,17 @@ from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Random import get_random_bytes
 
-#this var define the version of this software
-#any feature added or modified, be careful not to forget to update this var
-version = 'v5.6.6'
+# ─── Version ────────────────────────────────────────────────────────────────
+def _read_version():
+    try:
+        v = Path(__file__).parent / 'VERSION'
+        if v.exists():
+            return v.read_text().strip()
+    except Exception:
+        pass
+    return 'v0.0.0'
+
+version = _read_version()
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -202,7 +210,7 @@ def log_error(func_name: str, error: Exception, extra: str = ""):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Web of Mybase Knowledge Server',
+        description=f'Web of Mybase Knowledge Server  {version}',
         epilog="Note: The mobile OCR model is enabled by default. Disable with --mobile-ocr false.")
     parser.add_argument('--data', type=str, default='data',
                         help='Data root directory (default: data)')
@@ -5296,7 +5304,7 @@ def main():
     try:
         init_config()
         print("=" * 60)
-        print("  Web of Mybase Knowledge Server")
+        print(f"  Web of Mybase Knowledge Server  {version}")
         print("=" * 60)
         print(f"  Data directory: {data_dir}")
         print(f"  MyBase directory: {mybase_dir}")

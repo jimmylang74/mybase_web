@@ -15,7 +15,7 @@ SHELL := /bin/bash
 
 # ---- config ---------------------------------------------------------------
 PROJECT   := mybase-server
-VERSION   := $(shell grep "^version" server.py 2>/dev/null | head -1 | sed "s/.*= *'//; s/'.*//" || echo "3.5.1")
+VERSION   := $(shell cat VERSION 2>/dev/null || echo "unknown")
 PYTHON    ?= python3
 
 # Detect OS
