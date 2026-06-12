@@ -1,11 +1,43 @@
-# 知识库 KBase v4.5.4
+# 知识库 KBase v5.4.6
 
 **Web of Mybase Knowledge Server**，中文知识库管理系统，基于 Flask + PaddleOCR 构建。
+
+适用于个人、团队、家庭的知识库管理，为您和团队（家庭）提供一个便捷的经验累积的工具。
 
 支持多知识库（Tab）、树形菜单组织、富文本编辑、图片 OCR 文字识别、全文搜索、一键备份等功能。
 
 ## 功能特性
 
+V6.x ( In progress )
+- **菜单项导出为PPT**，支持配置后端LLM，菜单项直接导出到LLM，由LLM总结后生成PPT
+- **表格导出到excel**，表格可以单独导出到Excel
+
+V5.x
+- **优化颜色选择器**，现在颜色选择器中增加常用颜色和透明色
+- **优化菜单项移动到...界面**，现在移动到的界面可以直接搜索菜单项
+- **手机屏幕适配**，简单的手机屏幕适配，菜单栏可以选择关闭显示
+- **多用户管理**，可以支持多用户，Admin可以单独发布公告栏式的知识库
+
+V4.x
+- **内容区域文字背景色**，现在内容区域的文字可以设置背景色
+- **搜索高亮**，内容区域的文字被搜索后高亮显示，暂不支持图片内文字高亮
+- **商业发布需求**，支持 Cython 编译加速，提供 Makefile 构建脚本（make build / make package）
+- **表格支持**，内容区域支持插入表格。表格可以通过鼠标拉伸宽度，单元格支持公式，单元格支持格式设定
+- **图片、表格缩放**，内容区域的表格，图片支持鼠标拖动缩放
+
+V3.x
+- **菜单项PDF/ZIP 导出**，支持知识库级别和菜单项级别的 PDF/ZIP 格式导出，提供独立 HTML ZIP 输出
+- **增加设置**，可以设置语言，目前只支持中英文
+- **WebSocket 实时协作**，基于 flask-socketio 实现，支持多浏览器窗口自动同步、文档锁定防止冲突、加密库同步拒绝访问
+- **知识库加密**，采用 AES-256-GCM 文件加密 + BCrypt 密码哈希 + PBKDF2 密钥派生，支持一库一密，基于会话解锁
+- **mobile ocr**，支持小内存占用的mobile版本ocr推理模型，速度更快，占用内存更小
+
+V2.x
+- **树状菜单可以定制样式**，菜单项可以定制字体的前景、背景色，前置（或者后置）Emoji图标等
+- **搜索支持正则表达式**，搜索可以使用标准语法的正则表达式
+- **“备份知识库”**支持将运行程序、文档、库、知识库一起打包并下载到用户本地，让用户方便迁移到其他地方部署
+
+V1.x
 - 📚 **多知识库管理**，支持创建多个独立知识库 Tab，拖拽排序，独立索引
 - 🌳 **树形菜单**，多级嵌套菜单组织内容，支持拖拽移动、内联重命名、自定义样式
 - ✏️ **富文本编辑器**，所见即所得编辑，支持字体/颜色/大小/粗斜体/链接等格式
@@ -13,16 +45,13 @@
 - 🖼️ **OCR 图片文字识别**，基于 PaddleOCR，自动提取图片文字并纳入索引
 - 📦 **一键备份**，ZIP 打包所有知识库数据，支持下载
 - 🌐 **独立导出**，每个知识库可生成独立的单页 HTML（index.html）
-- **WebSocket 实时协作**，基于 flask-socketio 实现，支持多浏览器窗口自动同步、文档锁定防止冲突、加密库同步拒绝访问
-- **知识库加密**，采用 AES-256-GCM 文件加密 + BCrypt 密码哈希 + PBKDF2 密钥派生，支持一库一密，基于会话解锁
-- **PDF/ZIP 导出**，支持知识库级别和菜单项级别的 PDF/ZIP 格式导出，提供独立 HTML ZIP 输出
-- **Cython 编译与打包**，支持 Cython 编译加速，提供 Makefile 构建脚本（make build / make package）
+- **支持Ubuntu、Windows下部署
 
 ## 安装
 
 ### 环境要求
 
-- Python >= 3.8
+- Python >= 3.10
 - 操作系统：Windows / Linux / macOS
 - 主要依赖：flask-socketio>=5.3.0, fpdf2>=2.8.0, bcrypt>=4.0.0, pycryptodome>=3.20.0
 
@@ -65,7 +94,7 @@ python server.py
 | `--data DIR` | data | 数据根目录 |
 | `--force-index [NAME]` | 无 | 强制重建索引（指定名称或全部） |
 | `--disable-ocr` | 无 | 禁用 OCR 图片文字识别 |
-| `--mobile-ocr` | 无 | 使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用 |
+| `--mobile-ocr` | true | 使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用 |
 | `--workers-ocr N` | 8 | OCR 工作进程数 |
 | `--workers-menu N` | 8 | 菜单项索引并行数 |
 | `--no-debug` | 无 | 关闭调试日志 |
@@ -95,7 +124,6 @@ python server.py --workers-ocr 2 --workers-menu 2
 ├── Makefile               # 构建/清理/打包脚本
 ├── requirements.txt       # Python 依赖
 ├── pdf_fonts/             # PDF 导出字体目录
-├── .sisyphus/             # 开发配置目录
 ├── web/
 │   ├── templates/         # HTML 模板
 │   │   ├── index.html     # 主界面
@@ -104,18 +132,27 @@ python server.py --workers-ocr 2 --workers-menu 2
 │       ├── app.js         # 前端逻辑
 │       └── style.css      # 样式表
 ├── data/
-│   ├── mybase/            # 知识库数据
+│   ├── mybase/            # admin拥有的知识库数据
 │   │   └── <知识库名>/
 │   │       ├── menu.json  # 菜单结构
 │   │       ├── menu.js    # 前端菜单数据
 │   │       ├── index.html # 独立导出页面
 │   │       ├── content/   # 内容文件
 │   │       └── images/    # 上传的图片
+│   ├── user/
+│   │    └── <用户名>/     # 某个用户拥有的知识库
+│   │          └── <知识库名>/
+│   │              ├── menu.json  # 菜单结构
+│   │              ├── menu.js    # 前端菜单数据
+│   │              ├── index.html # 独立导出页面
+│   │              ├── content/   # 内容文件
+│   │              └── images/    # 上传的图片
+│   │ 
 │   └── db/
 │       ├── common.db      # 通用配置数据库
 │       └── index_db/      # 搜索索引数据库
 ├── models/
-│   └── ocr/               # OCR 模型缓存
+│   └── ocr/               # 预先下载好的Paddle OCR模型，包括Server版本和Mobile版本
 └── mybase.log             # 运行日志
 ```
 
