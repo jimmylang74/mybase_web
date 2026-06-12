@@ -95,6 +95,46 @@ body {
   -webkit-touch-callout: none !important;
   touch-action: manipulation;
   transition: background 0.2s, color 0.2s;
+  position: relative;
+}
+
+.tab-owner-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: #fff;
+}
+.tab-owner-badge.badge-a {
+  background: #e67e22;
+}
+.tab-owner-badge.badge-u {
+  background: #3498db;
+}
+.kb-owner-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #fff;
+  margin-right: 4px;
+  vertical-align: middle;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-owner-badge.badge-a {
+  background: #e67e22;
+}
+.kb-owner-badge.badge-u {
+  background: #3498db;
 }
 
 .tab:hover {
@@ -916,7 +956,8 @@ body {
     padding: 0 4px;
   }
   #tab-settings,
-  #tab-help {
+  #tab-help,
+  #btn-login {
     width: 28px;
     height: 28px;
     font-size: 15px;
@@ -1467,9 +1508,10 @@ body {
   border-right: 3px solid #3498db;
 }
 
-/* ─── Tab Settings & Help (Blue Circular) ──────────────────────────────── */
+/* ─── Tab Settings, Login & Help (Blue Circular) ──────────────────────────── */
 #tab-settings,
-#tab-help {
+#tab-help,
+#btn-login {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
@@ -1489,18 +1531,29 @@ body {
 }
 
 #tab-settings:hover,
-#tab-help:hover {
+#tab-help:hover,
+#btn-login:hover {
   background: #3498db;
   transform: scale(1.1);
 }
 
 #tab-settings:active,
-#tab-help:active {
+#tab-help:active,
+#btn-login:active {
   transform: scale(0.95);
 }
 
 #tab-settings {
   font-size: 20px;
+}
+
+#btn-login.logged-in {
+  width: auto;
+  min-width: 32px;
+  border-radius: 16px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: normal;
 }
 
 /* ─── Inline Rename Input ──────────────────────────────────────────────── */
@@ -2131,6 +2184,298 @@ body {
   gap: 10px;
   border-top: 1px solid #eee;
   padding-top: 16px;
+}
+
+/* ─── Login Dialog ──────────────────────────────────────────────────────── */
+#login-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+#login-dialog-content {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px 28px;
+  min-width: 340px;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+#login-dialog-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+#login-dialog-body {
+  margin-bottom: 20px;
+}
+.login-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.login-row label {
+  font-size: 14px;
+  color: #555;
+  min-width: 60px;
+}
+.login-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+}
+.login-input:focus {
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52,152,219,0.15);
+}
+.login-error {
+  color: #e74c3c;
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #fff0f0;
+  border-radius: 4px;
+}
+#login-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #eee;
+  padding-top: 16px;
+}
+
+/* ─── Change Password Dialog ─────────────────────────────────────────────── */
+#change-password-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+}
+#change-password-dialog-content {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px 28px;
+  min-width: 340px;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+#change-password-dialog-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+#change-password-dialog-body {
+  margin-bottom: 20px;
+}
+.password-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.password-row label {
+  font-size: 14px;
+  color: #555;
+  min-width: 100px;
+}
+.password-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+}
+.password-input:focus {
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52,152,219,0.15);
+}
+.password-error {
+  color: #e74c3c;
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #fff0f0;
+  border-radius: 4px;
+}
+#change-password-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #eee;
+  padding-top: 16px;
+}
+
+/* ─── Owner Dialog ───────────────────────────────────────────────────────── */
+#owner-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+#owner-dialog-content {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px 28px;
+  min-width: 300px;
+  max-width: 360px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+#owner-dialog-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+#owner-dialog-body {
+  margin-bottom: 20px;
+}
+.owner-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.owner-row label {
+  font-size: 14px;
+  color: #555;
+  min-width: 60px;
+}
+.owner-select {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  background: #fff;
+  outline: none;
+}
+.owner-select:focus {
+  border-color: #3498db;
+}
+#owner-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #eee;
+  padding-top: 16px;
+}
+
+/* ─── Settings Dialog Extensions ─────────────────────────────────────────── */
+.settings-sep {
+  border-top: 1px solid #eee;
+  margin: 8px 0;
+}
+.settings-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 12px 0 8px;
+}
+.settings-input {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  flex: 1;
+}
+.settings-input:focus {
+  border-color: #3498db;
+}
+.settings-msg {
+  font-size: 13px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: #f0faf0;
+}
+.settings-user-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 14px;
+}
+.settings-user-row:last-child {
+  border-bottom: none;
+}
+.settings-user-name {
+  flex: 1;
+  font-weight: 500;
+  color: #333;
+}
+.settings-user-role {
+  font-size: 12px;
+  color: #888;
+  min-width: 40px;
+}
+.settings-user-reset-pw {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+.settings-user-delete {
+  font-size: 12px;
+  padding: 3px 8px;
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.settings-user-delete:hover {
+  background: #c0392b;
+}
+#settings-add-user-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#settings-add-user-row input {
+  flex: 1;
+  min-width: 0;
+}
+#settings-add-user-row .style-btn {
+  flex-shrink: 0;
+}
+
+/* ─── User Indicator in Tab Bar ──────────────────────────────────────────── */
+#user-indicator {
+  color: #ecf0f1;
+  font-size: 12px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  margin: auto 2px;
+  line-height: 1;
 }
 
 /* ─── Formula Bar for Excel-like Calculations ────────────────────────── */

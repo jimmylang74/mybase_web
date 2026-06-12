@@ -45,7 +45,7 @@ from Crypto.Random import get_random_bytes
 
 #this var define the version of this software
 #any feature added or modified, be careful not to forget to update this var
-version = 'v5.4.6'
+version = 'v5.5.6'
 
 
 # Early log level setup for PaddleX/PaddleOCR - must run BEFORE import
@@ -159,6 +159,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 UPLOAD_DIR_NAME = 'images'
 data_dir: Path = BASE_DIR / 'data'
 mybase_dir: Path = data_dir / 'mybase'
+user_data_dir: Path = data_dir / 'user'
 index_db_dir: Path = data_dir / 'db' / 'index_db'
 common_db: Path = data_dir / 'db' / 'common.db'
 server_port = 9999
@@ -200,10 +201,9 @@ def log_error(func_name: str, error: Exception, extra: str = ""):
 
 
 def parse_args():
-    _mobile_default_note = "enabled by default" if os.name == "nt" else "false by default"
     parser = argparse.ArgumentParser(
         description='Web of Mybase Knowledge Server',
-        epilog=f"Note: On Windows the mobile OCR model is enabled by default for compatibility.")
+        epilog="Note: The mobile OCR model is enabled by default. Disable with --mobile-ocr false.")
     parser.add_argument('--data', type=str, default='data',
                         help='Data root directory (default: data)')
     parser.add_argument('--port', type=int, default=9999,
@@ -212,10 +212,9 @@ def parse_args():
                         help='Force reindex a specific knowledge base. If no name given, reindex all.')
     parser.add_argument('--disable-ocr', action='store_true',
                         help='Disable OCR image text indexing.')
-    parser.add_argument('--mobile-ocr', type=str, default=None, dest='mobile_ocr',
+    parser.add_argument('--mobile-ocr', type=str, default='true', dest='mobile_ocr',
                         choices=['true', 'false'], metavar='true|false',
-                        help=f'Use lightweight mobile OCR model (less accurate but lower memory usage). '
-                             f'On Windows this is {_mobile_default_note}.')
+                        help='Use lightweight mobile OCR model (less accurate but lower memory usage). Default: enabled.')
     parser.add_argument('--workers-ocr', type=int, default=8,
                         help='Number of OCR worker processes (default: 8, each owns 1 PaddleOCR instance; Windows limited to 1)')
     parser.add_argument('--workers-menu', type=int, default=8,
@@ -239,11 +238,7 @@ def init_config():
     workers_menu = args.workers_menu
     ocr_debug = args.debug
 
-    # --mobile-ocr true|false: tri-state (None = not explicitly set)
-    if args.mobile_ocr is None:
-        ocr_mobile = (os.name == "nt")   # Windows defaults to mobile
-    else:
-        ocr_mobile = (args.mobile_ocr == 'true')
+    ocr_mobile = (args.mobile_ocr == 'true')
 
     # Windows: limit workers to 1 to avoid multiprocessing & thread-pool issues
     if os.name == "nt":
@@ -270,10 +265,26 @@ def init_config():
     print(f"  Log file: {log_path}")
 
 
+_SYSTEM_TAB_DIRS = frozenset(['content', 'images', '__pycache__'])
+
+
+def _is_valid_tab_dir(name: str) -> bool:
+    """Check if a directory name could be a valid tab (not a system directory)."""
+    return bool(name) and not name.startswith('.') and name not in _SYSTEM_TAB_DIRS
+
+
 def get_tab_path(tab_name):
+    """Get tab path checking owner subdirectories first, then root."""
     tab_path = mybase_dir / tab_name
     if tab_path.exists() and tab_path.is_dir():
         return tab_path
+    # Check user subdirectories
+    if user_data_dir.exists():
+        for user_entry in user_data_dir.iterdir():
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                sub_path = user_entry / tab_name
+                if sub_path.exists() and sub_path.is_dir():
+                    return sub_path
     return None
 
 
@@ -619,10 +630,19 @@ def index_tab(tab_name):
 
 def index_all_tabs():
     """Reindex all existing knowledge bases."""
+    tabs = set()
     if mybase_dir.exists():
         for entry in sorted(mybase_dir.iterdir()):
-            if entry.is_dir() and not entry.name.startswith('.'):
-                index_tab(entry.name)
+            if entry.is_dir() and _is_valid_tab_dir(entry.name):
+                tabs.add(entry.name)
+    if user_data_dir.exists():
+        for user_entry in sorted(user_data_dir.iterdir()):
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                for tab_entry in sorted(user_entry.iterdir()):
+                    if tab_entry.is_dir() and _is_valid_tab_dir(tab_entry.name):
+                        tabs.add(tab_entry.name)
+    for tab in sorted(tabs):
+        index_tab(tab)
 
 
 def search_index(tab_name, query, use_regex=False):
@@ -1038,8 +1058,14 @@ def ensure_indexes():
     tabs = set()
     if mybase_dir.exists():
         for entry in mybase_dir.iterdir():
-            if entry.is_dir() and not entry.name.startswith('.'):
+            if entry.is_dir() and _is_valid_tab_dir(entry.name):
                 tabs.add(entry.name)
+    if user_data_dir.exists():
+        for user_entry in user_data_dir.iterdir():
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                for tab_entry in user_entry.iterdir():
+                    if tab_entry.is_dir() and _is_valid_tab_dir(tab_entry.name):
+                        tabs.add(tab_entry.name)
 
     for db_file in list(index_db_dir.glob("*.db")):
         if db_file.stem not in tabs:
@@ -1508,10 +1534,44 @@ def init_common_db():
             INSERT OR IGNORE INTO system_config (name, value)
             VALUES ('version', 'v4.5.4')
         """)
+        # ── User authentication tables ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tab_owner (
+                tab_name TEXT PRIMARY KEY,
+                owner TEXT NOT NULL DEFAULT ''
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_tab_visibility (
+                username TEXT NOT NULL,
+                tab_name TEXT NOT NULL,
+                visible INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (username, tab_name)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_tab_current_item (
+                username TEXT NOT NULL,
+                tab_name TEXT NOT NULL,
+                current_item_id TEXT NOT NULL DEFAULT '',
+                scroll_top INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (username, tab_name)
+            )
+        """)
         conn.commit()
     finally:
         conn.close()
     _init_password_tables()
+    _init_user_tables()
 
 
 def get_tab_order():
@@ -1626,6 +1686,48 @@ def set_tab_visibility_batch(visibility_dict):
         conn.close()
 
 
+def get_user_tab_visibility(username: str) -> dict:
+    """Return dict of {tab_name: bool} for a specific user's own tabs."""
+    if not common_db.exists():
+        return {}
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT tab_name, visible FROM user_tab_visibility WHERE username = ?",
+            (username,)
+        )
+        return {row[0]: bool(row[1]) for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def set_user_tab_visibility_batch(username: str, visibility_dict: dict):
+    """Save per-user visibility. Only processes tabs owned by this user."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        for name, visible in visibility_dict.items():
+            owner = get_tab_owner(name)
+            if owner == username:
+                # Preserve sort_order and is_active from existing row
+                cursor = conn.execute(
+                    "SELECT sort_order, is_active FROM user_tab_visibility WHERE username = ? AND tab_name = ?",
+                    (username, name)
+                )
+                row = cursor.fetchone()
+                sort_order = row[0] if row else 0
+                is_active = row[1] if row else 0
+                conn.execute(
+                    "INSERT OR REPLACE INTO user_tab_visibility "
+                    "(username, tab_name, visible, sort_order, is_active) VALUES (?, ?, ?, ?, ?)",
+                    (username, name, 1 if visible else 0, sort_order, is_active)
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def delete_tab_visibility(tab_name):
     """Remove visibility entry for a deleted tab."""
     if not common_db.exists():
@@ -1660,6 +1762,44 @@ def set_selected_tab(tab_name):
         conn.execute("UPDATE tab_kb_visibility SET is_active = 0")
         conn.execute("UPDATE tab_kb_visibility SET is_active = 1 WHERE tab_name = ?", (tab_name,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def set_user_selected_tab(username: str, tab_name: str):
+    """Mark a tab as the currently selected tab for a specific user.
+    Falls back to INSERT if no user_tab_visibility row exists yet."""
+    if not common_db.exists():
+        return
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("UPDATE user_tab_visibility SET is_active = 0 WHERE username = ?", (username,))
+        cursor = conn.execute(
+            "UPDATE user_tab_visibility SET is_active = 1 WHERE username = ? AND tab_name = ?",
+            (username, tab_name)
+        )
+        if cursor.rowcount == 0:
+            conn.execute(
+                "INSERT INTO user_tab_visibility (username, tab_name, visible, sort_order, is_active) VALUES (?, ?, 1, 0, 1)",
+                (username, tab_name)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_selected_tab(username: str) -> str | None:
+    """Return the tab_name that the user last selected, or None."""
+    if not common_db.exists():
+        return None
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT tab_name FROM user_tab_visibility WHERE username = ? AND is_active = 1",
+            (username,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
     finally:
         conn.close()
 
@@ -1775,6 +1915,457 @@ def set_system_config(name, value):
 
 
 # ─── End Common Database ──────────────────────────────────────────────────
+
+
+# === User Authentication System =============================================
+
+# In-memory session store: session_token -> {username, sid}
+_user_sessions: dict[str, dict] = {}
+_user_sessions_lock = threading.Lock()
+
+
+def _init_user_tables():
+    """Seed default admin user if no users exist."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT COUNT(*) FROM users")
+        count = cursor.fetchone()[0]
+        if count == 0:
+            pw_hash = bcrypt.hashpw(b'1234', bcrypt.gensalt()).decode('utf-8')
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                ('admin', pw_hash, 'admin')
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user(username: str) -> dict | None:
+    """Return user dict {username, password_hash, role} or None."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT username, password_hash, role FROM users WHERE username = ? COLLATE NOCASE",
+            (username,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return {'username': row[0], 'password_hash': row[1], 'role': row[2]}
+        return None
+    finally:
+        conn.close()
+
+
+def get_all_users() -> list[dict]:
+    """Return list of all non-admin users."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT username, role FROM users WHERE role != 'admin' ORDER BY username"
+        )
+        return [{'username': row[0], 'role': row[1]} for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+def create_user(username: str, password: str) -> str:
+    """Create a new normal user. Returns error string or '' on success."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username,)
+        )
+        if cursor.fetchone():
+            return '用户名已存在'
+        pw_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        conn.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')",
+            (username, pw_hash)
+        )
+        conn.commit()
+        (user_data_dir / username).mkdir(parents=True, exist_ok=True)
+        return ''
+    finally:
+        conn.close()
+
+
+def delete_user(username: str) -> str:
+    """Delete a normal user and move their KBs to admin. Returns error or ''."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT role FROM users WHERE username = ? COLLATE NOCASE", (username,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return '用户不存在'
+        if row[0] == 'admin':
+            return '不能删除admin用户'
+
+        # 1. Find all tabs owned by this user and set owner to '' (admin)
+        cursor2 = conn.execute(
+            "SELECT tab_name FROM tab_owner WHERE owner = ? COLLATE NOCASE", (username,)
+        )
+        owned_tabs = [r[0] for r in cursor2.fetchall()]
+
+        # 2. Move tab directories from user's folder to admin's folder
+        user_base = user_data_dir / username
+        for tab_name in owned_tabs:
+            tab_path = user_data_dir / username / tab_name
+            admin_path = mybase_dir / tab_name
+            if tab_path.exists() and tab_path.is_dir():
+                if admin_path.exists():
+                    shutil.move(str(tab_path), str(mybase_dir / f"{tab_name}_migrated_{uuid.uuid4().hex[:4]}"))
+                else:
+                    shutil.move(str(tab_path), str(admin_path))
+                old_db = get_index_db_path(f"{username}/{tab_name}")
+                new_db = get_index_db_path(tab_name)
+                if old_db.exists():
+                    if new_db.exists():
+                        old_db.unlink()
+                    else:
+                        old_db.rename(new_db)
+
+        # 3. Set owner to '' for all tabs that belonged to this user
+        conn.execute(
+            "UPDATE tab_owner SET owner = '' WHERE owner = ? COLLATE NOCASE",
+            (username,)
+        )
+
+        # 4. Delete user-related records
+        conn.execute("DELETE FROM users WHERE username = ? COLLATE NOCASE", (username,))
+        conn.execute("DELETE FROM user_tab_visibility WHERE username = ? COLLATE NOCASE", (username,))
+        conn.execute("DELETE FROM user_tab_current_item WHERE username = ? COLLATE NOCASE", (username,))
+        conn.commit()
+
+        # 5. Force-logout all sessions for this user
+        with _user_sessions_lock:
+            tokens_to_remove = [
+                token for token, sess in _user_sessions.items()
+                if sess['username'].lower() == username.lower()
+            ]
+            for token in tokens_to_remove:
+                sess = _user_sessions.pop(token, None)
+                if sess and sess.get('sid'):
+                    try:
+                        socketio.emit('force_logout', {'reason': '用户已被管理员删除'}, room=sess['sid'])
+                    except Exception:
+                        pass
+
+        # Notify admin windows to refresh tab owner badges
+        try:
+            socketio.emit('tabs_updated', {}, room='admin_sync')
+        except Exception:
+            pass
+
+        # 6. Remove user's KB directory if empty
+        if user_base.exists() and user_base.is_dir():
+            try:
+                remaining = list(user_base.iterdir())
+                if not remaining:
+                    shutil.rmtree(str(user_base), ignore_errors=True)
+            except Exception:
+                pass
+
+        return ''
+    finally:
+        conn.close()
+
+
+def update_user_password(username: str, new_password: str) -> str:
+    """Update a user's password. Returns '' on success or error string."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        pw_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE username = ? COLLATE NOCASE",
+            (pw_hash, username)
+        )
+        conn.commit()
+        return ''
+    finally:
+        conn.close()
+
+
+def force_reset_user_password(username: str, new_password: str) -> str:
+    """Admin force-resets a user's password. Resets all sessions. Returns '' or error."""
+    user = get_user(username)
+    if not user:
+        return '用户不存在'
+    if user['role'] == 'admin':
+        return '不能重置admin密码'
+    err = update_user_password(username, new_password)
+    if err:
+        return err
+    # Reset all sessions for this user
+    with _user_sessions_lock:
+        tokens_to_remove = [
+            token for token, sess in _user_sessions.items()
+            if sess['username'].lower() == username.lower()
+        ]
+        for token in tokens_to_remove:
+            sess = _user_sessions.pop(token, None)
+            if sess and sess.get('sid'):
+                try:
+                    socketio.emit('force_logout', {
+                        'reason': '管理员已重置您的密码，请重新登录'
+                    }, room=sess['sid'])
+                except Exception:
+                    pass
+    return ''
+
+
+def verify_login(username: str, password: str) -> dict | None:
+    """Verify username/password. Returns session info dict or None on failure."""
+    user = get_user(username)
+    if not user:
+        return None
+    if not bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        return None
+    # Create session token
+    token = str(uuid.uuid4())
+    with _user_sessions_lock:
+        _user_sessions[token] = {
+            'username': user['username'],
+            'role': user['role'],
+            'sid': _get_current_sid(),
+        }
+    return {
+        'token': token,
+        'username': user['username'],
+        'role': user['role'],
+    }
+
+
+def logout_session(token: str):
+    """Remove a session token."""
+    with _user_sessions_lock:
+        _user_sessions.pop(token, None)
+
+
+def get_session_user(token: str) -> dict | None:
+    """Return user info for a valid session token, or None."""
+    with _user_sessions_lock:
+        sess = _user_sessions.get(token)
+        if sess:
+            sid = _get_current_sid()
+            if sid:
+                sess['sid'] = sid
+            return {'username': sess['username'], 'role': sess['role']}
+    return None
+
+
+def require_auth():
+    """Check request for valid auth. Returns user dict or sends 401."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        abort(401, description='未登录或会话已过期')
+    return user
+
+
+def require_admin():
+    """Check request for admin auth. Returns user dict or sends 403."""
+    user = require_auth()
+    if user['role'] != 'admin':
+        abort(403, description='需要管理员权限')
+    return user
+
+
+def _is_tab_name_globally_used(name: str) -> tuple[bool, str]:
+    """Check if a tab name exists in any user's directory or admin directory.
+    Returns (exists, owner_username) where owner is '' for admin-owned tabs."""
+    if mybase_dir.exists() and (mybase_dir / name).is_dir():
+        return True, get_tab_owner(name)
+    if user_data_dir.exists():
+        for user_entry in user_data_dir.iterdir():
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                if (user_entry / name).is_dir():
+                    return True, get_tab_owner(name)
+    return False, ''
+
+
+def get_tab_owner(tab_name: str) -> str:
+    """Return owner username for a tab, or '' if admin-owned."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT owner FROM tab_owner WHERE tab_name = ?", (tab_name,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        return ''
+    finally:
+        conn.close()
+
+
+def set_tab_owner(tab_name: str, owner: str):
+    """Set owner for a tab. Owner '' means admin-owned."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        if owner == '':
+            conn.execute("DELETE FROM tab_owner WHERE tab_name = ?", (tab_name,))
+        else:
+            conn.execute(
+                "INSERT OR REPLACE INTO tab_owner (tab_name, owner) VALUES (?, ?)",
+                (tab_name, owner)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_tab_effective_path(tab_name: str) -> Path:
+    """Return the actual directory path for a tab based on its owner."""
+    owner = get_tab_owner(tab_name)
+    if owner and owner != '':
+        user_base = user_data_dir / owner
+        user_base.mkdir(exist_ok=True)
+        tab_path = user_base / tab_name
+        return tab_path
+    # Admin/empty owner tabs are in mybase root
+    return mybase_dir / tab_name
+
+
+def get_tab_path_with_owner(tab_name: str) -> Path | None:
+    """Get tab path considering ownership. Handles migrated paths."""
+    # First check user-specific directory
+    owner = get_tab_owner(tab_name)
+    if owner and owner != '':
+        user_path = user_data_dir / owner / tab_name
+        if user_path.exists() and user_path.is_dir():
+            return user_path
+    # Fall back to root mybase
+    root_path = mybase_dir / tab_name
+    if root_path.exists() and root_path.is_dir():
+        return root_path
+    return None
+
+
+def get_effective_tab_path(tab_name: str) -> Path | None:
+    """Get tab path, checking owner directory first, then root."""
+    return get_tab_path_with_owner(tab_name)
+
+
+# Also override the original get_tab_path internally
+def _get_tab_path_with_owner(tab_name):
+    """Override-compatible: check owner directory then root."""
+    return get_tab_path_with_owner(tab_name)
+
+
+def can_read_tab(tab_name: str, user: dict) -> bool:
+    """Check if user can read a tab."""
+    owner = get_tab_owner(tab_name)
+    if user['role'] == 'admin':
+        return True
+    if owner == '' or owner == user['username']:
+        return True
+    return False
+
+
+def can_write_tab(tab_name: str, user: dict) -> bool:
+    """Check if user can modify content/tabs for a tab."""
+    owner = get_tab_owner(tab_name)
+    if user['role'] == 'admin':
+        return True
+    if owner == user['username']:
+        return True
+    return False
+
+
+def can_delete_tab(tab_name: str, user: dict) -> bool:
+    """Check if user can delete a tab."""
+    return user['role'] == 'admin'
+
+
+def can_export_tab(tab_name: str, user: dict) -> bool:
+    """Check if user can export a tab."""
+    if user['role'] == 'admin':
+        return True
+    owner = get_tab_owner(tab_name)
+    if owner == user['username']:
+        return True
+    return False
+
+
+def get_user_visible_tabs(username: str, role: str) -> list[str]:
+    """Return list of tab names visible to a user, in user's order."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        all_tabs = set()
+        if mybase_dir.exists():
+            for entry in mybase_dir.iterdir():
+                if entry.is_dir() and _is_valid_tab_dir(entry.name):
+                    all_tabs.add(entry.name)
+        if user_data_dir.exists():
+            for user_entry in user_data_dir.iterdir():
+                if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                    for tab_entry in user_entry.iterdir():
+                        if tab_entry.is_dir() and _is_valid_tab_dir(tab_entry.name):
+                            all_tabs.add(tab_entry.name)
+
+        if role == 'admin':
+            # Admin sees all tabs from all users
+            ordered = []
+            cursor = conn.execute(
+                "SELECT tab_name FROM tab_order ORDER BY sort_order"
+            )
+            global_ordered = [r[0] for r in cursor.fetchall()]
+            for t in global_ordered:
+                if t in all_tabs:
+                    ordered.append(t)
+            for t in sorted(all_tabs):
+                if t not in ordered:
+                    ordered.append(t)
+            return ordered
+
+        # Non-admin: only see tabs owned by self or admin (owner='')
+        visible = []
+        cursor = conn.execute(
+            "SELECT tab_name, owner FROM tab_owner"
+        )
+        owner_map = dict(cursor.fetchall())
+
+        # Get user's personal tab order
+        cursor = conn.execute(
+            "SELECT tab_name, sort_order FROM user_tab_visibility WHERE username = ? AND visible = 1 ORDER BY sort_order",
+            (username,)
+        )
+        user_ordered = [(r[0], r[1]) for r in cursor.fetchall()]
+
+        # Tabs visible to this user: owned by user OR owned by admin (empty)
+        user_tabs = set()
+        for tab in all_tabs:
+            owner = owner_map.get(tab, '')
+            if owner == '' or owner == username:
+                user_tabs.add(tab)
+
+        # Return in user's order, then alphabetical for the rest
+        ordered = []
+        seen = set()
+        for tab_name, _ in user_ordered:
+            if tab_name in user_tabs:
+                ordered.append(tab_name)
+                seen.add(tab_name)
+        # Add admin tabs in global order
+        global_cursor = conn.execute(
+            "SELECT tab_name FROM tab_order ORDER BY sort_order"
+        )
+        for r in global_cursor:
+            if r[0] in user_tabs and r[0] not in seen:
+                ordered.append(r[0])
+                seen.add(r[0])
+        for t in sorted(user_tabs):
+            if t not in seen:
+                ordered.append(t)
+        return ordered
+    finally:
+        conn.close()
+
+
+# === End User Authentication System =========================================
 
 
 # === Password & Encryption System ==========================================
@@ -2274,33 +2865,41 @@ def _collect_all_descendant_ids(items, item_id):
 
 
 def ws_emit_menu_changed(tab):
-    """Broadcast menu_changed event to all clients in the tab room.
-    Called from REST routes after menu mutations.
-    Encrypted tabs don't broadcast menu changes (no sync)."""
+    """Broadcast menu_changed event. Admin tab changes go to all users (via admin_sync room).
+    User tab changes go only to that user's sessions (via user:username room).
+    Encrypted tabs don't broadcast menu changes."""
     if is_tab_encrypted(tab):
         return
     try:
-        room = f'tab:{tab}'
-        socketio.emit('menu_changed', {'tab': tab}, room=room)
+        owner = get_tab_owner(tab)
+        if owner == '':
+            # Admin tab - broadcast to admin_sync room (all users)
+            socketio.emit('menu_changed', {'tab': tab}, room='admin_sync')
+        else:
+            # User tab - broadcast to that user's sessions
+            socketio.emit('menu_changed', {'tab': tab}, room=f'user:{owner}')
+        # Also broadcast to the tab room for backward compatibility
+        socketio.emit('menu_changed', {'tab': tab}, room=f'tab:{tab}')
     except Exception:
-        pass  # emit is best-effort outside SocketIO handler
+        pass
 
 
 def ws_emit_content_saved(tab, item_id, content):
-    """Broadcast content_saved event to all clients in the tab room.
-    Called from REST route after content save.
-    Encrypted tabs don't broadcast content saves (no sync)."""
+    """Broadcast content_saved event. Admin tab changes go to all users.
+    User tab changes go only to that user's sessions.
+    Encrypted tabs don't broadcast content saves."""
     if is_tab_encrypted(tab):
         return
     try:
-        room = f'tab:{tab}'
-        socketio.emit('content_saved', {
-            'tab': tab,
-            'item_id': item_id,
-            'content': content,
-        }, room=room)
+        payload = {'tab': tab, 'item_id': item_id, 'content': content}
+        owner = get_tab_owner(tab)
+        if owner == '':
+            socketio.emit('content_saved', payload, room='admin_sync')
+        else:
+            socketio.emit('content_saved', payload, room=f'user:{owner}')
+        socketio.emit('content_saved', payload, room=f'tab:{tab}')
     except Exception:
-        pass  # emit is best-effort outside SocketIO handler
+        pass
 
 
 def ws_emit_encrypted_tab_event(tab, event, data=None, sender_sid=None):
@@ -2346,17 +2945,26 @@ def ws_join_tab(data):
     Every client joins the :notify room to receive encrypted-tab lifecycle
     events (delete, password-change, decrypt) regardless of encryption status.
 
-    The regular tab room is for menu/content sync — encrypted tabs that
-    haven't been unlocked by THIS session are denied to prevent sync leaks.
+    The regular tab room is for menu/content sync.
+    For auth-aware sync: admin tab changes broadcast to ALL users (global_user room),
+    while user-owned tab changes only sync within the same user's sessions.
+
+    Encrypted tabs that haven't been unlocked by THIS session are denied.
     """
     tab = data.get('tab')
     if tab:
-        # Always join notification room for lifecycle events
         join_room(f'tab:{tab}:notify')
         if is_tab_encrypted(tab) and get_cached_encryption_key(tab, request.sid) is None:
             emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
             return
         join_room(f'tab:{tab}')
+        # Also join user-specific room for auth-aware sync
+        token = data.get('auth_token', '')
+        user = get_session_user(token)
+        if user:
+            join_room(f'user:{user["username"]}')
+            if user['role'] == 'admin':
+                join_room('admin_sync')
 
 
 @socketio.on('leave_tab')
@@ -2397,6 +3005,10 @@ def ws_content_change(data):
     if tab and is_tab_encrypted(tab):
         emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
         return
+    token = request.args.get('token', '')
+    user = get_session_user(token)
+    if not user or not can_write_tab(tab, user):
+        return
     item_id = data.get('item_id')
     content = data.get('content')
     if tab and item_id and content is not None:
@@ -2419,6 +3031,10 @@ def ws_lock_document(data):
         return
     if is_tab_encrypted(tab):
         emit('sync_denied', {'tab': tab, 'reason': '加密知识库不能同步'}, room=request.sid)
+        return
+    token = request.args.get('token', '')
+    user = get_session_user(token)
+    if not user or not can_write_tab(tab, user):
         return
     key = (tab, item_id)
     sid = request.sid
@@ -2532,24 +3148,70 @@ def help_page():
 
 @app.route('/api/tabs')
 def list_tabs():
-    tabs = set()
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if user:
+        visible = get_user_visible_tabs(user['username'], user['role'])
+        return jsonify(visible)
+    # No auth - return only admin-owned tabs at root level
+    all_tabs = set()
     if mybase_dir.exists():
         for entry in mybase_dir.iterdir():
-            if entry.is_dir() and not entry.name.startswith('.'):
-                tabs.add(entry.name)
-    if not tabs:
-        return jsonify([])
-    # Return tabs in order from common.db, unknown tabs appended at end
-    ordered = get_tab_order()
-    result = [t for t in ordered if t in tabs]
-    for t in sorted(tabs):
-        if t not in result:
-            result.append(t)
+            if entry.is_dir() and _is_valid_tab_dir(entry.name):
+                all_tabs.add(entry.name)
+    if user_data_dir.exists():
+        for user_entry in user_data_dir.iterdir():
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                for tab_entry in user_entry.iterdir():
+                    if tab_entry.is_dir() and _is_valid_tab_dir(tab_entry.name):
+                        all_tabs.add(tab_entry.name)
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name, owner FROM tab_owner")
+        owned_tabs = dict(cursor.fetchall())
+        admin_tabs = {t for t in all_tabs if t not in owned_tabs or owned_tabs.get(t) == ''}
+    finally:
+        conn.close()
+    result = [t for t in sorted(all_tabs) if t in admin_tabs]
     return jsonify(result)
+
+
+def _auth_check_read(tab):
+    """Check read access for a tab. Returns user dict or None.
+    Anonymous users can read admin-owned (public) tabs.
+    Others must be authenticated and authorized."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        # Allow anonymous read of admin-owned tabs
+        owner = get_tab_owner(tab)
+        if owner == '':
+            return None
+        abort(401, description='未登录')
+    if not can_read_tab(tab, user):
+        abort(403, description='无权限访问该知识库')
+    return user
+
+
+def _auth_check_write(tab):
+    """Check write access for a tab. Returns user dict or abort response."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        abort(401, description='未登录')
+    if not can_write_tab(tab, user):
+        abort(403, description='无权限修改该知识库')
+    return user
+
+
+def _auth_check_admin():
+    """Check admin access. Returns user dict or abort response."""
+    return require_admin()
 
 
 @app.route('/api/<tab>/menu')
 def get_menu(tab):
+    _auth_check_read(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     menu = load_menu(tab)
@@ -2558,6 +3220,7 @@ def get_menu(tab):
 
 @app.route('/api/<tab>/menu', methods=['POST'])
 def create_menu_item(tab):
+    _auth_check_write(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     data = request.get_json()
@@ -2601,6 +3264,7 @@ def create_menu_item(tab):
 
 @app.route('/api/<tab>/menu/<item_id>', methods=['PUT'])
 def update_menu_item_route(tab, item_id):
+    _auth_check_write(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     data = request.get_json()
@@ -2613,7 +3277,6 @@ def update_menu_item_route(tab, item_id):
         return jsonify({'error': 'Item not found'}), 404
 
     save_menu(tab, menu)
-    # Only update label and path in index — content hasn't changed, no OCR needed
     path = compute_item_path(menu, item_id, tab)
     item = find_menu_item(menu, item_id)
     if path and item:
@@ -2624,10 +3287,10 @@ def update_menu_item_route(tab, item_id):
 
 @app.route('/api/<tab>/menu/<item_id>', methods=['DELETE'])
 def delete_menu_item_route(tab, item_id):
+    _auth_check_write(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
 
-    # Check if the item or any descendant is locked by a DIFFERENT user
     request_sid = request.headers.get('X-Socket-ID')
     menu = load_menu(tab)
     all_ids = _collect_all_descendant_ids(menu, item_id)
@@ -2663,6 +3326,7 @@ def delete_menu_item_route(tab, item_id):
 
 @app.route('/api/<tab>/content/<item_id>')
 def get_content(tab, item_id):
+    _auth_check_read(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     content = load_content(tab, item_id)
@@ -2671,6 +3335,7 @@ def get_content(tab, item_id):
 
 @app.route('/api/<tab>/content/<item_id>', methods=['PUT'])
 def save_content_route(tab, item_id):
+    _auth_check_write(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     data = request.get_json()
@@ -2686,13 +3351,13 @@ def save_content_route(tab, item_id):
         if index_html is not None:
             with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
                 f.write(index_html)
-    # Broadcast to all clients in the tab that this item was saved
     ws_emit_content_saved(tab, item_id, content_html)
     return jsonify({'success': True})
 
 
 @app.route('/api/<tab>/upload', methods=['POST'])
 def upload_image(tab):
+    _auth_check_write(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     if 'image' not in request.files:
@@ -2770,7 +3435,17 @@ def search():
     if not query:
         return jsonify([])
 
-    visible_tabs = _get_visible_tab_names()
+    # Determine visible tabs based on user auth
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if user:
+        visible_tabs = set(get_user_visible_tabs(user['username'], user['role']))
+    else:
+        visible_tabs = _get_visible_tab_names()
+
+    if visible_tabs is not None:
+        vis = get_tab_visibility()
+        visible_tabs = {t for t in visible_tabs if vis.get(t, True)}
 
     try:
         if tab:
@@ -2924,28 +3599,80 @@ var CONTENT_DATA = {content_json};
 
 @app.route('/api/tab-visibility')
 def get_tab_visibility_route():
-    """Return visibility dict for all tabs, plus the currently selected tab."""
+    """Return visibility dict for all tabs, plus the currently selected tab.
+    
+    Visibility is role-dependent:
+    - Admin: uses global tab_kb_visibility (controls all tabs)
+    - Logged-in user: merges global visibility for admin tabs with per-user visibility for own tabs
+    - Anonymous: all admin tabs visible, cannot hide
+    """
     tabs = set()
     if mybase_dir.exists():
         for entry in mybase_dir.iterdir():
             if entry.is_dir() and not entry.name.startswith('.'):
                 tabs.add(entry.name)
-    vis = get_tab_visibility()
-    # Ensure all existing tabs have an entry; default visible=True
+    if user_data_dir.exists():
+        for user_entry in user_data_dir.iterdir():
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                for tab_entry in user_entry.iterdir():
+                    if tab_entry.is_dir() and not tab_entry.name.startswith('.'):
+                        tabs.add(tab_entry.name)
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+
+    global_vis = get_tab_visibility()
     result = {}
-    for t in tabs:
-        result[t] = vis.get(t, True)
-    result['_selected_tab'] = get_selected_tab()
+
+    if user and user['role'] == 'admin':
+        # Admin: global visibility controls all tabs
+        for t in tabs:
+            result[t] = global_vis.get(t, True)
+    elif user:
+        # Non-admin user: merge global (admin tabs) + per-user (own tabs)
+        user_vis = get_user_tab_visibility(user['username'])
+        for t in tabs:
+            owner = get_tab_owner(t)
+            if owner == '':
+                # Admin tab — use global visibility (admin controls it)
+                result[t] = global_vis.get(t, True)
+            elif owner == user['username']:
+                # Own tab — use per-user visibility
+                result[t] = user_vis.get(t, True)
+            else:
+                # Someone else's tab — not visible
+                result[t] = False
+    else:
+        # Anonymous: only see admin tabs, all visible (cannot hide)
+        for t in tabs:
+            owner = get_tab_owner(t)
+            if owner == '':
+                result[t] = global_vis.get(t, True)
+
+    result['_selected_tab'] = get_user_selected_tab(user['username']) if user else get_selected_tab()
     return jsonify(result)
 
 
 @app.route('/api/tab-visibility', methods=['PUT'])
 def set_tab_visibility_route():
-    """Set visibility for all tabs at once. Expects {tab_name: bool, ...}."""
+    """Set visibility for tabs. Expects {tab_name: bool, ...}.
+    
+    Behavior depends on user role:
+    - Admin: saves globally to tab_kb_visibility (controls all tabs)
+    - Non-admin user: saves per-user to user_tab_visibility (only own tabs)
+    - Anonymous: rejected (cannot hide tabs)
+    """
     data = request.get_json()
     if not isinstance(data, dict):
         return jsonify({'error': 'Expected a dict of {tab_name: visible}'}), 400
-    set_tab_visibility_batch(data)
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        return jsonify({'error': '请先登录'}), 401
+    if user['role'] == 'admin':
+        set_tab_visibility_batch(data)
+    else:
+        set_user_tab_visibility_batch(user['username'], data)
+    socketio.emit('tabs_updated', {})
     return jsonify({'success': True})
 
 
@@ -3019,28 +3746,49 @@ def set_system_config_route(name):
 
 @app.route('/api/tabs', methods=['POST'])
 def create_tab():
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        abort(401, description='未登录')
     data = request.get_json() or {}
     name = data.get('name', '').strip()
     if not name:
         name = f"NewTab_{uuid.uuid4().hex[:6]}"
-    tab_path = mybase_dir / name
-    if tab_path.exists():
-        return jsonify({'error': 'Tab already exists'}), 409
+
+    # Determine tab path based on user role
+    if user['role'] == 'admin':
+        tab_path = mybase_dir / name
+    else:
+        tab_path = user_data_dir / user['username'] / name
+        tab_path.parent.mkdir(parents=True, exist_ok=True)
+
+    tab_name_exists, tab_owner = _is_tab_name_globally_used(name)
+    if tab_name_exists:
+        if tab_owner:
+            return jsonify({'error': f'知识库名称 "{name}" 已被用户 "{tab_owner}" 使用'}), 409
+        else:
+            return jsonify({'error': f'知识库名称 "{name}" 已存在'}), 409
     tab_path.mkdir(parents=True)
     save_menu(name, [])
     add_tab_to_order(name)
     init_tab_visibility(name)
+
+    # Auto-set owner for non-admin users
+    if user['role'] != 'admin':
+        set_tab_owner(name, user['username'])
+    # Admin tabs have no owner (empty = admin/公告栏)
+
     index_html = generate_standalone_html(name)
     if index_html is not None:
         with open(tab_path / 'index.html', 'w', encoding='utf-8') as f:
             f.write(index_html)
     _run_in_background(index_tab, name)
-    # Notify all clients that a new tab was created (for cross-window sync)
     try:
-        socketio.emit('tab_added', {
-            'tab': name,
-            'sender_sid': _get_current_sid(),
-        })
+        if user['role'] == 'admin':
+            # Admin tabs are public — notify ALL connected clients
+            socketio.emit('tab_added', {'tab': name, 'sender_sid': _get_current_sid()})
+        else:
+            socketio.emit('tab_added', {'tab': name, 'sender_sid': _get_current_sid()}, room=f'user:{user["username"]}')
     except Exception:
         pass
     return jsonify({'name': name}), 201
@@ -3129,6 +3877,7 @@ def regenerate_index_html(tab_name, tab_path):
 
 @app.route('/api/tabs/<old_name>', methods=['PUT'])
 def rename_tab(old_name):
+    _auth_check_write(old_name)
     data = request.get_json() or {}
     new_name = data.get('new_name', '').strip()
 
@@ -3142,9 +3891,13 @@ def rename_tab(old_name):
     if not old_tab_path:
         return jsonify({'error': 'Tab not found'}), 404
 
+    tab_name_exists, tab_owner = _is_tab_name_globally_used(new_name)
+    if tab_name_exists:
+        if tab_owner:
+            return jsonify({'error': f'知识库名称 "{new_name}" 已被用户 "{tab_owner}" 使用'}), 409
+        else:
+            return jsonify({'error': f'知识库名称 "{new_name}" 已存在'}), 409
     new_tab_path = mybase_dir / new_name
-    if new_tab_path.exists():
-        return jsonify({'error': 'Tab with new name already exists'}), 409
 
     old_index_db_path = get_index_db_path(old_name)
     new_index_db_path = get_index_db_path(new_name)
@@ -3185,6 +3938,7 @@ def rename_tab(old_name):
 
 @app.route('/api/tabs/<tab>', methods=['DELETE'])
 def delete_tab(tab):
+    require_admin()
     tab_path = get_tab_path(tab)
     if not tab_path:
         return jsonify({'error': 'Tab not found'}), 404
@@ -3237,8 +3991,8 @@ def set_tab_password_route(tab):
         return jsonify({'error': '需要提供密码'}), 400
 
     password = data['password']
-    if len(password) < 4:
-        return jsonify({'error': '密码至少需要4个字符'}), 400
+    if len(password) < 1:
+        return jsonify({'error': '密码不能为空'}), 400
 
     # If tab already has a password, verify the old one
     was_encrypted = is_tab_encrypted(tab)
@@ -3456,7 +4210,9 @@ def _walk_real_files(start_dir, arc_prefix, seen, root_skip_dirs, root_skip_file
             yield str(root_path / f), arc
 
 
-def _iter_backup_files():
+def _iter_backup_files(backup_user=None):
+    """Iterate backup files. If backup_user is set and not admin, only include
+    tabs owned by that user."""
     seen: set = set()
     base_real = BASE_DIR.resolve()
     data_real = data_dir.resolve()
@@ -3469,11 +4225,28 @@ def _iter_backup_files():
     )
 
     if data_real.exists() and data_real != base_real:
-        visibility = get_tab_visibility()
+        # Determine which tabs to include
+        if backup_user and backup_user.get('role') != 'admin':
+            visible_tabs = set(get_user_visible_tabs(backup_user['username'], backup_user['role']))
+        else:
+            visible_tabs = None
 
         def _data_dir_filter(rel, dirname):
             if rel == 'mybase':
-                return visibility.get(dirname, True)
+                if visible_tabs is not None:
+                    return dirname in visible_tabs
+                return True
+            if rel.startswith('mybase/'):
+                # Tabs directly under data/mybase/ — always include
+                return True
+            if rel == 'user':
+                # Enter data/user/; filter at subdir level
+                return True
+            if rel.startswith('user/'):
+                if backup_user and backup_user.get('role') != 'admin':
+                    user_prefix = f"user/{backup_user['username']}"
+                    return rel == user_prefix or rel.startswith(user_prefix + '/')
+                return True
             return True
 
         yield from _walk_real_files(
@@ -3498,11 +4271,15 @@ def _cleanup_old_backups(backup_dir: Path, max_age_seconds: int = 3600):
 
 @app.route('/api/backup', methods=['POST'])
 def start_backup():
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        abort(401, description='未登录')
     task_id = str(uuid.uuid4())
     backup_dir = _get_backup_dir()
     _cleanup_old_backups(backup_dir)
 
-    total = sum(1 for _ in _iter_backup_files())
+    total = sum(1 for _ in _iter_backup_files(backup_user=user))
 
     with _backup_lock:
         _backup_tasks[task_id] = {
@@ -3519,7 +4296,7 @@ def start_backup():
             filename = f"mybase-{now.strftime('%Y%m%d-%H%M%S')}.zip"
             zip_path = backup_dir / filename
             with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
-                for file_path, arcname in _iter_backup_files():
+                for file_path, arcname in _iter_backup_files(backup_user=user):
                     try:
                         zf.write(file_path, arcname)
                     except Exception:
@@ -3557,6 +4334,10 @@ def get_backup_status(task_id):
 
 @app.route('/api/backup/download/<task_id>')
 def download_backup(task_id):
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        abort(401, description='未登录')
     with _backup_lock:
         task = _backup_tasks.get(task_id)
     if not task or not task['done']:
@@ -4019,6 +4800,10 @@ def _copy_export_images(html_content, tab_name, dest_dir):
 
 @app.route('/api/<tab>/export/pdf')
 def export_tab_pdf(tab):
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user or not can_export_tab(tab, user):
+        return jsonify({'error': '无权限导出该知识库'}), 403
     try:
         if not get_tab_path(tab):
             return jsonify({'error': 'Tab not found'}), 404
@@ -4041,9 +4826,10 @@ def export_tab_pdf(tab):
 
 @app.route('/api/<tab>/export/zip')
 def export_tab_zip(tab):
-    """Package the entire knowledge base folder as <知识库>-<date>.zip.
-    If the tab is encrypted and unlocked, decrypts files on-the-fly into the zip.
-    If encrypted but not unlocked, includes .enc files as-is."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user or not can_export_tab(tab, user):
+        return jsonify({'error': '无权限导出该知识库'}), 403
     try:
         tab_path = get_tab_path(tab)
         if not tab_path:
@@ -4093,6 +4879,10 @@ def export_tab_zip(tab):
 
 @app.route('/api/<tab>/export/pdf/<item_id>')
 def export_tree_item_pdf(tab, item_id):
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user or not can_export_tab(tab, user):
+        return jsonify({'error': '无权限导出'}), 403
     try:
         if not get_tab_path(tab):
             return jsonify({'error': 'Tab not found'}), 404
@@ -4122,7 +4912,10 @@ def export_tree_item_pdf(tab, item_id):
 
 @app.route('/api/<tab>/export/zip/<item_id>')
 def export_tree_item_zip(tab, item_id):
-    """Export a menu item and all its children to a standalone HTML + ZIP."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user or not can_export_tab(tab, user):
+        return jsonify({'error': '无权限导出'}), 403
     try:
         if not get_tab_path(tab):
             return jsonify({'error': 'Tab not found'}), 404
@@ -4168,6 +4961,306 @@ def export_tree_item_zip(tab, item_id):
         return jsonify({'error': f'ZIP generation failed: {e}'}), 500
 
 
+# ─── User Authentication API Routes ─────────────────────────────────────────
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """Login: verify username/password, return session token."""
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    if not username or not password:
+        return jsonify({'error': '用户名和密码不能为空'}), 400
+    result = verify_login(username, password)
+    if not result:
+        return jsonify({'error': '用户名或密码错误'}), 401
+    return jsonify(result)
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    """Logout: invalidate session token."""
+    token = request.headers.get('X-Auth-Token', '')
+    logout_session(token)
+    return jsonify({'success': True})
+
+
+@app.route('/api/auth/me')
+def api_auth_me():
+    """Return current user info from session token."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        return jsonify({'user': None})
+    return jsonify({'user': user})
+
+
+@app.route('/api/auth/change-password', methods=['PUT'])
+def api_change_password():
+    """Change own password (no old password needed)."""
+    user = require_auth()
+    data = request.get_json() or {}
+    new_password = data.get('new_password', '')
+    if len(new_password) < 1:
+        return jsonify({'error': '密码不能为空'}), 400
+    err = update_user_password(user['username'], new_password)
+    if err:
+        return jsonify({'error': err}), 500
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/users')
+def api_admin_list_users():
+    """Return list of all non-admin users."""
+    require_admin()
+    return jsonify(get_all_users())
+
+
+@app.route('/api/admin/users', methods=['POST'])
+def api_admin_create_user():
+    """Create a new normal user."""
+    require_admin()
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    if not username:
+        return jsonify({'error': '用户名不能为空'}), 400
+    if not password or len(password) < 1:
+        return jsonify({'error': '密码不能为空'}), 400
+    err = create_user(username, password)
+    if err:
+        return jsonify({'error': err}), 409
+    return jsonify({'success': True}), 201
+
+
+@app.route('/api/admin/users/<username>', methods=['DELETE'])
+def api_admin_delete_user(username):
+    """Delete a normal user and move their KBs to admin."""
+    require_admin()
+    if username.lower() == 'admin':
+        return jsonify({'error': '不能删除admin用户'}), 400
+    err = delete_user(username)
+    if err:
+        return jsonify({'error': err}), 400
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/users/<username>/reset-password', methods=['PUT'])
+def api_admin_reset_user_password(username):
+    """Admin force-resets a user's password (resets their sessions)."""
+    require_admin()
+    data = request.get_json() or {}
+    new_password = data.get('new_password', '')
+    if not new_password or len(new_password) < 1:
+        return jsonify({'error': '密码不能为空'}), 400
+    err = force_reset_user_password(username, new_password)
+    if err:
+        return jsonify({'error': err}), 400
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/change-password', methods=['PUT'])
+def api_admin_change_password():
+    """Admin changes own password."""
+    user = require_admin()
+    data = request.get_json() or {}
+    new_password = data.get('new_password', '')
+    if len(new_password) < 1:
+        return jsonify({'error': '密码不能为空'}), 400
+    err = update_user_password(user['username'], new_password)
+    if err:
+        return jsonify({'error': err}), 500
+    return jsonify({'success': True})
+
+
+# ─── Tab Ownership API Routes ──────────────────────────────────────────────
+
+
+@app.route('/api/tab-owner/<tab>')
+def api_get_tab_owner(tab):
+    """Get owner of a tab."""
+    require_auth()
+    owner = get_tab_owner(tab)
+    return jsonify({'owner': owner})
+
+
+@app.route('/api/tab-owner/<tab>', methods=['PUT'])
+def api_set_tab_owner(tab):
+    """Set owner of a tab (admin only). Also moves tab directory."""
+    require_admin()
+    data = request.get_json() or {}
+    owner = data.get('owner', '')
+    if owner == '':
+        # Moving to admin (root)
+        owner = ''
+    else:
+        # Verify user exists and is not admin
+        user = get_user(owner)
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+        if user['role'] == 'admin':
+            return jsonify({'error': '不能设置为admin'}), 400
+
+    old_path = get_tab_path_with_owner(tab)
+    if not old_path or not old_path.exists():
+        return jsonify({'error': 'Tab不存在'}), 404
+
+    # Move directory to new owner's location
+    if owner == '':
+        new_path = mybase_dir / tab
+    else:
+        new_path = user_data_dir / owner / tab
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if old_path != new_path:
+        if new_path.exists():
+            shutil.rmtree(str(new_path))
+        old_path.rename(new_path)
+
+    set_tab_owner(tab, owner)
+
+    # Notify ALL connected clients to refresh tab lists — ownership change
+    # affects visibility for every user (the tab may appear/disappear).
+    socketio.emit('tabs_updated', {})
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/tabs-with-owner')
+def api_list_tabs_with_owner():
+    """List all tabs with their owner information, filtered by user visibility."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+
+    all_tabs_set = set()
+    if mybase_dir.exists():
+        for entry in mybase_dir.iterdir():
+            if entry.is_dir() and _is_valid_tab_dir(entry.name):
+                all_tabs_set.add(entry.name)
+    if user_data_dir.exists():
+        for user_entry in user_data_dir.iterdir():
+            if user_entry.is_dir() and not user_entry.name.startswith('.'):
+                for tab_entry in user_entry.iterdir():
+                    if tab_entry.is_dir() and _is_valid_tab_dir(tab_entry.name):
+                        all_tabs_set.add(tab_entry.name)
+
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name, owner FROM tab_owner")
+        owner_map = dict(cursor.fetchall())
+
+        result = []
+        for tab in sorted(all_tabs_set):
+            owner = owner_map.get(tab, '')
+            if user:
+                # Filter by visibility
+                if user['role'] == 'admin':
+                    result.append({'name': tab, 'owner': owner})
+                else:
+                    if owner == '' or owner == user['username']:
+                        result.append({'name': tab, 'owner': owner})
+            else:
+                # No auth - only show admin tabs
+                if owner == '':
+                    result.append({'name': tab, 'owner': owner})
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+# ─── User-Specific Tab Ordering ────────────────────────────────────────────
+
+
+@app.route('/api/user-tab-order')
+def api_get_user_tab_order():
+    """Get tab order for current user."""
+    user = require_auth()
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT tab_name, sort_order, visible FROM user_tab_visibility WHERE username = ? ORDER BY sort_order",
+            (user['username'],)
+        )
+        items = [{'tab_name': r[0], 'sort_order': r[1], 'visible': bool(r[2])} for r in cursor.fetchall()]
+        return jsonify(items)
+    finally:
+        conn.close()
+
+
+@app.route('/api/user-tab-order', methods=['PUT'])
+def api_set_user_tab_order():
+    """Save tab order and visibility for current user."""
+    user = require_auth()
+    data = request.get_json()
+    if not isinstance(data, list):
+        return jsonify({'error': 'Expected a list'}), 400
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute("DELETE FROM user_tab_visibility WHERE username = ?", (user['username'],))
+        for i, item in enumerate(data):
+            tab_name = item.get('tab_name', '')
+            visible = 1 if item.get('visible', True) else 0
+            is_active = 1 if item.get('is_active', False) else 0
+            conn.execute(
+                "INSERT INTO user_tab_visibility (username, tab_name, visible, sort_order, is_active) VALUES (?, ?, ?, ?, ?)",
+                (user['username'], tab_name, visible, i, is_active)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/user-tab-current-items')
+def api_get_user_tab_current_items():
+    """Return dict of {tab_name: current_item_id} for the current user."""
+    token = request.headers.get('X-Auth-Token', '')
+    user = get_session_user(token)
+    if not user:
+        return jsonify({})
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT tab_name, current_item_id FROM user_tab_current_item WHERE username = ?",
+            (user['username'],)
+        )
+        return jsonify({row[0]: row[1] for row in cursor.fetchall()})
+    finally:
+        conn.close()
+
+
+@app.route('/api/user-tab-current-item', methods=['PUT'])
+def api_set_user_tab_current_item():
+    """Set current item for a tab for the current user."""
+    user = require_auth()
+    data = request.get_json() or {}
+    tab_name = data.get('tab_name', '')
+    item_id = data.get('current_item_id', '')
+    if not tab_name:
+        return jsonify({'error': 'tab_name required'}), 400
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO user_tab_current_item (username, tab_name, current_item_id, scroll_top) VALUES (?, ?, ?, 0)",
+            (user['username'], tab_name, item_id)
+        )
+        # Also record this as the user's current selected tab
+        conn.execute("UPDATE user_tab_visibility SET is_active = 0 WHERE username = ?", (user['username'],))
+        cursor = conn.execute(
+            "UPDATE user_tab_visibility SET is_active = 1 WHERE username = ? AND tab_name = ?",
+            (user['username'], tab_name)
+        )
+        if cursor.rowcount == 0:
+            conn.execute(
+                "INSERT INTO user_tab_visibility (username, tab_name, visible, sort_order, is_active) VALUES (?, ?, 1, 0, 1)",
+                (user['username'], tab_name)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({'success': True})
+
+
 def main():
     """Entry point: parse args, init, start server.
 
@@ -4198,9 +5291,9 @@ def main():
         if not ocr_disabled:
             ocr_process_pool = OCRProcessPool(workers_ocr)
 
+        init_common_db()
         print("  Checking indexes...")
         ensure_indexes()
-        init_common_db()
         print("  Done.")
         print("=" * 60)
         socketio.run(app, host='0.0.0.0', port=server_port, debug=False, allow_unsafe_werkzeug=True)

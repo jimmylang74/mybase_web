@@ -13,6 +13,8 @@
       <span id="tab-scroll-left" class="tab-scroll-btn">&#x2039;</span>
       <div id="tabs"></div>
       <span id="tab-scroll-right" class="tab-scroll-btn">&#x203A;</span>
+      <span id="user-indicator" style="display:none;font-size:13px;cursor:default;padding:0 8px;"></span>
+      <div id="btn-login" title="Login">🔑</div>
       <div id="tab-settings" title="Settings">⚙</div>
       <div id="tab-help" title="Help">?</div>
     </div>
@@ -180,13 +182,32 @@
     </div>
   </div>
   <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item" id="tab-ctx-set-owner" data-action="set-owner" data-i18n="set_owner" style="display:none">设置Owner</div>
+  <div class="tab-ctx-sep" id="tab-ctx-owner-sep" style="display:none"></div>
   <div class="tab-ctx-item" data-action="set-password" data-i18n="set_password">加密</div>
   <div class="tab-ctx-item" data-action="change-password" data-i18n="change_password" style="display:none">修改密码</div>
   <div class="tab-ctx-item" data-action="remove-password" data-i18n="remove_password" style="display:none">解密</div>
   <div class="tab-ctx-sep" id="tab-ctx-pw-sep" style="display:none"></div>
-  <div class="tab-ctx-item" data-action="close-tab" data-i18n="close">关闭</div>
+  <div class="tab-ctx-item" data-action="close-tab" data-i18n="close">隐藏</div>
   <div class="tab-ctx-sep"></div>
   <div class="tab-ctx-item" data-action="delete-tab" data-i18n="delete">删除</div>
+</div>
+
+<!-- Owner Select Dialog -->
+<div id="owner-dialog" style="display:none">
+  <div id="owner-dialog-content">
+    <div id="owner-dialog-header" data-i18n="set_owner">设置Owner</div>
+    <div id="owner-dialog-body">
+      <div class="owner-row">
+        <label data-i18n="owner">Owner:</label>
+        <select id="owner-select" class="owner-select"></select>
+      </div>
+    </div>
+    <div id="owner-dialog-footer">
+      <button id="owner-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="owner-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
 </div>
 
 <!-- Dialog Overlay -->
@@ -345,6 +366,50 @@
   </div>
 </div>
 
+<!-- Login Dialog -->
+<div id="login-dialog" style="display:none">
+  <div id="login-dialog-content">
+    <div id="login-dialog-header" data-i18n="login">用户登录</div>
+    <div id="login-dialog-body">
+      <div class="login-row">
+        <label data-i18n="username">用户名:</label>
+        <input type="text" id="login-username" class="login-input">
+      </div>
+      <div class="login-row">
+        <label data-i18n="password">密码:</label>
+        <input type="password" id="login-password" class="login-input">
+      </div>
+      <div id="login-error" class="login-error" style="display:none"></div>
+    </div>
+    <div id="login-dialog-footer">
+      <button id="login-btn-ok" class="style-btn style-btn-primary" data-i18n="login">登录</button>
+      <button id="login-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Dialog -->
+<div id="change-password-dialog" style="display:none">
+  <div id="change-password-dialog-content">
+    <div id="change-password-dialog-header" data-i18n="change_password">修改密码</div>
+    <div id="change-password-dialog-body">
+      <div class="password-row">
+        <label data-i18n="new_password">新密码:</label>
+        <input type="password" id="change-pw-input" class="password-input">
+      </div>
+      <div class="password-row">
+        <label data-i18n="confirm_password">确认密码:</label>
+        <input type="password" id="change-pw-confirm" class="password-input">
+      </div>
+      <div id="change-pw-error" class="password-error" style="display:none"></div>
+    </div>
+    <div id="change-password-dialog-footer">
+      <button id="change-pw-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="change-pw-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings Dialog -->
 <div id="settings-dialog" style="display:none">
   <div id="settings-dialog-content">
@@ -360,6 +425,30 @@
           <option value="zh-CN">中文</option>
           <option value="en">English</option>
         </select>
+      </div>
+      <div class="settings-sep"></div>
+      <div id="settings-user-section" style="display:none">
+        <div class="settings-row">
+          <label><span data-i18n="current_user">当前用户:</span></label>
+          <span id="settings-current-user"></span>
+        </div>
+        <div class="settings-row">
+          <button id="settings-btn-change-pw" class="style-btn" data-i18n="change_password">修改密码</button>
+          <button id="settings-btn-logout" class="style-btn" data-i18n="logout">退出登录</button>
+        </div>
+      </div>
+      <div id="settings-admin-section" style="display:none">
+        <div class="settings-sep"></div>
+        <div class="settings-section-title" data-i18n="admin_settings">管理员设置</div>
+        <div class="settings-sep"></div>
+        <div class="settings-section-title" data-i18n="user_management">用户管理</div>
+        <div id="settings-user-list"></div>
+        <div class="settings-row" id="settings-add-user-row">
+          <input type="text" id="settings-new-username" class="settings-input" placeholder="用户名" data-i18n-placeholder="username">
+          <input type="password" id="settings-new-password" class="settings-input" placeholder="密码" data-i18n-placeholder="password">
+          <button id="settings-btn-add-user" class="style-btn style-btn-primary" data-i18n="add_user">增加用户</button>
+        </div>
+        <div id="settings-user-msg" class="settings-msg" style="display:none"></div>
       </div>
     </div>
     <div id="settings-dialog-footer">

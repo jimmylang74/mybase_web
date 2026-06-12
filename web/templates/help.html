@@ -166,6 +166,7 @@
     <a href="#export">8. Export</a>
     <a href="#encrypt">9. Knowledge Base Encryption</a>
     <a href="#sync">10. Real-time Sync (WebSocket)</a>
+    <a href="#users">11. Multi-User Management</a>
   </div>
 
   <!-- ============================================================ -->
@@ -575,7 +576,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <h3>9.1 Setting a Password</h3>
   <ul>
     <li><strong>Right-click</strong> a tab → <strong>"Set Password"</strong></li>
-    <li>Enter a password (at least 4 characters) and confirm</li>
+    <li>Enter a password and confirm</li>
     <li>Once set, all existing content is automatically encrypted, and new content is stored in encrypted form</li>
   </ul>
 
@@ -622,6 +623,51 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <li><strong>Connection Status</strong> — The system automatically handles connect, disconnect, and room management (join/leave) for tabs and documents</li>
   </ul>
 
+  <!-- ============================================================ -->
+  <h2 id="users">11. Multi-User Management</h2>
+
+  <p>KBase supports multi-user management, allowing an administrator to manage users and control permissions for different knowledge bases.</p>
+
+  <h3>11.1 Login & Default Password</h3>
+  <ul>
+    <li>Open the Settings dialog from the toolbar to log in</li>
+    <li><strong>Default admin password</strong>: <code>1234</code></li>
+    <li>Once logged in as admin, you can manage users from the Settings panel</li>
+  </ul>
+
+  <h3>11.2 User Roles</h3>
+  <table>
+    <tr><th>Role</th><th>Description</th></tr>
+    <tr>
+      <td>Admin</td>
+      <td>Can create/delete users, create public KBs visible to all users, assign KB owners, and publish bulletin-style content synced in real-time to all logged-in users</td>
+    </tr>
+    <tr>
+      <td>Regular User</td>
+      <td>Owns their own KBs, can only see their own KBs plus admin's public KBs. Cannot export or modify admin's KBs</td>
+    </tr>
+  </table>
+
+  <h3>11.3 Creating & Deleting Users</h3>
+  <ul>
+    <li>Admin can create new users from the Settings panel</li>
+    <li><strong>Deleting a user</strong> reassigns all their KBs to admin. The deleted user is immediately logged out in all open windows</li>
+  </ul>
+
+  <h3>11.4 KB Ownership & Permissions</h3>
+  <ul>
+    <li><strong>Public KBs</strong> (created by admin) — visible to all users, editable only by admin</li>
+    <li><strong>Private KBs</strong> (created by a user) — owned by that user, visible only to the owner and admin</li>
+    <li>Admin can assign KB ownership to a different user</li>
+    <li><strong>Export permission</strong> — Regular users can only export KBs they own. Export menu items for admin-owned KBs are grayed out</li>
+  </ul>
+
+  <h3>11.5 Real-time Sync (Admin Broadcast)</h3>
+  <ul>
+    <li>When admin edits content in a public KB, changes are synced in real-time to all logged-in users viewing that KB via WebSocket</li>
+    <li>This enables a bulletin-board-style workflow where admin pushes updates to users</li>
+  </ul>
+
 {% else %}
   <h1>知识库 KBase {{ version }} 使用帮助</h1>
   <p style="color:#888;margin-bottom:24px">中文知识库管理系统 &mdash; 帮助文档 (by Jimmy Lang, jimmylang1974@126.com)</p>
@@ -638,6 +684,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <a href="#export">八、导出功能</a>
     <a href="#encrypt">九、知识库加密</a>
     <a href="#sync">十、WebSocket 实时同步</a>
+    <a href="#users">十一、多用户管理</a>
   </div>
 
   <!-- ============================================================ -->
@@ -1158,7 +1205,7 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   <h3>9.1 设置密码</h3>
   <ul>
     <li>在 Tab 标签上 <strong>右键</strong> → <strong>"设定密码"</strong></li>
-    <li>输入密码（至少 4 个字符）并确认</li>
+    <li>输入密码并确认</li>
     <li>设置成功后，所有已有内容自动加密，新内容也以加密形式存储</li>
   </ul>
 
@@ -1203,6 +1250,51 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   <ul>
     <li><strong>加密知识库</strong> — 出于安全考虑，已加密的知识库不支持 WebSocket 实时同步</li>
     <li><strong>连接管理</strong> — 系统自动处理 WebSocket 的连接、断开以及 Tab/文档的加入与退出管理</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="users">十一、多用户管理</h2>
+
+  <p>KBase 支持多用户管理，管理员可以管理用户账号并控制不同知识库的访问权限。</p>
+
+  <h3>11.1 登录与默认密码</h3>
+  <ul>
+    <li>点击工具栏中的设置按钮打开设置对话框，在设置中登录</li>
+    <li><strong>默认管理员密码</strong>：<code>1234</code></li>
+    <li>以管理员身份登录后，即可在设置面板中管理用户</li>
+  </ul>
+
+  <h3>11.2 用户角色</h3>
+  <table>
+    <tr><th>角色</th><th>说明</th></tr>
+    <tr>
+      <td>Admin（管理员）</td>
+      <td>可以创建/删除用户、创建对所有用户可见的公共知识库、指定知识库所有者、将编辑内容实时同步到所有在线用户</td>
+    </tr>
+    <tr>
+      <td>普通用户</td>
+      <td>拥有自己创建的知识库，仅可见自己创建的知识库和管理员发布的公共知识库。无法导出或修改管理员的知识库</td>
+    </tr>
+  </table>
+
+  <h3>11.3 创建与删除用户</h3>
+  <ul>
+    <li>管理员可以在设置面板中创建新用户</li>
+    <li><strong>删除用户</strong>后，该用户的所有知识库归管理员所有，该用户在所有打开窗口中立即被强制登出</li>
+  </ul>
+
+  <h3>11.4 知识库归属与权限</h3>
+  <ul>
+    <li><strong>公共知识库</strong>（管理员创建）— 所有用户可见，仅管理员可编辑</li>
+    <li><strong>私有知识库</strong>（普通用户创建）— 归属该用户，仅所有者和管理员可见</li>
+    <li>管理员可以将知识库所有者变更为其他用户</li>
+    <li><strong>导出权限</strong> — 普通用户只能导出自己拥有的知识库，管理员拥有的知识库导出菜单项为灰色不可用状态</li>
+  </ul>
+
+  <h3>11.5 实时同步（管理员广播）</h3>
+  <ul>
+    <li>管理员在公共知识库中编辑内容时，修改会通过 WebSocket 实时同步给所有正在查看该知识库的登录用户</li>
+    <li>这实现了公告板式的工作流，管理员可以即时推送更新给用户</li>
   </ul>
 
   <hr style="margin:40px 0;border:none;border-top:1px solid #ddd;">

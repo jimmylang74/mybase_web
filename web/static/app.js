@@ -12,12 +12,21 @@
   let lastEditedItem = {}; // { tabName: itemId }
   let kbVisibility = {}; // { tabName: true/false }
   let kbTabNames = []; // full list of all tab names
+  let kbTabOwners = {}; // { tabName: owner }
   let unlockedTabs = new Set(); // tab names unlocked in this session
+  let canWriteCurrentTab = false;
   let currentSearchQuery = ''; // current search query for highlighting
   let encryptedTabsCache = null; // null = not loaded, array = list of encrypted tab names
 
+  // Auth state
+  let currentUser = null; // { username, role } or null
+  let authToken = sessionStorage.getItem('kbase_auth_token') || null;
+
   // Socket.IO for real-time collaboration
-  const socket = io();
+  function getSocketOpts() {
+    return { query: authToken ? { token: authToken } : {} };
+  }
+  const socket = io(getSocketOpts());
   let mySocketId = null;
   socket.on('connect', () => { mySocketId = socket.id; });
   let syncTimer = null;
@@ -65,7 +74,7 @@
       custom_style: '定制样式',
       export: '导出',
       delete: '删除',
-      close: '关闭',
+      close: '隐藏',
       global_search: '全局搜索',
       regex: '正则',
       search_placeholder: '输入搜索关键词...',
@@ -130,12 +139,30 @@
       confirm_password_label: '确认密码:',
       old_password_label: '原密码:',
       password_mismatch: '两次密码输入不一致',
-      password_too_short: '密码至少需要4个字符',
+      password_too_short: '密码不能为空',
       wrong_password: '密码错误',
       unlock_kb: '解锁知识库',
       unlock_prompt: '请输入密码解锁该知识库',
       remove_password_confirm: '确定要解密该知识库吗？',
       encrypted: '已加密',
+      login: '用户登录',
+      logout: '退出登录',
+      username: '用户名:',
+      password: '密码:',
+      new_password: '新密码:',
+      confirm_password: '确认密码:',
+      login_success: '登录成功',
+      logout_success: '已退出登录',
+      current_user: '当前用户:',
+      admin_settings: '管理员设置',
+      user_management: '用户管理',
+      add_user: '增加用户',
+      admin_password: '管理员密码:',
+      reset_password_for: '重置密码 -',
+      password_reset_ok: '密码重置成功',
+      set_owner: '设置Owner',
+      owner: 'Owner:',
+      download_failed: '下载失败',
       insert_column: '插入列',
       insert_row: '插入行',
       delete_column: '删除列',
@@ -168,7 +195,7 @@
       custom_style: 'Custom Style',
       export: 'Export',
       delete: 'Delete',
-      close: 'Close',
+      close: 'Hide',
       global_search: 'Global Search',
       regex: 'Regex',
       search_placeholder: 'Enter search keywords...',
@@ -233,12 +260,30 @@
       confirm_password_label: 'Confirm Password:',
       old_password_label: 'Current Password:',
       password_mismatch: 'Passwords do not match',
-      password_too_short: 'Password must be at least 4 characters',
+      password_too_short: 'Password cannot be empty',
       wrong_password: 'Incorrect password',
       unlock_kb: 'Unlock Knowledge Base',
       unlock_prompt: 'Enter password to unlock this knowledge base',
       remove_password_confirm: 'Are you sure you want to remove password protection?',
       encrypted: 'Encrypted',
+      login: 'Login',
+      logout: 'Logout',
+      username: 'Username:',
+      password: 'Password:',
+      new_password: 'New Password:',
+      confirm_password: 'Confirm Password:',
+      login_success: 'Login successful',
+      logout_success: 'Logged out',
+      current_user: 'Current User:',
+      admin_settings: 'Admin Settings',
+      user_management: 'User Management',
+      add_user: 'Add User',
+      admin_password: 'Admin Password:',
+      reset_password_for: 'Reset password for',
+      password_reset_ok: 'Password reset successful',
+      set_owner: 'Set Owner',
+      owner: 'Owner:',
+      download_failed: 'Download failed',
       insert_column: 'Insert Column',
       insert_row: 'Insert Row',
       delete_column: 'Delete Column',
@@ -296,12 +341,22 @@
     if (mySocketId) {
       opts.headers['X-Socket-ID'] = mySocketId;
     }
+    if (authToken) {
+      opts.headers['X-Auth-Token'] = authToken;
+    }
     if (body !== undefined) {
       opts.body = JSON.stringify(body);
     }
     const res = await fetch(url, opts);
     const data = await res.json();
     if (!res.ok) {
+      if (res.status === 401) {
+        authToken = null;
+        currentUser = null;
+        sessionStorage.removeItem('kbase_auth_token');
+        updateUserIndicator();
+        // Don't auto-redirect - let the user re-login when they need to
+      }
       const err = new Error(data.error || 'API Error');
       err.status = res.status;
       throw err;
@@ -312,10 +367,92 @@
   async function apiUpload(url, file) {
     const formData = new FormData();
     formData.append('image', file);
-    const res = await fetch(url, { method: 'POST', body: formData });
+    const headers = {};
+    if (authToken) {
+      headers['X-Auth-Token'] = authToken;
+    }
+    const opts = { method: 'POST', body: formData, headers };
+    const res = await fetch(url, opts);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Upload Error');
     return data;
+  }
+
+  // ─── Auth ────────────────────────────────────────────────────────────────
+
+  function updateUserIndicator() {
+    const btn = $('#btn-login');
+    const indicator = $('#user-indicator');
+    if (currentUser) {
+      indicator.textContent = currentUser.username;
+      indicator.style.display = '';
+      btn.textContent = t('logout');
+      btn.title = t('logout');
+      btn.classList.add('logged-in');
+    } else {
+      indicator.style.display = 'none';
+      btn.textContent = '🔑';
+      btn.title = t('login');
+      btn.classList.remove('logged-in');
+    }
+  }
+
+
+
+  async function checkAuth() {
+    if (!authToken) return;
+    try {
+      const data = await api('GET', '/api/auth/me');
+      currentUser = data.user;
+      sessionStorage.setItem('kbase_auth_token', authToken);
+    } catch (e) {
+      authToken = null;
+      currentUser = null;
+      sessionStorage.removeItem('kbase_auth_token');
+    }
+    updateUserIndicator();
+  }
+
+  async function doLogin(username, password) {
+    const data = await api('POST', '/api/auth/login', { username, password });
+    authToken = data.token;
+    currentUser = data.user;
+    sessionStorage.setItem('kbase_auth_token', authToken);
+    updateUserIndicator();
+    // Reconnect socket with auth token
+    if (socket.connected) socket.disconnect();
+    socket.io.opts.query = { token: authToken };
+    socket.connect();
+    return data;
+  }
+
+  function doLogout() {
+    if (authToken) {
+      api('POST', '/api/auth/logout').catch(() => {});
+      authToken = null;
+      currentUser = null;
+      sessionStorage.removeItem('kbase_auth_token');
+    }
+    $('#user-indicator').style.display = 'none';
+    $('#btn-login').textContent = '🔑';
+    $('#btn-login').title = t('login');
+    $('#btn-login').classList.remove('logged-in');
+    // Reconnect socket without auth
+    if (socket.connected) socket.disconnect();
+    socket.io.opts.query = {};
+    socket.connect();
+  }
+
+  function showLoginDialog() {
+    $('#login-username').value = '';
+    $('#login-password').value = '';
+    $('#login-error').style.display = 'none';
+    $('#login-dialog').style.display = 'flex';
+    $('#login-username').focus();
+  }
+
+  function hideLoginDialog() {
+    $('#login-dialog').style.display = 'none';
   }
 
   // ─── Socket.IO Real-time Sync ──────────────────────────────────────────
@@ -367,7 +504,7 @@
   function debouncedSync() {
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
-      if (currentTab && currentItemId) {
+      if (currentTab && currentItemId && canWriteCurrentTab) {
         clearSearchHighlights();
         const cleanHtml = convertFontSizesToInline(editor.innerHTML);
         applySearchHighlights();
@@ -521,6 +658,18 @@
     loadTabs();
   });
 
+  // Admin deleted our user → force logout
+  socket.on('force_logout', (data) => {
+    doLogout();
+    showDialog(t('logout_success') || '已退出登录', `<p>${escapeHtml(data.reason || 'Your session has expired')}</p>`);
+    loadTabs();
+  });
+
+  // Tab ownership changed (e.g. user deleted by admin) → refresh tabs
+  socket.on('tabs_updated', () => {
+    loadTabs();
+  });
+
   // Another window renamed a tab → rebuild the tab bar with fresh click handlers
   socket.on('tab_renamed', async (data) => {
     if (data.sender_sid === mySocketId) return;  // skip self
@@ -606,7 +755,16 @@
     names.splice(insertBefore, 0, draggedName);
 
     try {
-      await api('PUT', '/api/tab-order', names);
+      if (currentUser && currentUser.role !== 'admin') {
+        const data = names.map((name, i) => ({
+          tab_name: name,
+          visible: 1,
+          is_active: name === currentTab ? 1 : 0
+        }));
+        await api('PUT', '/api/user-tab-order', data);
+      } else {
+        await api('PUT', '/api/tab-order', names);
+      }
       await loadTabs();
       // After tabs are rebuilt, switch to the dragged tab
       const newTabEl = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(draggedName)}"]`);
@@ -619,6 +777,7 @@
   }
 
   function makeTabDraggable(el) {
+    if (!currentUser) return;
     el.draggable = true;
 
     el.addEventListener('dragstart', (e) => {
@@ -694,6 +853,14 @@
     await loadEncryptedTabs();
     const tabs = await api('GET', '/api/tabs');
     kbTabNames = tabs.slice();
+    // Load owner map for badge rendering
+    try {
+      const ownerData = await api('GET', '/api/tabs-with-owner');
+      kbTabOwners = {};
+      ownerData.forEach((t) => { kbTabOwners[t.name] = t.owner || ''; });
+    } catch (e) {
+      kbTabOwners = {};
+    }
     // Load visibility state
     let selectedTabFromServer = null;
     try {
@@ -710,10 +877,11 @@
       kbVisibility = {};
     }
     // Load saved current items (reading position) from server.
-    // Only populate tabs not yet tracked in this session, so in-memory
-    // selections (from selectItem) take priority over stale server data.
+    // Use per-user API when logged in to avoid cross-user interference,
+    // fall back to the legacy global table for anonymous sessions.
     try {
-      const savedItems = await api('GET', '/api/tab-current-items');
+      const currentItemsUrl = authToken ? '/api/user-tab-current-items' : '/api/tab-current-items';
+      const savedItems = await api('GET', currentItemsUrl);
       for (const [tab, itemId] of Object.entries(savedItems)) {
         if (lastEditedItem[tab] === undefined) {
           lastEditedItem[tab] = itemId;
@@ -745,6 +913,13 @@
       el.className = 'tab';
       el.dataset.tab = name;
       el.dataset.origName = name;
+      const owner = kbTabOwners[name];
+      if (owner !== undefined) {
+        const badge = document.createElement('span');
+        badge.className = 'tab-owner-badge' + (owner && owner !== '' ? ' badge-u' : ' badge-a');
+        badge.textContent = owner && owner !== '' ? 'U' : 'A';
+        el.appendChild(badge);
+      }
       const labelSpan = document.createElement('span');
       labelSpan.className = 'tab-label';
       labelSpan.textContent = name;
@@ -778,6 +953,13 @@
     updateKbCheckbox();
     rebuildKbDropdown();
     updateTabEncryptionIndicators();
+  }
+
+  function canEditTab(tabName) {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    const owner = kbTabOwners[tabName];
+    return owner === currentUser.username;
   }
 
   async function switchTab(name, el) {
@@ -827,6 +1009,16 @@
       }
     }
 
+    canWriteCurrentTab = canEditTab(name);
+    if (!canWriteCurrentTab) {
+      editor.contentEditable = 'false';
+      editor.style.opacity = '0.7';
+      editorStatus.textContent = `[Read Only] - ${name}`;
+    } else {
+      editor.contentEditable = 'true';
+      editor.style.opacity = '1';
+    }
+
     // Join the tab-level room for menu/save notifications
     joinTabRoom(name);
 
@@ -847,6 +1039,10 @@
     } else {
       editor.innerHTML = `<p>${t('select_item_hint')}</p>`;
       editorStatus.textContent = t('no_item_selected');
+      // Persist the selected tab even when there is no item to select
+      if (authToken && currentTab) {
+        api('PUT', '/api/user-tab-current-item', { tab_name: currentTab, current_item_id: '' }).catch(() => {});
+      }
     }
   }
 
@@ -1031,7 +1227,9 @@
     }
     currentItemId = id;
     if (currentTab && id) {
-      tryLockDocument(currentTab, id);
+      if (canWriteCurrentTab) {
+        tryLockDocument(currentTab, id);
+      }
       joinDocumentRoom(currentTab, id);
     }
 
@@ -1039,8 +1237,10 @@
     contentModified = false;
 
     // Persist reading position to server (fire-and-forget)
+    // Use per-user endpoint when logged in to isolate positions per user.
     if (currentTab) {
-      api('PUT', '/api/tab-current-item', { tab_name: currentTab, current_item_id: id }).catch(() => {});
+      const url = authToken ? '/api/user-tab-current-item' : '/api/tab-current-item';
+      api('PUT', url, { tab_name: currentTab, current_item_id: id }).catch(() => {});
     }
 
     $$('.tree-node-header').forEach((h) => h.classList.remove('active'));
@@ -1062,7 +1262,7 @@
       constrainEditorImages();
     } else {
       editor.innerHTML = '<p></p>';
-      if (!inlineEditInput) {
+      if (!inlineEditInput && canWriteCurrentTab) {
         editor.focus();
         document.execCommand('fontSize', false, $('#font-size').value);
       }
@@ -1073,7 +1273,9 @@
     applySearchHighlights();
     isRemoteUpdate = false;
     const item = findNodeById(menuTree, itemId);
-      editorStatus.textContent = `Editing: ${item ? item.label : 'Unknown'}`;
+      editorStatus.textContent = canWriteCurrentTab
+        ? `Editing: ${item ? item.label : 'Unknown'}`
+        : `[Read Only] - ${item ? item.label : 'Unknown'}`;
     } catch (e) {
       editor.innerHTML = '<p>Error loading content</p>';
       editorStatus.textContent = 'Error loading content';
@@ -1105,6 +1307,7 @@
 
   async function saveContent(itemId) {
     if (!currentTab || !itemId) return;
+    if (!canWriteCurrentTab) return;
     clearSearchHighlights();
     const html = convertFontSizesToInline(editor.innerHTML);
     try {
@@ -1274,17 +1477,35 @@
       const subCb = document.createElement('input');
       subCb.type = 'checkbox';
       subCb.checked = kbVisibility[name] !== false;
+      const owner = kbTabOwners[name];
+      if (owner !== undefined) {
+        const badge = document.createElement('span');
+        badge.className = 'kb-owner-badge' + (owner && owner !== '' ? ' badge-u' : ' badge-a');
+        badge.textContent = owner && owner !== '' ? owner : 'A';
+        item.appendChild(badge);
+      }
       const label = document.createElement('span');
       label.className = 'kb-item-label';
       label.textContent = name;
       item.appendChild(subCb);
       item.appendChild(label);
+      // Permission: admin can toggle any tab; user can toggle own tabs; anonymous cannot toggle
+      const canToggle = currentUser && (
+        currentUser.role === 'admin' || owner === currentUser.username
+      );
+      if (!canToggle) {
+        subCb.disabled = true;
+        item.style.opacity = '0.6';
+        item.style.cursor = 'default';
+      }
       item.addEventListener('click', (e) => {
-        if (e.target === subCb) return; // let the native checkbox click handle it
+        if (!canToggle) return;
+        if (e.target === subCb) return;
         subCb.checked = !subCb.checked;
         onKbItemToggle(name, subCb.checked);
       });
       subCb.addEventListener('change', () => {
+        if (!canToggle) return;
         onKbItemToggle(name, subCb.checked);
       });
       dd.appendChild(item);
@@ -1315,7 +1536,14 @@
     const allVisible = kbTabNames.length > 0 && kbTabNames.every((name) => kbVisibility[name] !== false);
     const newState = !allVisible;
     kbTabNames.forEach((name) => {
-      kbVisibility[name] = newState;
+      // Only toggle tabs the user has permission to hide
+      const owner = kbTabOwners[name];
+      const canToggle = currentUser && (
+        currentUser.role === 'admin' || owner === currentUser.username
+      );
+      if (canToggle) {
+        kbVisibility[name] = newState;
+      }
     });
     try {
       await api('PUT', '/api/tab-visibility', kbVisibility);
@@ -1450,7 +1678,7 @@
       function doAction() {
         const password = pwInput.value;
         if (mode === 'set' || mode === 'change') {
-          if (password.length < 4) {
+          if (password.length < 1) {
             errorEl.textContent = t('password_too_short');
             errorEl.style.display = '';
             pwInput.focus();
@@ -2211,6 +2439,20 @@
 
   function openSettings() {
     $('#settings-language').value = currentLang;
+    // Populate user section
+    if (currentUser) {
+      $('#settings-current-user').textContent = currentUser.username;
+      $('#settings-user-section').style.display = '';
+      if (currentUser.role === 'admin') {
+        $('#settings-admin-section').style.display = '';
+        loadUserList();
+      } else {
+        $('#settings-admin-section').style.display = 'none';
+      }
+    } else {
+      $('#settings-user-section').style.display = 'none';
+      $('#settings-admin-section').style.display = 'none';
+    }
     $('#settings-dialog').style.display = 'flex';
   }
 
@@ -2237,6 +2479,258 @@
     if (e.target === $('#settings-dialog')) {
       closeSettings();
     }
+  });
+
+  // ─── Login Dialog ─────────────────────────────────────────────────────
+
+  $('#btn-login').addEventListener('click', () => {
+    if (currentUser) {
+      doLogout();
+      applyTranslations();
+    } else {
+      showLoginDialog();
+    }
+  });
+
+  $('#login-btn-ok').addEventListener('click', async () => {
+    const username = $('#login-username').value.trim();
+    const password = $('#login-password').value;
+    if (!username || !password) {
+      $('#login-error').textContent = 'Please enter username and password';
+      $('#login-error').style.display = '';
+      return;
+    }
+    try {
+      await doLogin(username, password);
+      hideLoginDialog();
+      applyTranslations();
+      // Re-check auth and reload tabs for user-specific visibility
+      await checkAuth();
+      await loadTabs();
+    } catch (e) {
+      $('#login-error').textContent = e.message || 'Login failed';
+      $('#login-error').style.display = '';
+    }
+  });
+
+  $('#login-btn-cancel').addEventListener('click', hideLoginDialog);
+
+  // Close login dialog on overlay click
+  $('#login-dialog').addEventListener('click', (e) => {
+    if (e.target === $('#login-dialog')) {
+      hideLoginDialog();
+    }
+  });
+
+  // Enter key in login password field
+  $('#login-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#login-btn-ok').click();
+  });
+  $('#login-username').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#login-password').focus();
+  });
+
+  // ─── Change Password Dialog ───────────────────────────────────────────
+
+  function showChangePasswordDialog(username) {
+    $('#change-pw-input').value = '';
+    $('#change-pw-confirm').value = '';
+    $('#change-pw-error').style.display = 'none';
+    const header = $('#change-password-dialog-header');
+    if (username) {
+      header.textContent = t('reset_password_for') + ' ' + username;
+      header.dataset.resetUser = username;
+    } else {
+      header.textContent = t('change_password');
+      delete header.dataset.resetUser;
+    }
+    $('#change-password-dialog').style.display = 'flex';
+    $('#change-pw-input').focus();
+  }
+
+  function hideChangePasswordDialog() {
+    $('#change-password-dialog').style.display = 'none';
+  }
+
+  $('#settings-btn-change-pw').addEventListener('click', () => showChangePasswordDialog());
+
+  $('#change-pw-btn-ok').addEventListener('click', async () => {
+    const pw = $('#change-pw-input').value;
+    const confirm = $('#change-pw-confirm').value;
+    if (pw.length < 1) {
+      $('#change-pw-error').textContent = t('password_too_short');
+      $('#change-pw-error').style.display = '';
+      return;
+    }
+    if (pw !== confirm) {
+      $('#change-pw-error').textContent = t('password_mismatch');
+      $('#change-pw-error').style.display = '';
+      return;
+    }
+    try {
+      const resetUser = $('#change-password-dialog-header').dataset.resetUser;
+      if (resetUser) {
+        await api('PUT', `/api/admin/users/${encodeURIComponent(resetUser)}/reset-password`, { new_password: pw });
+        showSettingsMsg(t('password_reset_ok'), 'success');
+      } else if (currentUser && currentUser.role === 'admin') {
+        await api('PUT', '/api/admin/change-password', { new_password: pw });
+      } else {
+        await api('PUT', '/api/auth/change-password', { new_password: pw });
+      }
+      hideChangePasswordDialog();
+    } catch (e) {
+      $('#change-pw-error').textContent = e.message || 'Password change failed';
+      $('#change-pw-error').style.display = '';
+    }
+  });
+
+  $('#change-pw-btn-cancel').addEventListener('click', hideChangePasswordDialog);
+
+  $('#change-password-dialog').addEventListener('click', (e) => {
+    if (e.target === $('#change-password-dialog')) {
+      hideChangePasswordDialog();
+    }
+  });
+
+  $('#change-pw-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#change-pw-confirm').focus();
+  });
+  $('#change-pw-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#change-pw-btn-ok').click();
+  });
+
+  // ─── Logout Button in Settings ────────────────────────────────────────
+
+  $('#settings-btn-logout').addEventListener('click', () => {
+    doLogout();
+    closeSettings();
+    applyTranslations();
+    loadTabs();
+  });
+
+  // ─── User Management (Admin) ──────────────────────────────────────────
+
+  async function loadUserList() {
+    const container = $('#settings-user-list');
+    if (!container) return;
+    try {
+      const data = await api('GET', '/api/admin/users');
+      if (!Array.isArray(data)) return;
+      container.innerHTML = '';
+      data.forEach((u) => {
+        if (u.username === currentUser.username) return; // skip self
+        const row = document.createElement('div');
+        row.className = 'settings-user-row';
+        row.innerHTML = `
+          <span class="settings-user-name">${escapeHtml(u.username)}</span>
+          <span class="settings-user-role">${escapeHtml(u.role || 'user')}</span>
+          <button class="style-btn settings-user-reset-pw" data-username="${escapeHtml(u.username)}" data-i18n="change_password">修改密码</button>
+          <button class="style-btn settings-user-delete" data-username="${escapeHtml(u.username)}">✕</button>
+        `;
+        container.appendChild(row);
+      });
+      // Bind reset password buttons
+      container.querySelectorAll('.settings-user-reset-pw').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          showChangePasswordDialog(btn.dataset.username);
+        });
+      });
+      // Bind delete buttons
+      container.querySelectorAll('.settings-user-delete').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const username = btn.dataset.username;
+          const confirmed = await showDialog(t('delete') || 'Delete', `Delete user "<b>${escapeHtml(username)}</b>"?<br><br>Their KBs will be moved to admin.`);
+          if (!confirmed) return;
+          try {
+            await api('DELETE', `/api/admin/users/${encodeURIComponent(username)}`);
+            await loadUserList();
+            await loadTabs();
+            showSettingsMsg(`User ${username} deleted`, 'success');
+          } catch (e) {
+            showSettingsMsg(e.message, 'error');
+          }
+        });
+      });
+    } catch (e) {
+      // non-critical
+    }
+  }
+
+  function showSettingsMsg(msg, type) {
+    const el = $('#settings-user-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'error' ? '#e74c3c' : '#27ae60';
+    el.style.display = '';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+
+  $('#settings-btn-add-user').addEventListener('click', async () => {
+    const username = $('#settings-new-username').value.trim();
+    const password = $('#settings-new-password').value;
+    if (!username || !password) {
+      showSettingsMsg('Please enter username and password', 'error');
+      return;
+    }
+    if (password.length < 1) {
+      showSettingsMsg('Password cannot be empty', 'error');
+      return;
+    }
+    try {
+      await api('POST', '/api/admin/users', { username, password });
+      $('#settings-new-username').value = '';
+      $('#settings-new-password').value = '';
+      await loadUserList();
+      showSettingsMsg(`User ${username} created`, 'success');
+    } catch (e) {
+      showSettingsMsg(e.message, 'error');
+    }
+  });
+
+  // ─── Owner Dialog ─────────────────────────────────────────────────────
+
+  async function showOwnerDialog(tabName) {
+    try {
+      const usersData = await api('GET', '/api/admin/users');
+      const ownerData = await api('GET', `/api/tab-owner/${encodeURIComponent(tabName)}`);
+      const select = $('#owner-select');
+      select.innerHTML = '<option value="">(admin - all users can read)</option>';
+      (usersData || []).forEach((u) => {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = u.username;
+        if (u.username === ownerData.owner) opt.selected = true;
+        select.appendChild(opt);
+      });
+      $('#owner-dialog').style.display = 'flex';
+      // Store the tab name for the ok handler
+      $('#owner-dialog').dataset.tab = tabName;
+    } catch (e) {
+      // non-critical
+    }
+  }
+
+  function hideOwnerDialog() {
+    $('#owner-dialog').style.display = 'none';
+  }
+
+  $('#owner-btn-ok').addEventListener('click', async () => {
+    const tabName = $('#owner-dialog').dataset.tab;
+    const owner = $('#owner-select').value;
+    if (!tabName) return;
+    try {
+      await api('PUT', `/api/tab-owner/${encodeURIComponent(tabName)}`, { owner });
+      hideOwnerDialog();
+      await loadTabs();
+    } catch (e) {
+      // non-critical
+    }
+  });
+
+  $('#owner-btn-cancel').addEventListener('click', hideOwnerDialog);
+
+  $('#owner-dialog').addEventListener('click', (e) => {
+    if (e.target === $('#owner-dialog')) hideOwnerDialog();
   });
 
   // ─── Backup Knowledge Base ────────────────────────────────────────────
@@ -2457,6 +2951,16 @@
   function showTreeContextMenu(e, itemId) {
     treeCtxItemId = itemId;
     positionMenuAtEvent(treeCtxMenu, e);
+    // Disable export for users without permission
+    const treeExportItems = treeCtxMenu.querySelectorAll('.ctx-submenu-item');
+    const canExport = currentUser && (currentUser.role === 'admin' || (currentTab && kbTabOwners[currentTab] === currentUser.username));
+    treeExportItems.forEach((item) => {
+      if (!canExport) {
+        item.classList.add('ctx-menu-disabled');
+      } else {
+        item.classList.remove('ctx-menu-disabled');
+      }
+    });
   }
 
   $$('#tree-context-menu .tree-ctx-item').forEach((item) => {
@@ -3904,6 +4408,25 @@
     const exportItems = tabCtxMenu.querySelectorAll('.ctx-submenu-item');
     const isEncrypted = encryptedTabsCache && encryptedTabsCache.includes(name);
     const isUnlocked = unlockedTabs.has(name);
+    // Set Owner visibility - admin only
+    const setOwnerItem = $('#tab-ctx-set-owner');
+    const ownerSep = $('#tab-ctx-owner-sep');
+    if (currentUser && currentUser.role === 'admin') {
+      setOwnerItem.style.display = '';
+      ownerSep.style.display = '';
+    } else {
+      setOwnerItem.style.display = 'none';
+      ownerSep.style.display = 'none';
+    }
+    // Hide tab ("隐藏") visibility:
+    //   admin can hide any tab; user can only hide own tabs; anonymous cannot hide
+    const closeTabItem = tabCtxMenu.querySelector('[data-action="close-tab"]');
+    if (closeTabItem) {
+      const canHide = currentUser && (
+        currentUser.role === 'admin' || kbTabOwners[name] === currentUser.username
+      );
+      closeTabItem.style.display = canHide ? '' : 'none';
+    }
     if (isEncrypted) {
       setPwItem.style.display = 'none';
       changePwItem.style.display = '';
@@ -3924,16 +4447,48 @@
       pwSep.style.display = '';
       exportItems.forEach((item) => item.classList.remove('ctx-menu-disabled'));
     }
+    // Disable export for users without permission (non-admin viewing others' tabs)
+    const canExport = currentUser && (currentUser.role === 'admin' || kbTabOwners[name] === currentUser.username);
+    if (!canExport) {
+      exportItems.forEach((item) => item.classList.add('ctx-menu-disabled'));
+    }
     positionMenuAtEvent(tabCtxMenu, e);
   }
 
   function triggerDownload(url, filename) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || '';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // For URLs that need auth, use fetch + blob
+    if (authToken) {
+      fetch(url, { headers: { 'X-Auth-Token': authToken } })
+        .then(res => {
+          if (!res.ok) throw new Error('Download failed');
+          const disposition = res.headers.get('Content-Disposition');
+          let name = filename || '';
+          if (!name && disposition) {
+            const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            if (match) name = match[1].replace(/['"]/g, '');
+          }
+          return res.blob().then(blob => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = name || 'download';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+          });
+        })
+        .catch(err => {
+          console.error('Download failed:', err);
+          showDialog(t('error_dialog_title'), `<p>${t('download_failed') || 'Download failed'}</p>`);
+        });
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   }
 
   function handleTabExport(action) {
@@ -4092,6 +4647,9 @@
           break;
         case 'remove-password':
           handleRemovePassword(name);
+          break;
+        case 'set-owner':
+          showOwnerDialog(name);
           break;
         case 'delete-tab':
           showDialog(
@@ -5138,6 +5696,7 @@
   (async function init() {
     await loadLanguage();
     applyTranslations();
+    await checkAuth();
     loadTabs();
     loadFontConfig();
     initTableColumnResize();
