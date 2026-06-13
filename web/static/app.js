@@ -3869,6 +3869,41 @@
       }
       node = node.parentNode;
     }
+
+    // Multi-cell selection for tables
+    const cell = e.target.closest('td, th');
+    if (cell && editor.contains(cell)) {
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl+Click: toggle cell in multi-selection
+        e.preventDefault();
+        const idx = tableSelectedCells.indexOf(cell);
+        if (idx >= 0) {
+          cell.classList.remove('table-cell-selected');
+          tableSelectedCells.splice(idx, 1);
+        } else {
+          cell.classList.add('table-cell-selected');
+          tableSelectedCells.push(cell);
+        }
+        if (tableSelectedCells.length > 0) {
+          cellRangeAnchor = cell;
+        }
+      } else if (e.shiftKey && cellRangeAnchor) {
+        // Shift+Click: range select from anchor to this cell
+        e.preventDefault();
+        selectCellRange(cellRangeAnchor, cell);
+      } else {
+        // Normal click: clear multi-selection (cursor moves for text editing)
+        if (tableSelectedCells.length > 0) {
+          clearCellSelection();
+        }
+        cellRangeAnchor = cell;
+      }
+    } else {
+      // Click outside table: clear multi-selection
+      if (tableSelectedCells.length > 0) {
+        clearCellSelection();
+      }
+    }
   });
 
   function handlePaste(e) {
@@ -4273,7 +4308,17 @@
     // Detect if right-click is inside a table cell
     const tableCell = e.target.closest('td, th');
     const inTable = tableCell && editor.contains(tableCell);
-    ctxMenu._tableCell = inTable ? tableCell : null;
+
+    // Preserve multi-selection when right-clicking on a cell that is part of the selection
+    if (inTable && tableSelectedCells.indexOf(tableCell) >= 0) {
+      // Keep current multi-selection, right-clicked cell is part of it
+      ctxMenu._tableCell = tableCell;
+    } else {
+      // Right-click on cell not in selection: clear multi-selection
+      if (tableSelectedCells.length > 0) clearCellSelection();
+      ctxMenu._tableCell = inTable ? tableCell : null;
+      if (inTable) cellRangeAnchor = tableCell;
+    }
 
     // Toggle context menu items based on context
     ctxMenu.querySelectorAll('.ctx-item:not(.ctx-table-item), .ctx-separator:not(.ctx-table-sep)').forEach(el => {
@@ -4598,6 +4643,21 @@
     const cell = ctxMenu._tableCell;
     if (!cell) return;
 
+    // Determine which cells to format: multi-selection or single context cell
+    const isMultiCell = tableSelectedCells.length > 1 && tableSelectedCells.indexOf(cell) >= 0;
+    const targetCells = isMultiCell ? tableSelectedCells : [cell];
+    ctxMenu._formatCells = targetCells;
+
+    // Show count indicator when multiple cells selected
+    const countEl = $('#cell-format-count');
+    if (isMultiCell) {
+      countEl.textContent = '已选中 ' + targetCells.length + ' 个单元格';
+      countEl.style.display = '';
+    } else {
+      countEl.style.display = 'none';
+    }
+
+    // Read current values from the context cell (first cell)
     const currentBg = cell.style.backgroundColor || '';
     const currentVAlign = cell.style.verticalAlign || '';
     const currentHAlign = cell.style.textAlign || '';
@@ -4618,29 +4678,31 @@
   }
 
   function applyCellFormat() {
-    const cell = ctxMenu._tableCell;
-    if (!cell) return;
+    const cells = ctxMenu._formatCells || (ctxMenu._tableCell ? [ctxMenu._tableCell] : []);
+    if (!cells.length) return;
 
     const bgColor = $('#cell-format-bgcolor').value;
     const vAlign = $('#cell-format-valign').value;
     const hAlign = $('#cell-format-halign').value;
 
-    if (bgColor && bgColor !== '#ffffff') {
-      cell.style.backgroundColor = bgColor;
-    } else {
-      cell.style.backgroundColor = '';
-    }
+    for (const cell of cells) {
+      if (bgColor && bgColor !== '#ffffff') {
+        cell.style.backgroundColor = bgColor;
+      } else {
+        cell.style.backgroundColor = '';
+      }
 
-    if (vAlign) {
-      cell.style.verticalAlign = vAlign;
-    } else {
-      cell.style.verticalAlign = '';
-    }
+      if (vAlign) {
+        cell.style.verticalAlign = vAlign;
+      } else {
+        cell.style.verticalAlign = '';
+      }
 
-    if (hAlign) {
-      cell.style.textAlign = hAlign;
-    } else {
-      cell.style.textAlign = '';
+      if (hAlign) {
+        cell.style.textAlign = hAlign;
+      } else {
+        cell.style.textAlign = '';
+      }
     }
 
     markModified();
@@ -5539,6 +5601,60 @@
   const cellRefDisplay = $('#formula-bar-cell-ref');
 
   let tableFormulaManager = null;
+
+  // ─── Multi-Cell Selection State ─────────────────────────────────────
+  let tableSelectedCells = [];
+  let cellRangeAnchor = null;
+
+  function clearCellSelection() {
+    tableSelectedCells.forEach(cell => cell.classList.remove('table-cell-selected'));
+    tableSelectedCells = [];
+    cellRangeAnchor = null;
+  }
+
+  function getCellTableGrid(cell) {
+    const table = cell.closest('table');
+    if (!table) return null;
+    const allRows = table.querySelectorAll('tr');
+    let rowIdx = -1;
+    let colIdx = -1;
+    for (let r = 0; r < allRows.length; r++) {
+      const cells = allRows[r].querySelectorAll('td, th');
+      for (let c = 0; c < cells.length; c++) {
+        if (cells[c] === cell) { rowIdx = r; colIdx = c; break; }
+      }
+      if (rowIdx >= 0) break;
+    }
+    if (rowIdx < 0 || colIdx < 0) return null;
+    return { table, rows: allRows, row: rowIdx, col: colIdx };
+  }
+
+  function selectCellRange(anchorCell, targetCell) {
+    const anchor = getCellTableGrid(anchorCell);
+    const target = getCellTableGrid(targetCell);
+    if (!anchor || !target || anchor.table !== target.table) return;
+
+    clearCellSelection();
+
+    const r1 = Math.min(anchor.row, target.row);
+    const r2 = Math.max(anchor.row, target.row);
+    const c1 = Math.min(anchor.col, target.col);
+    const c2 = Math.max(anchor.col, target.col);
+
+    for (let r = r1; r <= r2; r++) {
+      const row = anchor.rows[r];
+      if (!row) continue;
+      const cells = row.querySelectorAll('td, th');
+      for (let c = c1; c <= c2; c++) {
+        const cell = cells[c];
+        if (cell) {
+          cell.classList.add('table-cell-selected');
+          tableSelectedCells.push(cell);
+        }
+      }
+    }
+    cellRangeAnchor = anchorCell;
+  }
 
   class TableFormulaManager {
     constructor() {

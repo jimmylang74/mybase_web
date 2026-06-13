@@ -472,6 +472,14 @@ body {
   color: transparent;
 }
 
+/* Multi-cell selection */
+#editor td.table-cell-selected,
+#editor th.table-cell-selected {
+  outline: 2px solid #3498db;
+  outline-offset: -1px;
+  background-color: rgba(52, 152, 219, 0.06);
+}
+
 /* Table column resize handle */
 .table-col-handle {
   position: absolute;
