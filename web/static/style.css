@@ -185,7 +185,16 @@ body {
   cursor: pointer;
   font-size: 13px;
   width: 100%;
-  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#btn-toolbar-version {
+  font-size: 16px;
+  color: #ff0;
+  white-space: nowrap;
+  user-select: none;
 }
 
 #btn-toolbar-menu:hover {
