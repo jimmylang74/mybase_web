@@ -3876,31 +3876,69 @@
     if (!clipboardData) return;
 
     const items = clipboardData.items;
-    let hasImage = false;
+    const htmlContent = clipboardData.getData('text/html');
+    const textContent = clipboardData.getData('text/plain');
 
+    // Check if cursor is inside an existing table cell
+    const sel = window.getSelection();
+    let inTableCell = false;
+    if (sel && sel.rangeCount > 0) {
+      let node = sel.getRangeAt(0).commonAncestorContainer;
+      if (node.nodeType === 3) node = node.parentNode;
+      inTableCell = node.closest && !!node.closest('td, th');
+    }
+
+    // Excel/HTML table paste — create a clean table.
+    // Checked BEFORE image paste because Excel puts both table HTML and
+    // a screenshot in the clipboard; we want the editable table, not the picture.
+    if (!inTableCell && htmlContent && containsTable(htmlContent)) {
+      e.preventDefault();
+      const result = parseTableFromHtml(htmlContent);
+      if (result && result.data.length > 0 && result.data[0].length > 0) {
+        insertTableFromData(result.data, result.widths);
+        markModified();
+        requestAnimationFrame(() => {
+          if (tableFormulaManager) tableFormulaManager.refresh();
+        });
+      }
+      return;
+    }
+
+    // Tab-separated plain text (e.g. copied from Excel as text)
+    if (!inTableCell && textContent && textContent.includes('\t') && !htmlContent) {
+      e.preventDefault();
+      const result = parseTsvData(textContent);
+      if (result && result.data.length > 0 && result.data[0].length > 0) {
+        insertTableFromData(result.data, result.widths);
+        markModified();
+        requestAnimationFrame(() => {
+          if (tableFormulaManager) tableFormulaManager.refresh();
+        });
+      }
+      return;
+    }
+
+    // Image paste
     for (let i = 0; i < items.length; i++) {
       if (items[i].type && items[i].type.startsWith('image/')) {
-        hasImage = true;
         e.preventDefault();
         const file = items[i].getAsFile();
         if (file) {
           uploadAndInsertImage(file);
         }
-        break;
+        return;
       }
     }
 
-    if (!hasImage && items.length > 0) {
-      const htmlContent = clipboardData.getData('text/html');
-      const textContent = clipboardData.getData('text/plain');
-
+    // Text/HTML paste (no table, no image)
+    if (items.length > 0) {
       if (textContent && !htmlContent) {
         e.preventDefault();
         editor.focus();
         document.execCommand('insertText', false, textContent);
         markModified();
       }
-      // For HTML paste (e.g. tables), let browser handle it natively then
+      // For other HTML paste (non-table), let browser handle it natively then
       // re-initialize formula engine on the newly inserted content
       if (htmlContent) {
         requestAnimationFrame(() => {
@@ -3910,6 +3948,275 @@
         });
       }
     }
+  }
+
+  // ─── Excel/Table Paste Helpers ─────────────────────────────────────
+
+  function containsTable(html) {
+    return /<table[\s>]/i.test(html) || /<tr[\s>]/i.test(html);
+  }
+
+  /** Extract computed visual styles from a cell element.
+   *  Uses getComputedStyle so class-based CSS works (Excel uses classes like .xl65). */
+  function parseCellStyles(cell) {
+    const sty = {};
+    const cs = getComputedStyle(cell);
+
+    const bg = cs.backgroundColor;
+    if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') sty.bg = bg;
+
+    const fc = cs.color;
+    if (fc && fc !== 'rgb(0, 0, 0)') sty.fc = fc;
+
+    const fw = cs.fontWeight;
+    if (fw && fw !== '400' && fw !== 'normal') sty.fw = fw;
+
+    const fs = cs.fontSize;
+    if (fs) sty.fs = fs;
+
+    const ta = cs.textAlign;
+    if (ta && ta !== 'start' && ta !== 'initial') sty.ta = ta;
+
+    return sty;
+  }
+
+  function parseTableFromHtml(html) {
+    // Use a live container so getComputedStyle resolves class-based CSS.
+    // Excel HTML uses <style> tags with classes (.xl65, .xl66, …), not inline styles.
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;';
+    container.innerHTML = html;
+    document.body.appendChild(container);
+
+    try {
+      const tables = container.querySelectorAll('table');
+      let allData = [];
+      let allWidths = [];
+      let firstTable = true;
+
+      for (const table of tables) {
+        const result = parseHtmlTable(table);
+        if (!result) continue;
+
+        if (firstTable) {
+          allWidths = result.widths;
+          firstTable = false;
+        }
+
+        for (const row of result.data) {
+          // Pad shorter rows from secondary tables to match column count
+          if (allData.length > 0) {
+            const targetLen = Math.max(allData[0].length, row.length);
+            while (row.length < targetLen) row.push({ text: '', colspan: 1, rowspan: 1, tagName: 'TD', sty: {} });
+          }
+          allData.push(row);
+        }
+      }
+
+      return allData.length > 0 ? { data: allData, widths: allWidths } : null;
+    } finally {
+      document.body.removeChild(container);
+    }
+  }
+
+  /** Parse a single <table> element with colspan/rowspan support */
+  function parseHtmlTable(table) {
+    const trs = table.querySelectorAll('tr');
+    if (trs.length === 0) return null;
+
+    // Extract column widths from <colgroup>
+    const widths = [];
+    const colgroup = table.querySelector('colgroup');
+    if (colgroup) {
+      colgroup.querySelectorAll('col').forEach(col => { widths.push(extractElWidth(col)); });
+    }
+    // Fallback: extract widths from first row cells
+    if (widths.length === 0 && trs[0]) {
+      trs[0].querySelectorAll('td, th').forEach(cell => { widths.push(extractElWidth(cell)); });
+    }
+
+    const data = [];
+    const rowspanMap = {};       // { colIndex: remainingRows }
+    let maxCols = 0;
+
+    trs.forEach((tr, ri) => {
+      const cells = tr.querySelectorAll('td, th');
+      const row = [];
+      let col = 0;
+      let ci = 0;
+
+      while (ci < cells.length) {
+        // Skip columns occupied by rowspan from previous rows
+        while (rowspanMap[col]) {
+          row.push(null);
+          rowspanMap[col]--;
+          if (rowspanMap[col] <= 0) delete rowspanMap[col];
+          col++;
+        }
+
+        const cell = cells[ci];
+        const colspan = Math.min(parseInt(cell.getAttribute('colspan'), 10) || 1, 50);
+        const rowspan = Math.min(parseInt(cell.getAttribute('rowspan'), 10) || 1, 50);
+        const text = cell.textContent.trim();
+
+        // Cell origin (preserve original tag: TD or TH) and inline styles
+        const sty = parseCellStyles(cell);
+        row.push({ text, colspan, rowspan, tagName: cell.tagName, sty });
+
+        // Mark spanned columns in current row
+        for (let c = 1; c < colspan; c++) row.push(null);
+
+        // Track rowspan for subsequent rows
+        if (rowspan > 1) {
+          for (let c = 0; c < colspan; c++) {
+            const ongoing = rowspanMap[col + c] || 0;
+            if (rowspan - 1 > ongoing) rowspanMap[col + c] = rowspan - 1;
+          }
+        }
+
+        col += colspan;
+        ci++;
+      }
+
+      // Fill remaining rowspan columns at end of row
+      for (const rcStr of Object.keys(rowspanMap)) {
+        const rc = parseInt(rcStr, 10);
+        if (rc >= col && rowspanMap[rc] > 0) {
+          while (col < rc) { row.push({ text: '', colspan: 1, rowspan: 1, tagName: 'TD', sty: {} }); col++; }
+          row.push(null);
+          rowspanMap[rc]--;
+          if (rowspanMap[rc] <= 0) delete rowspanMap[rc];
+          col++;
+        }
+      }
+
+      if (row.length > 0) {
+        data.push(row);
+        maxCols = Math.max(maxCols, row.length);
+      }
+    });
+
+    // Normalize all rows to maxCols
+    for (const row of data) {
+      while (row.length < maxCols) {
+        const rc = row.length;
+        if (rowspanMap[rc] && rowspanMap[rc] > 0) {
+          row.push(null);
+          rowspanMap[rc]--;
+          if (rowspanMap[rc] <= 0) delete rowspanMap[rc];
+        } else {
+          row.push({ text: '', colspan: 1, rowspan: 1, tagName: 'TD', sty: {} });
+        }
+      }
+    }
+
+    return { data, widths };
+  }
+
+  /** Extract pixel width from a <col>, <td>, or <th> element */
+  function extractElWidth(el) {
+    // Try width attribute first
+    const attr = el.getAttribute('width');
+    if (attr) { const w = parseInt(attr, 10); if (!isNaN(w) && w > 0) return w; }
+    // Try inline style width
+    const style = el.getAttribute('style');
+    if (style) {
+      const m = style.match(/width:\s*(\d+(?:\.\d+)?)\s*(px|pt)?/i);
+      if (m) {
+        let v = parseFloat(m[1]);
+        if (m[2] && m[2].toLowerCase() === 'pt') v = v * 3;
+        if (!isNaN(v) && v > 0) return Math.round(v);
+      }
+    }
+    return 80;
+  }
+
+  function parseTsvData(text) {
+    const lines = text.split('\n').filter(line => line.trim() !== '');
+    if (lines.length === 0) return null;
+    const data = lines.map(line =>
+      line.split('\t').map(cell => ({ text: cell.trim(), colspan: 1, rowspan: 1, tagName: 'TD', sty: {} }))
+    );
+    return data.length > 0 && data[0].length > 0 ? { data, widths: [] } : null;
+  }
+
+  function insertTableFromData(data, widths) {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+
+    const rows = data.length;
+    // Compute actual column count considering colspan
+    let cols = 0;
+    for (const row of data) {
+      let c = 0;
+      for (const cell of row) {
+        if (cell && typeof cell === 'object') c += cell.colspan || 1;
+      }
+      cols = Math.max(cols, c);
+    }
+
+    // Build column widths array, using extracted widths or defaults
+    const colWidths = [];
+    for (let i = 0; i < cols; i++) {
+      colWidths.push((widths && widths[i]) || 80);
+    }
+
+    let html = '<table><colgroup>';
+    for (let i = 0; i < cols; i++) {
+      html += '<col style="width:' + colWidths[i] + 'px">';
+    }
+    html += '</colgroup><tbody>';
+
+    for (let r = 0; r < rows; r++) {
+      html += '<tr>';
+      for (const cell of data[r]) {
+        if (cell === null) continue; // spanned position — skip
+        const cellTag = cell.tagName.toLowerCase();
+        const text = cell.text;
+        const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        let styleStr = '';
+        if (cell.sty) {
+          const parts = [];
+          if (cell.sty.bg) parts.push('background:' + cell.sty.bg);
+          if (cell.sty.fc) parts.push('color:' + cell.sty.fc);
+          if (cell.sty.fw) parts.push('font-weight:' + cell.sty.fw);
+          if (cell.sty.fs) parts.push('font-size:' + cell.sty.fs);
+          if (cell.sty.ta) parts.push('text-align:' + cell.sty.ta);
+          if (parts.length > 0) styleStr = ' style="' + parts.join(';') + '"';
+        }
+        let attrs = '';
+        if (cell.colspan > 1) attrs += ' colspan="' + cell.colspan + '"';
+        if (cell.rowspan > 1) attrs += ' rowspan="' + cell.rowspan + '"';
+        html += '<' + cellTag + styleStr + attrs + '>' + (escaped || '<br>') + '</' + cellTag + '>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    const tableEl = wrapper.firstElementChild;
+
+    range.deleteContents();
+    range.insertNode(tableEl);
+
+    // Move cursor to second row first cell (skip header row)
+    // For single-row tables, position cursor right after the table
+    const newRange = document.createRange();
+    if (rows > 1) {
+      const firstCell = tableEl.querySelector('tbody tr:nth-child(2) td');
+      if (firstCell) {
+        newRange.setStart(firstCell, 0);
+      } else {
+        newRange.setStartAfter(tableEl);
+      }
+    } else {
+      newRange.setStartAfter(tableEl);
+    }
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
   }
 
   async function uploadAndInsertImage(file) {

@@ -1,4 +1,4 @@
-# KBase v5.7.7
+# KBase v6.0.0
 
 **Web of Mybase Knowledge Server** — A Chinese knowledge base management system built with Flask + PaddleOCR.
 
@@ -10,7 +10,7 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
 
 ### v6.x (In Progress)
 - **Export menu items as PPT** — Configure a backend AI PPT agent; menu items are sent to the agent which summarizes them into a PPT
-- **Export tables to Excel** — Individual table export to Excel and Copy from excel and paste into HTML
+- **Excel tables Copy to HTML** — Copy from excel and paste into HTML
 
 
 ### v5.x
