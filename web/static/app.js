@@ -3006,6 +3006,10 @@
   function showTreeContextMenu(e, itemId) {
     treeCtxItemId = itemId;
     positionMenuAtEvent(treeCtxMenu, e);
+    // Clear stale disabled state from previous invocations
+    treeCtxMenu.querySelectorAll('.tree-ctx-item, .ctx-submenu-item').forEach(function(el) {
+      el.classList.remove('ctx-menu-disabled');
+    });
     // Disable export for users without permission
     const treeExportItems = treeCtxMenu.querySelectorAll('.ctx-submenu-item');
     const canExport = currentUser && (currentUser.role === 'admin' || (currentTab && kbTabOwners[currentTab] === currentUser.username));
@@ -3017,9 +3021,7 @@
       }
     });
     // Copy: any logged-in user can copy (read access is already checked)
-    // Paste: needs write permission on current tab
     const copyItem = treeCtxMenu.querySelector('[data-action="copy"]');
-    const pasteItem = treeCtxMenu.querySelector('[data-action="paste"]');
     if (copyItem) {
       if (!currentUser) {
         copyItem.classList.add('ctx-menu-disabled');
@@ -3027,13 +3029,21 @@
         copyItem.classList.remove('ctx-menu-disabled');
       }
     }
+    // Paste: needs write permission + copied data
+    const pasteItem = treeCtxMenu.querySelector('[data-action="paste"]');
     if (pasteItem) {
-      const canWrite = canEditTab(currentTab);
-      if (!currentUser || !canWrite || !copiedMenuItem) {
+      var canPaste = currentUser && canEditTab(currentTab) && copiedMenuItem;
+      if (!canPaste) {
         pasteItem.classList.add('ctx-menu-disabled');
       } else {
         pasteItem.classList.remove('ctx-menu-disabled');
       }
+    }
+    // Read-only (admin's tab for regular user): disable all write items, only copy stays
+    if (!canEditTab(currentTab)) {
+      treeCtxMenu.querySelectorAll('.tree-ctx-item').forEach(function(item) {
+        if (item.dataset.action !== 'copy') item.classList.add('ctx-menu-disabled');
+      });
     }
   }
 
@@ -4544,6 +4554,26 @@
 
   function showTabContextMenu(e, name) {
     tabCtxName = name;
+    const canWrite = canEditTab(name);
+
+    // Anonymous or non-owner: disable everything
+    if (!canWrite) {
+      tabCtxMenu.querySelectorAll('.tab-ctx-item').forEach(function(item) {
+        item.classList.add('ctx-menu-disabled');
+      });
+      // Also disable submenu export items
+      tabCtxMenu.querySelectorAll('.ctx-submenu-item').forEach(function(item) {
+        item.classList.add('ctx-menu-disabled');
+      });
+      positionMenuAtEvent(tabCtxMenu, e);
+      return;
+    }
+
+    // Clear all disabled states first
+    tabCtxMenu.querySelectorAll('.tab-ctx-item, .ctx-submenu-item').forEach(function(item) {
+      item.classList.remove('ctx-menu-disabled');
+    });
+
     const setPwItem = tabCtxMenu.querySelector('[data-action="set-password"]');
     const changePwItem = tabCtxMenu.querySelector('[data-action="change-password"]');
     const removePwItem = tabCtxMenu.querySelector('[data-action="remove-password"]');
@@ -4575,8 +4605,7 @@
       changePwItem.style.display = '';
       removePwItem.style.display = '';
       pwSep.style.display = '';
-      // Disable export for encrypted-not-unlocked tabs
-      exportItems.forEach((item) => {
+      exportItems.forEach(function(item) {
         if (!isUnlocked) {
           item.classList.add('ctx-menu-disabled');
         } else {
@@ -4588,12 +4617,11 @@
       changePwItem.style.display = 'none';
       removePwItem.style.display = 'none';
       pwSep.style.display = '';
-      exportItems.forEach((item) => item.classList.remove('ctx-menu-disabled'));
+      exportItems.forEach(function(item) { item.classList.remove('ctx-menu-disabled'); });
     }
-    // Disable export for users without permission (non-admin viewing others' tabs)
     const canExport = currentUser && (currentUser.role === 'admin' || kbTabOwners[name] === currentUser.username);
     if (!canExport) {
-      exportItems.forEach((item) => item.classList.add('ctx-menu-disabled'));
+      exportItems.forEach(function(item) { item.classList.add('ctx-menu-disabled'); });
     }
     positionMenuAtEvent(tabCtxMenu, e);
   }
@@ -4764,6 +4792,7 @@
 
   $$('#tab-context-menu .tab-ctx-item').forEach((item) => {
     item.addEventListener('click', () => {
+      if (item.classList.contains('ctx-menu-disabled')) return;
       const action = item.dataset.action;
       const name = tabCtxName;
       tabCtxMenu.style.display = 'none';

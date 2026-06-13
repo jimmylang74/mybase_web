@@ -1223,13 +1223,15 @@ body {
 }
 
 .ctx-submenu-item.ctx-menu-disabled,
-.tree-ctx-item.ctx-menu-disabled {
+.tree-ctx-item.ctx-menu-disabled,
+.tab-ctx-item.ctx-menu-disabled {
   color: #bbb;
   cursor: not-allowed;
 }
 
 .ctx-submenu-item.ctx-menu-disabled:hover,
-.tree-ctx-item.ctx-menu-disabled:hover {
+.tree-ctx-item.ctx-menu-disabled:hover,
+.tab-ctx-item.ctx-menu-disabled:hover {
   background: transparent;
 }
 
