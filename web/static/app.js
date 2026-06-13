@@ -451,6 +451,9 @@
     currentUser = data.user;
     sessionStorage.setItem('kbase_auth_token', authToken);
     updateUserIndicator();
+    // Clear encryption state — user context changed, re-prompt needed
+    unlockedTabs.clear();
+    encryptedTabsCache = null;
     // Reconnect socket with auth token
     if (socket.connected) socket.disconnect();
     socket.io.opts.query = { token: authToken };
@@ -465,6 +468,9 @@
       currentUser = null;
       sessionStorage.removeItem('kbase_auth_token');
     }
+    // Clear encryption state — user context changed, re-prompt needed
+    unlockedTabs.clear();
+    encryptedTabsCache = null;
     $('#user-indicator').style.display = 'none';
     $('#btn-login').textContent = '🔑';
     $('#btn-login').title = t('login');
