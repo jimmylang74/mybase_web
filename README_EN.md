@@ -9,8 +9,9 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
 ## Features
 
 ### v6.x (In Progress)
-- **Export menu items as PPT** — Configure a backend LLM; menu items are sent to the LLM which summarizes them into a PPT
-- **Export tables to Excel** — Individual table export to Excel
+- **Export menu items as PPT** — Configure a backend AI PPT agent; menu items are sent to the agent which summarizes them into a PPT
+- **Export tables to Excel** — Individual table export to Excel and Copy from excel and paste into HTML
+
 
 ### v5.x
 - **Improved color picker** — Now includes common colors and transparent color
@@ -25,6 +26,8 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
   - Admin edits are synced to all logged-in users in real-time via WebSocket (bulletin-style)
   - Deleting a user reassigns all their KBs to admin and immediately logs out the deleted user
   - Admin/users can password-protect their own KBs (password required to view/edit)
+- **Team discuss Tab** - Now admin can set a tab as discuss tab, all members of KB system can login and edit on it, everyone can see it at once
+- **Menu Item Copy/Paste** - Menu item and its all children can be copied to another Tab
 
 ### v4.x
 - **Text background color** — Content area text can now have background colors
