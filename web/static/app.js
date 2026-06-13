@@ -14,6 +14,7 @@
   let kbVisibility = {}; // { tabName: true/false }
   let kbTabNames = []; // full list of all tab names
   let kbTabOwners = {}; // { tabName: owner }
+  let kbPublicEdit = {}; // { tabName: true/false } - public edit (discussion mode)
   let unlockedTabs = new Set(); // tab names unlocked in this session
   let canWriteCurrentTab = false;
   let currentSearchQuery = ''; // current search query for highlighting
@@ -178,6 +179,9 @@
       custom_color: '自定义颜色...',
       cell_format: '设置单元格格式',
       cell_format_title: '设置单元格格式',
+      enable_public_edit: '解锁可编辑',
+      disable_public_edit: '加锁不可编辑',
+      public_edit_tab: '讨论区 - 任何人可编辑',
       vertical_align: '垂直对齐:',
       horizontal_align: '水平对齐:',
       align_top: '顶部',
@@ -303,6 +307,9 @@
       custom_color: 'Custom Color...',
       cell_format: 'Cell Format',
       cell_format_title: 'Set Cell Format',
+      enable_public_edit: 'Unlock Editable',
+      disable_public_edit: 'Lock Not Editable',
+      public_edit_tab: 'Discussion - Anyone can edit',
       vertical_align: 'Vertical Align:',
       horizontal_align: 'Horizontal Align:',
       align_top: 'Top',
@@ -901,13 +908,18 @@
     await loadEncryptedTabs();
     const tabs = await api('GET', '/api/tabs');
     kbTabNames = tabs.slice();
-    // Load owner map for badge rendering
+    // Load owner map for badge rendering and public edit status
     try {
       const ownerData = await api('GET', '/api/tabs-with-owner');
       kbTabOwners = {};
-      ownerData.forEach((t) => { kbTabOwners[t.name] = t.owner || ''; });
+      kbPublicEdit = {};
+      ownerData.forEach((t) => {
+        kbTabOwners[t.name] = t.owner || '';
+        kbPublicEdit[t.name] = !!t.public_edit;
+      });
     } catch (e) {
       kbTabOwners = {};
+      kbPublicEdit = {};
     }
     // Load visibility state
     let selectedTabFromServer = null;
@@ -968,6 +980,14 @@
         badge.textContent = owner && owner !== '' ? 'U' : 'A';
         el.appendChild(badge);
       }
+      // Public edit (discussion mode) badge
+      if (kbPublicEdit[name]) {
+        const pubBadge = document.createElement('span');
+        pubBadge.className = 'tab-public-edit-badge';
+        pubBadge.textContent = 'M';
+        pubBadge.title = t('public_edit_tab');
+        el.appendChild(pubBadge);
+      }
       const labelSpan = document.createElement('span');
       labelSpan.className = 'tab-label';
       labelSpan.textContent = name;
@@ -1007,7 +1027,10 @@
     if (!currentUser) return false;
     if (currentUser.role === 'admin') return true;
     const owner = kbTabOwners[tabName];
-    return owner === currentUser.username;
+    if (owner === currentUser.username) return true;
+    // Public edit (discussion mode): any authenticated user can edit
+    if (kbPublicEdit[tabName]) return true;
+    return false;
   }
 
   async function switchTab(name, el) {
@@ -1474,6 +1497,25 @@
         editorStatus.textContent = 'No item selected';
       }
       await loadTabs();
+    } catch (e) {
+      showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
+    }
+  }
+
+  async function togglePublicEdit(name) {
+    const newStatus = !kbPublicEdit[name];
+    try {
+      await api('PUT', `/api/tabs/${encodeURIComponent(name)}/public-edit`, { public_edit: newStatus });
+      kbPublicEdit[name] = newStatus;
+      // Reload tabs to update UI (badges, context menu text)
+      await loadTabs();
+      // Re-activate current tab so canWriteCurrentTab is recalculated
+      if (currentTab) {
+        const el = tabsEl.querySelector(`.tab[data-tab="${CSS.escape(currentTab)}"]`);
+        if (el) {
+          await switchTab(currentTab, el);
+        }
+      }
     } catch (e) {
       showDialog('Error', `<p>${escapeHtml(e.message)}</p>`);
     }
@@ -3012,7 +3054,7 @@
     });
     // Disable export for users without permission
     const treeExportItems = treeCtxMenu.querySelectorAll('.ctx-submenu-item');
-    const canExport = currentUser && (currentUser.role === 'admin' || (currentTab && kbTabOwners[currentTab] === currentUser.username));
+    const canExport = currentUser && (currentUser.role === 'admin' || (currentTab && kbTabOwners[currentTab] === currentUser.username) || (currentTab && kbPublicEdit[currentTab]));
     treeExportItems.forEach((item) => {
       if (!canExport) {
         item.classList.add('ctx-menu-disabled');
@@ -4581,12 +4623,17 @@
     const exportItems = tabCtxMenu.querySelectorAll('.ctx-submenu-item');
     const isEncrypted = encryptedTabsCache && encryptedTabsCache.includes(name);
     const isUnlocked = unlockedTabs.has(name);
-    // Set Owner visibility - admin only
+    // Set Owner visibility - admin only, disabled when public_edit is active
     const setOwnerItem = $('#tab-ctx-set-owner');
     const ownerSep = $('#tab-ctx-owner-sep');
     if (currentUser && currentUser.role === 'admin') {
       setOwnerItem.style.display = '';
       ownerSep.style.display = '';
+      if (kbPublicEdit[name]) {
+        setOwnerItem.classList.add('ctx-menu-disabled');
+      } else {
+        setOwnerItem.classList.remove('ctx-menu-disabled');
+      }
     } else {
       setOwnerItem.style.display = 'none';
       ownerSep.style.display = 'none';
@@ -4619,7 +4666,25 @@
       pwSep.style.display = '';
       exportItems.forEach(function(item) { item.classList.remove('ctx-menu-disabled'); });
     }
-    const canExport = currentUser && (currentUser.role === 'admin' || kbTabOwners[name] === currentUser.username);
+    // Public edit toggle: only admin/owner can toggle; show appropriate text
+    const togglePubItem = $('#tab-ctx-toggle-public-edit');
+    if (togglePubItem) {
+      const isAdminOrOwner = currentUser && (
+        currentUser.role === 'admin' || kbTabOwners[name] === currentUser.username
+      );
+      if (isAdminOrOwner) {
+        togglePubItem.classList.remove('ctx-menu-disabled');
+        if (kbPublicEdit[name]) {
+          togglePubItem.textContent = t('disable_public_edit');
+        } else {
+          togglePubItem.textContent = t('enable_public_edit');
+        }
+      } else {
+        togglePubItem.classList.add('ctx-menu-disabled');
+        togglePubItem.textContent = t('enable_public_edit');
+      }
+    }
+    const canExport = currentUser && (currentUser.role === 'admin' || kbTabOwners[name] === currentUser.username || kbPublicEdit[name]);
     if (!canExport) {
       exportItems.forEach(function(item) { item.classList.add('ctx-menu-disabled'); });
     }
@@ -4821,6 +4886,10 @@
           handleRemovePassword(name);
           break;
         case 'set-owner':
+          if (kbPublicEdit[name]) {
+            // Blocked when public edit is enabled (discussion tab unlocked)
+            break;
+          }
           showOwnerDialog(name);
           break;
         case 'delete-tab':
@@ -4832,6 +4901,9 @@
               return true;
             }
           );
+          break;
+        case 'toggle-public-edit':
+          togglePublicEdit(name);
           break;
       }
     });

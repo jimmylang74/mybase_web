@@ -1581,6 +1581,13 @@ def init_common_db():
                 PRIMARY KEY (username, tab_name)
             )
         """)
+        # ── Public edit (discussion mode) ──
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tab_public_edit (
+                tab_name TEXT PRIMARY KEY,
+                public_edit INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -2236,6 +2243,42 @@ def set_tab_owner(tab_name: str, owner: str):
         conn.close()
 
 
+def get_tab_public_edit(tab_name: str) -> bool:
+    """Check if a tab has public edit (discussion mode) enabled."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute(
+            "SELECT public_edit FROM tab_public_edit WHERE tab_name = ?", (tab_name,)
+        )
+        row = cursor.fetchone()
+        return bool(row and row[0])
+    finally:
+        conn.close()
+
+
+def set_tab_public_edit(tab_name: str, enabled: bool):
+    """Set public edit status for a tab."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO tab_public_edit (tab_name, public_edit) VALUES (?, ?)",
+            (tab_name, 1 if enabled else 0)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_all_tab_public_edits() -> dict:
+    """Return dict of {tab_name: bool} for all tabs with public edit."""
+    conn = sqlite3.connect(str(common_db))
+    try:
+        cursor = conn.execute("SELECT tab_name, public_edit FROM tab_public_edit WHERE public_edit = 1")
+        return {row[0]: bool(row[1]) for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
 def get_tab_effective_path(tab_name: str) -> Path:
     """Return the actual directory path for a tab based on its owner."""
     owner = get_tab_owner(tab_name)
@@ -2291,6 +2334,9 @@ def can_write_tab(tab_name: str, user: dict) -> bool:
         return True
     if owner == user['username']:
         return True
+    # Public edit (discussion mode): any authenticated user can write
+    if get_tab_public_edit(tab_name):
+        return True
     return False
 
 
@@ -2305,6 +2351,9 @@ def can_export_tab(tab_name: str, user: dict) -> bool:
         return True
     owner = get_tab_owner(tab_name)
     if owner == user['username']:
+        return True
+    # Discussion tabs (public edit) — any authenticated user can export
+    if get_tab_public_edit(tab_name):
         return True
     return False
 
@@ -5195,6 +5244,10 @@ def api_set_tab_owner(tab):
         if user['role'] == 'admin':
             return jsonify({'error': '不能设置为admin'}), 400
 
+    # Cannot set owner on a discussion tab while it's unlocked (public_edit enabled)
+    if get_tab_public_edit(tab):
+        return jsonify({'error': '讨论区知识库在解锁可编辑状态下不能设置Owner，请先加锁不可编辑'}), 400
+
     old_path = get_tab_path_with_owner(tab)
     if not old_path or not old_path.exists():
         return jsonify({'error': 'Tab不存在'}), 404
@@ -5243,23 +5296,51 @@ def api_list_tabs_with_owner():
         cursor = conn.execute("SELECT tab_name, owner FROM tab_owner")
         owner_map = dict(cursor.fetchall())
 
+        public_edit_map = get_all_tab_public_edits()
+
         result = []
         for tab in sorted(all_tabs_set):
             owner = owner_map.get(tab, '')
+            public_edit = public_edit_map.get(tab, False)
             if user:
                 # Filter by visibility
                 if user['role'] == 'admin':
-                    result.append({'name': tab, 'owner': owner})
+                    result.append({'name': tab, 'owner': owner, 'public_edit': public_edit})
                 else:
                     if owner == '' or owner == user['username']:
-                        result.append({'name': tab, 'owner': owner})
+                        result.append({'name': tab, 'owner': owner, 'public_edit': public_edit})
             else:
                 # No auth - only show admin tabs
                 if owner == '':
-                    result.append({'name': tab, 'owner': owner})
+                    result.append({'name': tab, 'owner': owner, 'public_edit': public_edit})
         return jsonify(result)
     finally:
         conn.close()
+
+
+# ─── Public Edit (Discussion Mode) API Routes ──────────────────────────────
+
+
+@app.route('/api/tabs-public-edit')
+def api_get_tabs_public_edit():
+    """Return dict of {tab_name: bool} for all tabs with public edit enabled."""
+    require_auth()
+    return jsonify(get_all_tab_public_edits())
+
+
+@app.route('/api/tabs/<tab>/public-edit', methods=['PUT'])
+def api_set_tab_public_edit(tab):
+    """Set public edit (discussion mode) for a tab. Requires write access."""
+    _auth_check_write(tab)
+    data = request.get_json() or {}
+    enabled = data.get('public_edit', False)
+    set_tab_public_edit(tab, bool(enabled))
+    # Notify other windows
+    try:
+        socketio.emit('tabs_updated', {})
+    except Exception:
+        pass
+    return jsonify({'success': True})
 
 
 # ─── User-Specific Tab Ordering ────────────────────────────────────────────

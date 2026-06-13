@@ -791,6 +791,21 @@ body {
   opacity: 0.7;
 }
 
+/* Public edit (discussion mode) badge - bottom-left corner */
+.tab-public-edit-badge {
+  position: absolute;
+  bottom: 1px;
+  left: 2px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 2px;
+  border-radius: 2px;
+  background: #27ae60;
+  color: #fff;
+  opacity: 0.85;
+}
+
 /* ─── Dialog ──────────────────────────────────────────────────────────── */
 #dialog-overlay {
   position: fixed;
