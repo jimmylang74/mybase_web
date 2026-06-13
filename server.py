@@ -4171,6 +4171,68 @@ def move_menu_item_route(tab, item_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/<tab>/menu/paste', methods=['POST'])
+def paste_menu_item(tab):
+    """Paste a copied menu item as a sibling after the target item.
+    Also copies content if provided in the contents map."""
+    _auth_check_write(tab)
+    if not get_tab_path(tab):
+        return jsonify({'error': 'Tab not found'}), 404
+
+    data = request.get_json()
+    if not data or 'item' not in data:
+        return jsonify({'error': 'No item data provided'}), 400
+
+    after_id = data.get('after_id')
+    if not after_id:
+        return jsonify({'error': 'after_id is required'}), 400
+    contents = data.get('contents') or {}
+
+    def _clone_with_new_ids(src):
+        new_id = str(uuid.uuid4())
+        new_item = {
+            'id': new_id,
+            'label': src['label'],
+            'children': [_clone_with_new_ids(c) for c in src.get('children', [])]
+        }
+        if 'style' in src and src['style']:
+            new_item['style'] = dict(src['style'])
+        return new_item
+
+    new_item = _clone_with_new_ids(data['item'])
+
+    menu = load_menu(tab)
+    success = add_menu_item_after(menu, new_item, after_id)
+    if not success:
+        return jsonify({'error': 'Target item not found'}), 404
+
+    save_menu(tab, menu)
+
+    def _process_items(src_item, dst_item):
+        if src_item['id'] in contents:
+            save_content(tab, dst_item['id'], contents[src_item['id']])
+        path = compute_item_path(menu, dst_item['id'], tab)
+        if path:
+            db_path = get_index_db_path(tab)
+            if db_path.exists():
+                conn = sqlite3.connect(str(db_path))
+                try:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO item_index (menu_item_id, label, content_text, menu_path) VALUES (?, ?, '', ?)",
+                        (dst_item['id'], dst_item['label'], path)
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+        for i, child in enumerate(dst_item.get('children', [])):
+            _process_items(src_item['children'][i], child)
+
+    _process_items(data['item'], new_item)
+
+    ws_emit_menu_changed(tab)
+    return jsonify(new_item), 201
+
+
 @app.route('/api/<tab>/tree')
 def get_tree(tab):
     if not get_tab_path(tab):

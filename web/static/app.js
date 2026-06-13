@@ -7,6 +7,7 @@
   let contentModified = false;
   let activeTabEl = null;
   let treeCtxItemId = null;
+  let copiedMenuItem = null;
   let treeExpandedState = {}; // { tabName: Set<nodeId> }
   let dirtyTabs = {}; // { tabName: true/false }
   let lastEditedItem = {}; // { tabName: itemId }
@@ -70,6 +71,10 @@
       move_up: '上移',
       move_down: '下移',
       move_to: '移动到...',
+      copy: '拷贝',
+      paste: '粘贴',
+      copy_progress: '正在拷贝内容',
+      copy_done: '拷贝完成 ✓',
       edit: '编辑',
       custom_style: '定制样式',
       export: '导出',
@@ -191,6 +196,10 @@
       move_up: 'Move Up',
       move_down: 'Move Down',
       move_to: 'Move To...',
+      copy: 'Copy',
+      paste: 'Paste',
+      copy_progress: 'Copying content',
+      copy_done: 'Copy complete ✓',
       edit: 'Edit',
       custom_style: 'Custom Style',
       export: 'Export',
@@ -3007,10 +3016,30 @@
         item.classList.remove('ctx-menu-disabled');
       }
     });
+    // Copy: any logged-in user can copy (read access is already checked)
+    // Paste: needs write permission on current tab
+    const copyItem = treeCtxMenu.querySelector('[data-action="copy"]');
+    const pasteItem = treeCtxMenu.querySelector('[data-action="paste"]');
+    if (copyItem) {
+      if (!currentUser) {
+        copyItem.classList.add('ctx-menu-disabled');
+      } else {
+        copyItem.classList.remove('ctx-menu-disabled');
+      }
+    }
+    if (pasteItem) {
+      const canWrite = canEditTab(currentTab);
+      if (!currentUser || !canWrite || !copiedMenuItem) {
+        pasteItem.classList.add('ctx-menu-disabled');
+      } else {
+        pasteItem.classList.remove('ctx-menu-disabled');
+      }
+    }
   }
 
   $$('#tree-context-menu .tree-ctx-item').forEach((item) => {
     item.addEventListener('click', () => {
+      if (item.classList.contains('ctx-menu-disabled')) return;
       const action = item.dataset.action;
       const id = treeCtxItemId;
       treeCtxMenu.style.display = 'none';
@@ -3031,6 +3060,74 @@
         case 'move-down':
           moveMenuItem(id, 'down');
           break;
+        case 'copy': {
+          const node = findNodeById(menuTree, id);
+          if (node && currentTab) {
+            function cloneNode(src) {
+              const c = { id: src.id, label: src.label, children: [] };
+              if (src.style) c.style = Object.assign({}, src.style);
+              (src.children || []).forEach(function(ch) { c.children.push(cloneNode(ch)); });
+              return c;
+            }
+            const cloned = cloneNode(node);
+            copiedMenuItem = { item: cloned, contents: {} };
+            (async function() {
+              const allIds = [];
+              function collectIds(n) { allIds.push(n.id); (n.children || []).forEach(collectIds); }
+              collectIds(cloned);
+              var total = allIds.length;
+              var done = 0;
+              var progressEl = $('#copy-progress');
+              if (progressEl) {
+                progressEl.textContent = t('copy_progress') + ' 0/' + total;
+                progressEl.style.display = '';
+              }
+              var results = [];
+              for (var i = 0; i < allIds.length; i++) {
+                try {
+                  var data = await api('GET', '/api/' + encodeURIComponent(currentTab) + '/content/' + allIds[i]);
+                  results.push({ id: allIds[i], content: data.content || '' });
+                } catch (e) {
+                  results.push({ id: allIds[i], content: '' });
+                }
+                done++;
+                if (progressEl) {
+                  progressEl.textContent = t('copy_progress') + ' ' + done + '/' + total;
+                }
+              }
+              var contents = {};
+              results.forEach(function(r) { if (r.content) contents[r.id] = r.content; });
+              copiedMenuItem.contents = contents;
+              if (progressEl) {
+                progressEl.textContent = t('copy_done');
+                setTimeout(function() { progressEl.style.display = 'none'; }, 1500);
+              }
+            })();
+          }
+          break;
+        }
+        case 'paste': {
+          if (!copiedMenuItem || !currentTab) break;
+          (async function() {
+            try {
+              var payload = {
+                item: copiedMenuItem.item,
+                after_id: id,
+                contents: copiedMenuItem.contents || {}
+              };
+              var result = await api('POST', '/api/' + encodeURIComponent(currentTab) + '/menu/paste', payload);
+              await reloadMenu();
+              var newId = result.id;
+              if (newId) {
+                scrollToTreeNode(newId);
+                selectItem(newId);
+              }
+            } catch (e) {
+              showDialog('Error', '<p>' + escapeHtml(e.message) + '</p>');
+            }
+          })();
+          break;
+        }
         case 'move-to':
           showMoveToDialog(id);
           break;
