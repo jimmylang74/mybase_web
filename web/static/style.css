@@ -236,7 +236,13 @@ body {
 #tree-container {
   flex: 1;
   overflow: auto;
-  padding: 4px 0;
+  padding: 4px 0 40vh 0;
+}
+
+#tree-container::after {
+  content: '';
+  display: block;
+  height: 20px;
 }
 
 .tree-node {

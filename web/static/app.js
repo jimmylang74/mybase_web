@@ -1279,10 +1279,13 @@
         toggle.textContent = '\u25BE';
       }
     }
-    // Scroll the new node into view
+    // Scroll the node to the center of the container
     const nodeEl = treeContainer.querySelector(`.tree-node[data-id="${nodeId}"]`);
     if (nodeEl) {
-      nodeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const containerRect = treeContainer.getBoundingClientRect();
+      const nodeRect = nodeEl.getBoundingClientRect();
+      const offset = nodeRect.top - containerRect.top - (containerRect.height - nodeRect.height) / 2;
+      treeContainer.scrollTop += offset;
     }
   }
 
