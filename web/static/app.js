@@ -3437,14 +3437,30 @@
 
     // ── Build hierarchical tree from flat API data ──
     function buildHierarchy(flat, excludeId) {
+      // Collect all descendants of the excluded node so they are removed from
+      // the tree entirely (preventing them from becoming orphaned root nodes).
+      const excludeSet = new Set();
+      if (excludeId) {
+        excludeSet.add(excludeId);
+        let prevSize = 0;
+        while (prevSize !== excludeSet.size) {
+          prevSize = excludeSet.size;
+          for (const n of flat) {
+            if (excludeSet.has(n.parent_id)) {
+              excludeSet.add(n.id);
+            }
+          }
+        }
+      }
+
       const roots = [];
       const map = {};
       for (const n of flat) {
-        if (n.id === excludeId) continue;
+        if (excludeSet.has(n.id)) continue;
         map[n.id] = { id: n.id, label: n.label, parent_id: n.parent_id, children: [] };
       }
       for (const n of flat) {
-        if (n.id === excludeId) continue;
+        if (excludeSet.has(n.id)) continue;
         const node = map[n.id];
         if (n.parent_id && map[n.parent_id]) {
           map[n.parent_id].children.push(node);
