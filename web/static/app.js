@@ -6426,6 +6426,296 @@
     }
   }
 
+  // ─── OCR Image Text Copy (Offline) ─────────────────────────────────
+
+  var ocrBtn = null;
+  var ocrActiveImg = null;
+  var ocrHideTimer = null;
+
+  function initOcrImageCopy() {
+    ocrBtn = document.createElement('div');
+    ocrBtn.className = 'ocr-copy-btn';
+    ocrBtn.innerHTML = '<span class="ocr-copy-icon">📋</span> 复制文字';
+    ocrBtn.style.display = 'none';
+    document.body.appendChild(ocrBtn);
+
+    editor.addEventListener('mouseover', function(e) {
+      var img = e.target.closest ? e.target.closest('img') : null;
+      if (img && editor.contains(img) && img.src) {
+        ocrActiveImg = img;
+        positionOcrBtn(img);
+        ocrBtn.style.display = 'inline-flex';
+        if (ocrHideTimer) {
+          clearTimeout(ocrHideTimer);
+          ocrHideTimer = null;
+        }
+      }
+    });
+
+    editor.addEventListener('mouseout', function(e) {
+      var img = e.target.closest ? e.target.closest('img') : null;
+      if (!img || !editor.contains(img)) return;
+      var to = e.relatedTarget;
+      if (to && (to === ocrBtn || ocrBtn.contains(to))) return;
+      if (ocrHideTimer) clearTimeout(ocrHideTimer);
+      ocrHideTimer = setTimeout(function() {
+        ocrBtn.style.display = 'none';
+        ocrActiveImg = null;
+        ocrHideTimer = null;
+      }, 300);
+    });
+
+    ocrBtn.addEventListener('mouseover', function() {
+      if (ocrHideTimer) {
+        clearTimeout(ocrHideTimer);
+        ocrHideTimer = null;
+      }
+      ocrBtn.style.display = 'inline-flex';
+    });
+    ocrBtn.addEventListener('mouseout', function() {
+      ocrBtn.style.display = 'none';
+      ocrActiveImg = null;
+    });
+
+    ocrBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      var img = ocrActiveImg;
+      if (!img || !img.src) return;
+      ocrBtn.style.display = 'none';
+      ocrActiveImg = null;
+
+      (async function() {
+        try {
+          showOcrProgress('正在准备 OCR...');
+          var path = '/static/tesseract/';
+          var result = await Tesseract.recognize(img, 'chi_sim+eng+jpn+kor', {
+            workerPath: path + 'worker.min.js',
+            corePath: path,
+            langPath: path + 'lang-data',
+            logger: function(m) {
+              if (m.status === 'loading tesseract core') {
+                showOcrProgress('加载识别引擎...');
+              } else if (m.status === 'initializing tesseract') {
+                showOcrProgress('初始化引擎...');
+              } else if (m.status === 'loading language traineddata') {
+                showOcrProgress('加载语言数据 ' + (m.progress ? Math.round(m.progress * 100) + '%' : ''));
+              } else if (m.status === 'initializing api') {
+                showOcrProgress('初始化 API...');
+              } else if (m.status === 'recognizing text') {
+                showOcrProgress('识别中 ' + (m.progress ? Math.round(m.progress * 100) + '%' : ''));
+              }
+            }
+          });
+          var text = (result.data.text || '').trim();
+          if (!text) {
+            showOcrToast('未在图片中识别到文字', false);
+            return;
+          }
+          showOcrResultPanel(result.data, img);
+        } catch (err) {
+          console.error('OCR failed:', err);
+          showOcrToast('OCR 识别失败: ' + (err.message || '未知错误'), false);
+        }
+      })();
+    });
+
+    function onViewportChange() {
+      if (ocrBtn.style.display !== 'none' && ocrActiveImg) {
+        positionOcrBtn(ocrActiveImg);
+      }
+    }
+    window.addEventListener('scroll', onViewportChange, true);
+    window.addEventListener('resize', onViewportChange);
+  }
+
+  function positionOcrBtn(img) {
+    var rect = img.getBoundingClientRect();
+    ocrBtn.style.top = Math.max(2, rect.top + 4) + 'px';
+    ocrBtn.style.left = Math.max(4, rect.left + 4) + 'px';
+  }
+
+  function showOcrProgress(msg) {
+    var el = $('#copy-progress');
+    if (el) {
+      el.textContent = '📷 ' + msg;
+      el.style.background = '#2c3e50';
+      el.style.display = '';
+    }
+  }
+
+  function showOcrToast(msg, success) {
+    var el = $('#copy-progress');
+    if (el) {
+      el.textContent = (success ? '✅ ' : '⚠️ ') + msg;
+      el.style.background = success ? '#27ae60' : '#c0392b';
+      el.style.display = '';
+      setTimeout(function() {
+        el.style.display = 'none';
+        el.style.background = '#2c3e50';
+      }, 3500);
+    }
+  }
+
+  // ─── Clipboard ─────────────────────────────────────────────────────────
+
+  function copyTextToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Fallback for plain HTTP context
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+    } catch (e) {
+      document.body.removeChild(ta);
+      return Promise.reject(e);
+    }
+    document.body.removeChild(ta);
+    return Promise.resolve();
+  }
+
+  // ─── OCR Result Panel ──────────────────────────────────────────────────
+
+  function showOcrResultPanel(data, img) {
+    // Hide the progress bar first
+    var progressEl = $('#copy-progress');
+    if (progressEl) {
+      progressEl.style.display = 'none';
+      progressEl.style.background = '#2c3e50';
+    }
+
+    // Split recognized text into paragraphs.
+    // data.paragraphs[i].text can contain the full text in some Tesseract builds,
+    // so we split data.text by newlines instead.
+    var raw = data.text || '';
+    var paragraphs = raw.split(/\n\s*\n/).map(function(s) { return s.trim(); }).filter(Boolean);
+    if (paragraphs.length <= 1) {
+      // Single/double newline didn't split — try single newlines
+      paragraphs = raw.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+    if (!paragraphs.length) paragraphs = [raw.trim()];
+
+    // Create backdrop
+    var backdrop = document.createElement('div');
+    backdrop.className = 'ocr-result-backdrop';
+
+    // Create panel
+    var panel = document.createElement('div');
+    panel.className = 'ocr-result-panel';
+
+    // Header
+    var header = document.createElement('div');
+    header.className = 'ocr-result-header';
+    var title = document.createElement('span');
+    title.textContent = '📷 OCR 识别结果';
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'ocr-result-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.title = '关闭 (Esc)';
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'ocr-result-body';
+
+    // Toolbar
+    var toolbar = document.createElement('div');
+    toolbar.className = 'ocr-result-toolbar';
+    var copyAllBtn = document.createElement('button');
+    copyAllBtn.className = 'ocr-result-btn ocr-result-btn-primary';
+    copyAllBtn.textContent = '📋 复制全部';
+    var charCount = document.createElement('span');
+    charCount.className = 'ocr-result-count';
+    charCount.textContent = '共 ' + data.text.length + ' 字符，' + paragraphs.length + ' 段';
+    toolbar.appendChild(copyAllBtn);
+    toolbar.appendChild(charCount);
+
+    // Paragraphs
+    var textContainer = document.createElement('div');
+    textContainer.className = 'ocr-result-text';
+
+    paragraphs.forEach(function(pText, idx) {
+      var paraEl = document.createElement('div');
+      paraEl.className = 'ocr-result-para';
+
+      var paraText = document.createElement('div');
+      paraText.className = 'ocr-result-para-text';
+      paraText.textContent = pText;
+
+      var paraCopy = document.createElement('button');
+      paraCopy.className = 'ocr-result-btn ocr-result-btn-small';
+      paraCopy.textContent = '复制本段';
+      paraCopy.addEventListener('click', function(e) {
+        e.stopPropagation();
+        copyTextToClipboard(pText).then(function() {
+          paraCopy.textContent = '✅ 已复制';
+          setTimeout(function() { paraCopy.textContent = '复制本段'; }, 2000);
+        }).catch(function(err) {
+          console.error('Copy paragraph failed:', err);
+          paraCopy.textContent = '❌ 失败';
+        });
+      });
+
+      paraEl.appendChild(paraText);
+      paraEl.appendChild(paraCopy);
+      textContainer.appendChild(paraEl);
+    });
+
+    body.appendChild(toolbar);
+    body.appendChild(textContainer);
+
+    panel.appendChild(header);
+    panel.appendChild(body);
+
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+
+    // Show with animation
+    requestAnimationFrame(function() {
+      backdrop.classList.add('ocr-result-active');
+    });
+
+    // Close handlers
+    function closePanel() {
+      backdrop.classList.remove('ocr-result-active');
+      setTimeout(function() { document.body.removeChild(backdrop); }, 200);
+      document.removeEventListener('keydown', onKeydown);
+    }
+
+    function onKeydown(e) {
+      if (e.key === 'Escape') closePanel();
+    }
+    document.addEventListener('keydown', onKeydown);
+
+    closeBtn.addEventListener('click', closePanel);
+    backdrop.addEventListener('click', function(e) {
+      if (e.target === backdrop) closePanel();
+    });
+
+    // Copy All
+    copyAllBtn.addEventListener('click', function() {
+      copyTextToClipboard(data.text).then(function() {
+        copyAllBtn.textContent = '✅ 已复制全部';
+        setTimeout(function() { copyAllBtn.textContent = '📋 复制全部'; }, 2000);
+      }).catch(function(err) {
+        console.error('Copy all failed:', err);
+        copyAllBtn.textContent = '❌ 复制失败';
+      });
+    });
+
+    // Prevent text selection in body from triggering close
+    panel.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+  }
+
   // ─── Init ──────────────────────────────────────────────────────────────
 
   (async function init() {
@@ -6440,6 +6730,9 @@
     // Initialize formula engine
     tableFormulaManager = new TableFormulaManager();
     tableFormulaManager.init();
+
+    // Initialize OCR image copy (must be after editor is in DOM)
+    initOcrImageCopy();
   })();
 
 })();
