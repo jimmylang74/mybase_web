@@ -26,6 +26,7 @@ import contextlib
 import multiprocessing as mp
 import zipfile
 import io
+import mimetypes
 from datetime import datetime
 
 
@@ -3453,6 +3454,66 @@ def upload_image(tab):
     write_tab_file(tab, f"images/{unique_name}", file_data)
 
     return jsonify({'url': f'/uploads/{tab}/images/{unique_name}'}), 201
+
+
+@app.route('/api/<tab>/upload/file', methods=['POST'])
+def upload_file(tab):
+    _auth_check_write(tab)
+    if not get_tab_path(tab):
+        return jsonify({'error': 'Tab not found'}), 404
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'No file selected'}), 400
+
+    orig_filename = secure_filename(file.filename)
+    if not orig_filename:
+        orig_filename = f"file_{uuid.uuid4().hex[:8]}.bin"
+
+    name_part, ext_part = os.path.splitext(orig_filename) if '.' in orig_filename else (orig_filename, '.bin')
+    unique_name = f"{name_part}_{uuid.uuid4().hex[:4]}{ext_part}"
+
+    file_data = file.read()
+    write_tab_file(tab, f"images/{unique_name}", file_data)
+
+    return jsonify({
+        'url': f'/uploads/{tab}/files/{unique_name}',
+        'filename': orig_filename,
+        'size': len(file_data)
+    }), 201
+
+
+@app.route('/uploads/<tab>/files/<filename>')
+def serve_uploaded_file(tab, filename):
+    tab_path = get_tab_path(tab)
+    if not tab_path:
+        abort(404)
+    # Check if this tab is encrypted and try to serve decrypted file
+    key = get_cached_encryption_key(tab)
+    if key:
+        rel_path = f"images/{filename}"
+        data = read_tab_file(tab, rel_path)
+        if data is None:
+            abort(404)
+        # Determine mimetype from extension
+        mime, _ = mimetypes.guess_type(filename)
+        if mime is None:
+            mime = 'application/octet-stream'
+        return send_file(io.BytesIO(data), mimetype=mime)
+    # Plain file
+    upload_dir = tab_path / UPLOAD_DIR_NAME
+    file_path = upload_dir / filename
+    if not file_path.exists():
+        enc_path = file_path.with_suffix(file_path.suffix + '.enc')
+        if enc_path.exists():
+            abort(404)  # encrypted but not unlocked
+        abort(404)
+    mime, _ = mimetypes.guess_type(filename)
+    if mime is None:
+        mime = 'application/octet-stream'
+    return send_from_directory(str(upload_dir), filename, mimetype=mime)
 
 
 @app.route('/uploads/<tab>/images/<filename>')

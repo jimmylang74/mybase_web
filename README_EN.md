@@ -1,4 +1,4 @@
-# KBase v6.1.0
+# KBase v6.2.1
 
 **Web of Mybase Knowledge Server** — A Chinese knowledge base management system built with Flask + PaddleOCR.
 
@@ -28,6 +28,7 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
   - Admin/users can password-protect their own KBs (password required to view/edit)
 - **Team discuss Tab** - Now admin can set a tab as discuss tab, all members of KB system can login and edit on it, everyone can see it at once
 - **Menu Item Copy/Paste** - Menu item and its all children can be copied to another Tab
+- **Single user mode** - Run in single user mode by setting command line parameter
 
 ### v4.x
 - **Text background color** — Content area text can now have background colors
@@ -56,7 +57,7 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
 - 🖼️ **OCR image text recognition** — PaddleOCR-based; auto-extracts image text into the index
 - 📦 **One-click backup** — ZIP package of all KB data for download
 - 🌐 **Standalone export** — Each KB can generate a self-contained single-page HTML
-- **Ubuntu & Windows support**
+- **Ubuntu & Windows support** — Support Ubuntu/Windows os deployment
 
 ## Installation
 

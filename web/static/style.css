@@ -569,6 +569,34 @@ body {
   flex-shrink: 0;
 }
 
+/* ─── File Embed ──────────────────────────────────────────────────────── */
+.file-embed {
+  display: inline-block;
+  background: #f0f7ff;
+  border: 1px solid #d0e3f7;
+  border-radius: 6px;
+  padding: 8px 14px;
+  margin: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.file-embed:hover {
+  background: #e1effa;
+  border-color: #a8c8ed;
+}
+.file-embed a {
+  text-decoration: none;
+  color: #2c6fb0;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-embed a:hover {
+  color: #1a4f8a;
+}
+
 /* ─── Editor Context Menu ─────────────────────────────────────────────── */
 #context-menu {
   display: none;

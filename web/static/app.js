@@ -394,6 +394,20 @@
     return data;
   }
 
+  async function apiUploadFile(url, file, filename) {
+    const formData = new FormData();
+    formData.append('file', file, filename);
+    const headers = {};
+    if (authToken) {
+      headers['X-Auth-Token'] = authToken;
+    }
+    const opts = { method: 'POST', body: formData, headers };
+    const res = await fetch(url, opts);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload Error');
+    return data;
+  }
+
   // ─── Auth ────────────────────────────────────────────────────────────────
 
   function updateUserIndicator() {
@@ -3883,7 +3897,12 @@
       if (node.nodeName === 'A' && node.href) {
         e.preventDefault();
         e.stopPropagation();
-        window.open(node.href, '_blank');
+        // If the link has a download attribute (file embed), trigger download
+        if (node.getAttribute('download')) {
+          triggerDownload(node.href, node.getAttribute('download'));
+        } else {
+          window.open(node.href, '_blank');
+        }
         return;
       }
       node = node.parentNode;
@@ -3972,19 +3991,21 @@
       return;
     }
 
-    // Image paste
+    // File paste (including images) — handle ALL file types from clipboard
     for (let i = 0; i < items.length; i++) {
-      if (items[i].type && items[i].type.startsWith('image/')) {
+      const file = items[i].getAsFile && items[i].getAsFile();
+      if (file) {
         e.preventDefault();
-        const file = items[i].getAsFile();
-        if (file) {
+        if (file.type.startsWith('image/')) {
           uploadAndInsertImage(file);
+        } else {
+          uploadAndInsertFile(file);
         }
         return;
       }
     }
 
-    // Text/HTML paste (no table, no image)
+    // Text/HTML paste (no table, no file)
     if (items.length > 0) {
       if (textContent && !htmlContent) {
         e.preventDefault();
@@ -4283,6 +4304,34 @@
       markModified();
     } catch (e) {
       console.error('Image paste upload failed:', e);
+    }
+  }
+
+  async function uploadAndInsertFile(file) {
+    if (!currentTab) return;
+    try {
+      const result = await apiUploadFile(`/api/${encodeURIComponent(currentTab)}/upload/file`, file, file.name || 'file');
+      editor.focus();
+      // Build a human-readable size string
+      const size = result.size || 0;
+      let sizeStr = '';
+      if (size < 1024) {
+        sizeStr = size + ' B';
+      } else if (size < 1024 * 1024) {
+        sizeStr = (size / 1024).toFixed(1) + ' KB';
+      } else {
+        sizeStr = (size / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+      const displayName = result.filename || file.name || 'file';
+      const fileHtml = '<div class="file-embed" contenteditable="false" data-filename="' + escapeHtml(displayName) + '" data-filesize="' + size + '">' +
+        '<a href="' + result.url + '" download="' + escapeHtml(displayName).replace(/"/g, '&quot;') + '">' +
+        '📎 ' + escapeHtml(displayName) + ' (' + sizeStr + ')' +
+        '</a>' +
+        '</div>';
+      document.execCommand('insertHTML', false, fileHtml);
+      markModified();
+    } catch (e) {
+      console.error('File paste upload failed:', e);
     }
   }
 
