@@ -1359,6 +1359,7 @@
       tableFormulaManager.refresh();
     }
     applySearchHighlights();
+    renderMermaidDiagrams();
     isRemoteUpdate = false;
     const item = findNodeById(menuTree, itemId);
       editorStatus.textContent = canWriteCurrentTab
@@ -3850,6 +3851,386 @@
 
   $('#btn-insert-table').addEventListener('click', () => {
     promptInsertTable();
+  });
+
+  // ─── Mermaid Sequence Diagram ─────────────────────────────────────────
+
+  let mermaidInitialized = false;
+
+  function initMermaid() {
+    if (mermaidInitialized) return;
+    try {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'default',
+        securityLevel: 'loose',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      });
+      mermaidInitialized = true;
+    } catch (e) {
+      console.warn('Mermaid init failed:', e);
+    }
+  }
+
+  /** Resize SVG in a mermaid block according to its container width and zoom level */
+  function resizeSvgToZoom(blockEl) {
+    const renderEl = blockEl.querySelector('.mermaid-render');
+    const svgEl = renderEl ? renderEl.querySelector('svg') : null;
+    if (!svgEl) return;
+
+    const viewBox = svgEl.getAttribute('viewBox');
+    if (!viewBox) return;
+    const parts = viewBox.trim().split(/\s+/).map(Number);
+    const vbW = parts[2];
+    const vbH = parts[3];
+    if (!vbW || !vbH) return;
+
+    const zoom = parseInt(blockEl.dataset.zoom, 10) || 100;
+    const containerWidth = renderEl.clientWidth;
+    // Apply zoom as a multiplier of container width
+    const svgWidth = containerWidth * (zoom / 100);
+    const svgHeight = svgWidth * (vbH / vbW);
+
+    svgEl.setAttribute('width', svgWidth);
+    svgEl.setAttribute('height', svgHeight);
+  }
+
+  /** Render a single mermaid block element */
+  async function renderMermaidBlock(blockEl) {
+    if (!mermaidInitialized) initMermaid();
+    const source = (blockEl.dataset.mermaidSource || '').trim();
+    if (!source) return;
+
+    const renderEl = blockEl.querySelector('.mermaid-render');
+    if (!renderEl) return;
+
+    renderEl.textContent = 'Rendering...';
+
+    try {
+      const id = 'mermaid-' + Math.random().toString(36).slice(2, 10);
+      const { svg } = await mermaid.render(id, source);
+      renderEl.innerHTML = svg;
+
+      // Size SVG according to current zoom
+      resizeSvgToZoom(blockEl);
+
+      // Watch container for size changes (window resize, editor resize etc.)
+      if (!renderEl.__resizeObs) {
+        renderEl.__resizeObs = new ResizeObserver(() => {
+          if (blockEl.dataset.mode !== 'source') {
+            resizeSvgToZoom(blockEl);
+          }
+        });
+        renderEl.__resizeObs.observe(renderEl);
+      }
+    } catch (e) {
+      renderEl.innerHTML = '<div style="color:#e74c3c;font-size:13px;text-align:center">Diagram render error: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  /** Find and render all mermaid blocks in the editor */
+  function renderMermaidDiagrams() {
+    if (!editor) return;
+    if (!mermaidInitialized) initMermaid();
+    const blocks = editor.querySelectorAll('.mermaid-block[data-mode="rendered"]');
+    blocks.forEach((el) => {
+      // Set a unique id if not present
+      if (!el.id) {
+        el.id = 'mmb-' + Math.random().toString(36).slice(2, 10);
+      }
+      renderMermaidBlock(el);
+    });
+  }
+
+  /** Toggle a mermaid block between rendered and source mode */
+  async function toggleMermaidBlock(blockEl) {
+    const mode = blockEl.dataset.mode;
+    const toggleBtn = blockEl.querySelector('.mermaid-toggle-btn');
+    const sourceEl = blockEl.querySelector('.mermaid-source-edit');
+
+    if (mode === 'rendered') {
+      // Switch to source mode
+      blockEl.dataset.mode = 'source';
+      if (sourceEl) {
+        sourceEl.contentEditable = 'true';
+        sourceEl.focus();
+      }
+      if (toggleBtn) toggleBtn.textContent = 'Render';
+    } else {
+      // Switch to rendered mode
+      const newSource = sourceEl ? sourceEl.textContent.trim() : '';
+      if (newSource) {
+        blockEl.dataset.mermaidSource = newSource;
+      }
+      blockEl.dataset.mode = 'rendered';
+      if (sourceEl) {
+        sourceEl.contentEditable = 'false';
+      }
+      if (toggleBtn) toggleBtn.textContent = 'Source';
+      await renderMermaidBlock(blockEl);
+      markModified();
+    }
+  }
+
+  /** Build a mermaid block HTML string from source code */
+  function buildMermaidBlockHtml(source) {
+    const escapedSource = escapeHtml(source);
+    const blockId = 'mmb-' + Math.random().toString(36).slice(2, 10);
+    return '<div class="mermaid-block" id="' + blockId + '" data-mode="rendered" data-zoom="100" data-mermaid-source="' + escapeHtml(source).replace(/"/g, '&quot;') + '">'
+      + '<div class="mermaid-header" contenteditable="false">'
+      + '<span class="mermaid-label">📊 Sequence Diagram</span>'
+      + '<div class="mermaid-header-actions">'
+      + '<div class="mermaid-zoom-control" contenteditable="false">'
+      + '<button class="mermaid-zoom-out" contenteditable="false" title="Zoom out">-</button>'
+      + '<span class="mermaid-zoom-label" contenteditable="false">100%</span>'
+      + '<button class="mermaid-zoom-in" contenteditable="false" title="Zoom in">+</button>'
+      + '</div>'
+      + '<button class="mermaid-toggle-btn" contenteditable="false">Source</button>'
+      + '<button class="mermaid-del-btn" contenteditable="false" title="Delete diagram">✕</button>'
+      + '</div>'
+      + '</div>'
+      + '<div class="mermaid-render">Rendering...</div>'
+      + '<pre class="mermaid-source-edit" contenteditable="false">' + escapedSource + '</pre>'
+      + '</div>';
+  }
+
+  /** Insert a mermaid sequence diagram block at a given range (or current cursor) */
+  function insertMermaidBlock(source, savedRange) {
+    if (!source || !source.trim()) return;
+
+    const sel = window.getSelection();
+    let range = savedRange;
+    if (!range) {
+      editor.focus();
+      if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+        range = sel.getRangeAt(0);
+      } else {
+        range = document.createRange();
+        range.setStartAfter(editor.lastChild || editor);
+        range.collapse(true);
+      }
+    }
+
+    const html = buildMermaidBlockHtml(source.trim());
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const blockEl = tempDiv.firstElementChild;
+
+    range.deleteContents();
+    range.insertNode(blockEl);
+
+    // Move cursor after the block
+    const newRange = document.createRange();
+    newRange.setStartAfter(blockEl);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+
+    // Render the diagram
+    renderMermaidBlock(blockEl);
+    markModified();
+  }
+
+  /** Show the mermaid insert dialog */
+  function promptInsertMermaid() {
+    const dialog = $('#mermaid-dialog');
+    if (!dialog) return;
+    const textarea = $('#mermaid-dialog-source');
+    const preview = $('#mermaid-dialog-preview');
+    if (!textarea || !preview) return;
+
+    // Save cursor position before dialog steals focus
+    const savedRange = (() => {
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+        return sel.getRangeAt(0).cloneRange();
+      }
+      return null;
+    })();
+
+    // Reset
+    textarea.value = '';
+    preview.innerHTML = '<div style="color:#999;font-size:13px">Enter source code above to preview</div>';
+    dialog.style.display = 'flex';
+    textarea.focus();
+
+    // Live preview on input
+    textarea._previewTimer = null;
+    textarea.addEventListener('input', function() {
+      clearTimeout(this._previewTimer);
+      this._previewTimer = setTimeout(async () => {
+        const src = this.value.trim();
+        if (!src) {
+          preview.innerHTML = '<div style="color:#999;font-size:13px">Enter source code above to preview</div>';
+          return;
+        }
+        try {
+          if (!mermaidInitialized) initMermaid();
+          const id = 'mermaid-preview-' + Math.random().toString(36).slice(2, 8);
+          const { svg } = await mermaid.render(id, src);
+          preview.className = '';
+          preview.innerHTML = svg;
+        } catch (e) {
+          preview.className = 'mermaid-error';
+          preview.textContent = 'Error: ' + e.message;
+        }
+      }, 500);
+    });
+
+    // OK button
+    const okBtn = $('#mermaid-btn-ok');
+    const cancelBtn = $('#mermaid-btn-cancel');
+
+    function doInsert() {
+      const src = textarea.value.trim();
+      if (!src) return;
+      dialog.style.display = 'none';
+      insertMermaidBlock(src, savedRange);
+    }
+
+    function doCancel() {
+      dialog.style.display = 'none';
+    }
+
+    okBtn.onclick = doInsert;
+    cancelBtn.onclick = doCancel;
+
+    textarea.onkeydown = (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        doInsert();
+      }
+      if (e.key === 'Escape') doCancel();
+    };
+
+    // Close on overlay click
+    dialog.onclick = (e) => {
+      if (e.target === dialog) doCancel();
+    };
+  }
+
+  $('#btn-insert-mermaid').addEventListener('click', () => {
+    promptInsertMermaid();
+  });
+
+  /** Remove a mermaid block from the editor */
+  function removeMermaidBlock(blockEl) {
+    // Move cursor before/after before removing
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.setStartAfter(blockEl);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    blockEl.remove();
+    editor.focus();
+    markModified();
+  }
+
+  /** Change zoom level for a mermaid block */
+  function changeMermaidZoom(blockEl, delta) {
+    let zoom = parseInt(blockEl.dataset.zoom, 10) || 100;
+    zoom = Math.max(25, Math.min(200, zoom + delta));
+    blockEl.dataset.zoom = zoom;
+    const label = blockEl.querySelector('.mermaid-zoom-label');
+    if (label) label.textContent = zoom + '%';
+    resizeSvgToZoom(blockEl);
+    markModified();
+  }
+
+  // Delegate clicks within mermaid blocks in the editor
+  editor.addEventListener('click', (e) => {
+    const toggleBtn = e.target.closest('.mermaid-toggle-btn');
+    if (toggleBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const blockEl = toggleBtn.closest('.mermaid-block');
+      if (blockEl) {
+        toggleMermaidBlock(blockEl);
+      }
+      return;
+    }
+
+    const zoomOut = e.target.closest('.mermaid-zoom-out');
+    if (zoomOut) {
+      e.preventDefault();
+      e.stopPropagation();
+      const blockEl = zoomOut.closest('.mermaid-block');
+      if (blockEl) changeMermaidZoom(blockEl, -25);
+      return;
+    }
+
+    const zoomIn = e.target.closest('.mermaid-zoom-in');
+    if (zoomIn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const blockEl = zoomIn.closest('.mermaid-block');
+      if (blockEl) changeMermaidZoom(blockEl, 25);
+      return;
+    }
+
+    const delBtn = e.target.closest('.mermaid-del-btn');
+    if (delBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const blockEl = delBtn.closest('.mermaid-block');
+      if (blockEl) {
+        removeMermaidBlock(blockEl);
+      }
+      return;
+    }
+
+    // Click on the block body → select it (only if hitting actual content, not empty padding)
+    const blockEl = e.target.closest('.mermaid-block');
+    if (blockEl) {
+      // Ignore clicks on empty padding in the render area
+      // (happens when diagram is zoomed out — space right of SVG)
+      const inRender = e.target.closest('.mermaid-render');
+      const isSvg = e.target.closest('svg');
+      if (inRender && !isSvg) return;
+
+      editor.querySelectorAll('.mermaid-block.selected').forEach((el) => el.classList.remove('selected'));
+      blockEl.classList.add('selected');
+      return;
+    }
+  });
+
+  // Click outside a mermaid block → deselect
+  editor.addEventListener('click', (e) => {
+    if (!e.target.closest('.mermaid-block')) {
+      editor.querySelectorAll('.mermaid-block.selected').forEach((el) => el.classList.remove('selected'));
+    }
+  });
+
+  // Backspace/Delete on selected mermaid block → remove it
+  editor.addEventListener('keydown', (e) => {
+    const selected = editor.querySelector('.mermaid-block.selected');
+    if (!selected) return;
+
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      removeMermaidBlock(selected);
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Insert a new empty paragraph after the mermaid block
+      const p = document.createElement('p');
+      p.innerHTML = '<br>';
+      selected.parentNode.insertBefore(p, selected.nextSibling);
+      // Move cursor into the new paragraph
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.setStart(p, 0);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      // Deselect the block
+      selected.classList.remove('selected');
+      markModified();
+    }
   });
 
   $('#btn-save').addEventListener('click', () => {

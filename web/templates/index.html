@@ -72,6 +72,7 @@
         </span>
         <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
         <button class="tool-btn" id="btn-insert-table" title="Insert Table">⊞ Table</button>
+        <button class="tool-btn" id="btn-insert-mermaid" title="Insert Sequence Diagram">📊 Seq</button>
         <span class="separator"></span>
         <label class="search-checkbox-label" title="Search all knowledge bases">
           <input type="checkbox" id="search-global"> <span data-i18n="global_search">全局搜索</span>
@@ -347,6 +348,22 @@
   </div>
 </div>
 
+<!-- Mermaid Sequence Diagram Insert Dialog -->
+<div id="mermaid-dialog">
+  <div id="mermaid-dialog-content">
+    <div id="mermaid-dialog-header">Insert Sequence Diagram</div>
+    <div id="mermaid-dialog-body">
+      <div class="mermaid-dialog-hint">Enter Mermaid sequence diagram source code:</div>
+      <textarea id="mermaid-dialog-source" placeholder="sequenceDiagram&#10;    Alice->>John: Hello John, how are you?&#10;    John-->>Alice: Great!"></textarea>
+      <div id="mermaid-dialog-preview"></div>
+    </div>
+    <div id="mermaid-dialog-footer">
+      <button id="mermaid-btn-ok" class="style-btn style-btn-primary">Insert</button>
+      <button id="mermaid-btn-cancel" class="style-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Color Picker Popup -->
 <div id="color-picker-popup" style="display:none">
   <div id="color-picker-popup-content">
@@ -505,6 +522,7 @@
 <script src="/static/socket.io.min.js"></script>
 <script src="/static/hyperformula.full.min.js"></script>
 <script src="/static/tesseract.js"></script>
+<script src="/static/mermaid.min.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

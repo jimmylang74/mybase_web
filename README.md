@@ -1,4 +1,4 @@
-# 知识库 KBase v6.4.2
+# 知识库 KBase v6.5.2
 
 **Web of Mybase Knowledge Server**，中文知识库管理系统，基于 Flask + PaddleOCR 构建。
 
@@ -11,7 +11,8 @@
 V6.x ( In progress )
 - **菜单项导出为PPT**，支持配置后端LLM，菜单项直接导出到LLM，由LLM总结后生成PPT (in progress)
 - **Excel表格拷贝**，支持直接从Excel表格拷贝到网页内容区，保留字体，颜色，背景，对齐方式
-- **图片内文字拷贝**,支持内容区域图片内的文字拷贝
+- **图片内文字拷贝**,支持内容区域图片内的文字拷贝 (使用tesseract.js实现)
+- **支持插入时序图**,支持在内容区域插入Mermaid语法的时序图 (使用mermaid.js实现)
 
 V5.x
 - **优化颜色选择器**，现在颜色选择器中增加常用颜色和透明色
