@@ -3881,6 +3881,77 @@
     blockEl.dataset.baseRenderW = renderEl.clientWidth;
   }
 
+  /** Render the SVG element to a PNG data URL and store in data-png.
+   *  This provides a fallback for PDF export when cairosvg cannot handle
+   *  browser-specific SVG features like foreignObject.
+   *
+   *  We clone the SVG and replace <foreignObject> with <text> elements
+   *  so the canvas (and subsequent toDataURL) is not tainted by cross-origin
+   *  content that browsers associate with foreignObject. */
+  function captureMermaidPng(blockEl) {
+    const renderEl = blockEl.querySelector('.mermaid-render');
+    const svgEl = renderEl ? renderEl.querySelector('svg') : null;
+    if (!svgEl) return;
+    // Cap at 720px to keep storage reasonable
+    const targetWidth = Math.min(parseInt(svgEl.getAttribute('width')) || 360, 720);
+    try {
+      // Clone SVG and replace <foreignObject> with <text> so the
+      // canvas (toDataURL) is not tainted by cross-origin content.
+      const clone = svgEl.cloneNode(true);
+      clone.querySelectorAll('foreignObject').forEach(function (fo) {
+        const text = (fo.textContent || '').trim();
+        if (!text) { fo.remove(); return; }
+        const w = parseFloat(fo.getAttribute('width')) || 0;
+        const h = parseFloat(fo.getAttribute('height')) || 0;
+        // Sum translate transforms from parent <g> chain
+        let tx = 0, ty = 0, p = fo.parentElement;
+        while (p && p !== clone) {
+          const tf = p.getAttribute('transform');
+          if (tf) {
+            const m = tf.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
+            if (m) { tx += parseFloat(m[1]); ty += parseFloat(m[2]); }
+          }
+          p = p.parentElement;
+        }
+        const te = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        te.setAttribute('x', tx + w / 2);
+        te.setAttribute('y', ty + h / 2);
+        te.setAttribute('text-anchor', 'middle');
+        te.setAttribute('dominant-baseline', 'central');
+        te.setAttribute('font-size', '16');
+        te.setAttribute('fill', '#333');
+        te.textContent = text;
+        fo.parentNode.replaceChild(te, fo);
+      });
+      const svgData = new XMLSerializer().serializeToString(clone);
+      const svgFull = svgData.includes('xmlns')
+        ? svgData
+        : svgData.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      const blob = new Blob([svgFull], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = function () {
+        try {
+          const scale = targetWidth / (img.width || 1);
+          const canvas = document.createElement('canvas');
+          canvas.width = targetWidth;
+          canvas.height = Math.round((img.height || 1) * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          svgEl.setAttribute('data-png', canvas.toDataURL('image/png'));
+        } catch (e) {
+          console.warn('captureMermaidPng draw:', e);
+        }
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    } catch (e) {
+      console.warn('captureMermaidPng err:', e);
+    }
+  }
+
   /** Size SVG in a mermaid block.
    *  - Auto mode (block has no inline width / fit-content):
    *    natural size × zoom, constrained to editor width.
@@ -3956,7 +4027,10 @@
 
       resizeSvgToZoom(blockEl);
       // Capture baseline after layout so drag mode can scale from it
-      requestAnimationFrame(() => captureMermaidBase(blockEl));
+      requestAnimationFrame(() => {
+        captureMermaidBase(blockEl);
+        captureMermaidPng(blockEl);
+      });
 
       if (!renderEl.__resizeObs) {
         renderEl.__resizeObs = new ResizeObserver(() => {

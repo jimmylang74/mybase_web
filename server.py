@@ -4740,8 +4740,9 @@ def _generate_pdf(items, title, tab_name=None):
                                     row.cell(cell_text)
                         pdf.ln(3)
                 else:
-                    # ── Text + images (existing logic) ──
+                    # ── Text + images + SVG diagrams ──
                     text_only = re.sub(r'<img[^>]+>', '', segment)
+                    text_only = re.sub(r'<svg\b[^>]*>.*?</svg>', '', text_only, flags=re.DOTALL)
                     text = _html_to_pdf_text(text_only)
                     if text:
                         pdf.set_x(pdf.l_margin + indent + 4)
@@ -4752,10 +4753,25 @@ def _generate_pdf(items, title, tab_name=None):
                         src = match.group(1)
                         img_data = _resolve_img_data(src)
                         if img_data:
-                            max_w = min(pdf.epw - indent - 20, 180)
+                            # Cap image width at 90pt = 31.75mm (fpdf2 uses mm)
+                            max_w = min(pdf.epw - indent - 20, 31.75)
                             if max_w > 20:
                                 try:
                                     pdf.image(io.BytesIO(img_data), w=max_w)
+                                    pdf.ln(3)
+                                except Exception:
+                                    pass
+                    # Cap image width at 90pt = 31.75mm (fpdf2 uses mm)
+                    max_w = min(pdf.epw - indent - 20, 31.75)
+                    if max_w > 20:
+                        for svg_match in re.finditer(r'<svg\b[^>]*>.*?</svg>', segment, flags=re.DOTALL):
+                            svg_str = svg_match.group(0)
+                            png_src = re.search(r'data-png="(data:image/png;base64,[^"]*)"', svg_str)
+                            if png_src:
+                                try:
+                                    b64_data = png_src.group(1).split(',', 1)[1]
+                                    png_data = base64.b64decode(b64_data)
+                                    pdf.image(io.BytesIO(png_data), w=max_w)
                                     pdf.ln(3)
                                 except Exception:
                                     pass
@@ -5004,8 +5020,11 @@ def _copy_export_images(html_content, tab_name, dest_dir):
 
 @app.route('/api/<tab>/export/pdf')
 def export_tab_pdf(tab):
-    token = request.headers.get('X-Auth-Token', '')
-    user = get_session_user(token)
+    if _single_user_mode:
+        user = {'username': 'admin', 'role': 'admin'}
+    else:
+        token = request.headers.get('X-Auth-Token', '')
+        user = get_session_user(token)
     if not user or not can_export_tab(tab, user):
         return jsonify({'error': '无权限导出该知识库'}), 403
     try:
@@ -5083,8 +5102,11 @@ def export_tab_zip(tab):
 
 @app.route('/api/<tab>/export/pdf/<item_id>')
 def export_tree_item_pdf(tab, item_id):
-    token = request.headers.get('X-Auth-Token', '')
-    user = get_session_user(token)
+    if _single_user_mode:
+        user = {'username': 'admin', 'role': 'admin'}
+    else:
+        token = request.headers.get('X-Auth-Token', '')
+        user = get_session_user(token)
     if not user or not can_export_tab(tab, user):
         return jsonify({'error': '无权限导出'}), 403
     try:
