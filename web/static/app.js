@@ -3966,14 +3966,18 @@
     // a screenshot in the clipboard; we want the editable table, not the picture.
     if (!inTableCell && htmlContent && containsTable(htmlContent)) {
       e.preventDefault();
-      const result = parseTableFromHtml(htmlContent);
-      if (result && result.data.length > 0 && result.data[0].length > 0) {
-        insertTableFromData(result.data, result.widths);
-        markModified();
-        requestAnimationFrame(() => {
-          if (tableFormulaManager) tableFormulaManager.refresh();
-        });
+      if (hasTextOutsideTable(htmlContent)) {
+        handleMixedPaste(htmlContent);
+      } else {
+        const result = parseTableFromHtml(htmlContent);
+        if (result && result.data.length > 0 && result.data[0].length > 0) {
+          insertTableFromData(result.data, result.widths);
+        }
       }
+      markModified();
+      requestAnimationFrame(() => {
+        if (tableFormulaManager) tableFormulaManager.refresh();
+      });
       return;
     }
 
@@ -4029,6 +4033,17 @@
 
   function containsTable(html) {
     return /<table[\s>]/i.test(html) || /<tr[\s>]/i.test(html);
+  }
+
+  /** Check if HTML has meaningful text content outside of <table> elements.
+   *  Used to avoid discarding text when pasting mixed content (text + table). */
+  function hasTextOutsideTable(html) {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    const tables = temp.querySelectorAll('table');
+    tables.forEach(t => t.remove());
+    const text = temp.textContent.replace(/\s+/g, ' ').trim();
+    return text.length > 0;
   }
 
   /** Extract computed visual styles from a cell element.
@@ -4215,13 +4230,9 @@
     return data.length > 0 && data[0].length > 0 ? { data, widths: [] } : null;
   }
 
-  function insertTableFromData(data, widths) {
-    const sel = window.getSelection();
-    if (sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-
-    const rows = data.length;
-    // Compute actual column count considering colspan
+  /** Build a custom table HTML string from parsed data.
+   *  Shared by insertTableFromData and handleMixedPaste. */
+  function buildTableHtmlString(data, widths) {
     let cols = 0;
     for (const row of data) {
       let c = 0;
@@ -4231,7 +4242,6 @@
       cols = Math.max(cols, c);
     }
 
-    // Build column widths array, using extracted widths or defaults
     const colWidths = [];
     for (let i = 0; i < cols; i++) {
       colWidths.push((widths && widths[i]) || 80);
@@ -4243,10 +4253,11 @@
     }
     html += '</colgroup><tbody>';
 
+    const rows = data.length;
     for (let r = 0; r < rows; r++) {
       html += '<tr>';
       for (const cell of data[r]) {
-        if (cell === null) continue; // spanned position — skip
+        if (cell === null) continue;
         const cellTag = cell.tagName.toLowerCase();
         const text = cell.text;
         const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -4268,7 +4279,15 @@
       html += '</tr>';
     }
     html += '</tbody></table>';
+    return html;
+  }
 
+  function insertTableFromData(data, widths) {
+    const sel = window.getSelection();
+    if (sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+
+    const html = buildTableHtmlString(data, widths);
     const wrapper = document.createElement('div');
     wrapper.innerHTML = html;
     const tableEl = wrapper.firstElementChild;
@@ -4278,6 +4297,7 @@
 
     // Move cursor to second row first cell (skip header row)
     // For single-row tables, position cursor right after the table
+    const rows = data.length;
     const newRange = document.createRange();
     if (rows > 1) {
       const firstCell = tableEl.querySelector('tbody tr:nth-child(2) td');
@@ -4292,6 +4312,51 @@
     newRange.collapse(true);
     sel.removeAllRanges();
     sel.addRange(newRange);
+  }
+
+  /** Paste mixed content (text + tables) preserving text formatting and
+   *  using custom table elements for <table> portions. */
+  function handleMixedPaste(htmlContent) {
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;';
+    container.innerHTML = htmlContent;
+    document.body.appendChild(container);
+
+    try {
+      const allTables = container.querySelectorAll('table');
+      for (let i = allTables.length - 1; i >= 0; i--) {
+        const table = allTables[i];
+        if (!table.parentNode) continue;
+        const result = parseHtmlTable(table);
+        if (result && result.data.length > 0 && result.data[0].length > 0) {
+          const customHtml = buildTableHtmlString(result.data, result.widths);
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = customHtml;
+          table.parentNode.replaceChild(wrapper.firstElementChild, table);
+        }
+      }
+
+      const nonContent = container.querySelectorAll('style, script, link, meta');
+      nonContent.forEach(el => el.remove());
+
+      const sel = window.getSelection();
+      if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const fragment = document.createDocumentFragment();
+        while (container.firstChild) {
+          fragment.appendChild(container.firstChild);
+        }
+        range.deleteContents();
+        range.insertNode(fragment);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    } finally {
+      if (container.parentNode) {
+        document.body.removeChild(container);
+      }
+    }
   }
 
   async function uploadAndInsertImage(file) {

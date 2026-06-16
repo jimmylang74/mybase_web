@@ -1,4 +1,4 @@
-# 知识库 KBase v6.4.1
+# 知识库 KBase v6.4.2
 
 **Web of Mybase Knowledge Server**，中文知识库管理系统，基于 Flask + PaddleOCR 构建。
 
