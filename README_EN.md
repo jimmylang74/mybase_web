@@ -1,4 +1,4 @@
-# KBase v6.5.2
+# KBase v6.6.3
 
 **Web of Mybase Knowledge Server** — A Chinese knowledge base management system built with Flask + PaddleOCR.
 
@@ -12,7 +12,7 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
 - **Export menu items as PPT** — Configure a backend AI PPT agent; menu items are sent to the agent which summarizes them into a PPT (In progress)
 - **Excel tables Copy to HTML** — Copy from excel and paste into HTML
 - **In picture words copy** — Copy words from in a picture (by using tesseract.js)
-- ""Sequence Diagram support"" — Add Sequence Diagram support (by using mermaid.js)
+- ""Mermaid Diagram support"" — Add Mermaid Diagram support (by using mermaid.js)
 
 
 ### v5.x

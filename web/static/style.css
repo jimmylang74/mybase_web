@@ -2868,7 +2868,8 @@ body {
   overflow: auto;
   resize: both;
   min-width: 200px;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   position: relative;
 }
 
@@ -2986,7 +2987,6 @@ body {
 .mermaid-render {
   padding: 16px;
   min-height: 60px;
-  width: 100%;
   box-sizing: border-box;
 }
 .mermaid-render svg {
@@ -3080,10 +3080,16 @@ body {
   background: #f8f9fa;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  overflow-x: auto;
+  overflow: auto;
   min-height: 60px;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
+}
+#mermaid-dialog-preview svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 #mermaid-dialog-preview.mermaid-error {
   color: #e74c3c;
@@ -3093,7 +3099,10 @@ body {
 }
 #mermaid-dialog-footer {
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+#mermaid-btn-help:hover {
+  background: #e9ecef;
+  color: #333 !important;
 }

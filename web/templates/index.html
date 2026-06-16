@@ -72,7 +72,7 @@
         </span>
         <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
         <button class="tool-btn" id="btn-insert-table" title="Insert Table">⊞ Table</button>
-        <button class="tool-btn" id="btn-insert-mermaid" title="Insert Sequence Diagram">📊 Seq</button>
+        <button class="tool-btn" id="btn-insert-mermaid" title="Insert Mermaid Diagram">📊 Mermaid</button>
         <span class="separator"></span>
         <label class="search-checkbox-label" title="Search all knowledge bases">
           <input type="checkbox" id="search-global"> <span data-i18n="global_search">全局搜索</span>
@@ -351,14 +351,16 @@
 <!-- Mermaid Sequence Diagram Insert Dialog -->
 <div id="mermaid-dialog">
   <div id="mermaid-dialog-content">
-    <div id="mermaid-dialog-header">Insert Sequence Diagram</div>
+    <div id="mermaid-dialog-header">Insert Sequence/Class/Mindmap/Flow/Timeline/State chart:</div>
     <div id="mermaid-dialog-body">
-      <div class="mermaid-dialog-hint">Enter Mermaid sequence diagram source code:</div>
+      <div class="mermaid-dialog-hint">Enter Mermaid source code:</div>
       <textarea id="mermaid-dialog-source" placeholder="sequenceDiagram&#10;    Alice->>John: Hello John, how are you?&#10;    John-->>Alice: Great!"></textarea>
       <div id="mermaid-dialog-preview"></div>
     </div>
     <div id="mermaid-dialog-footer">
       <button id="mermaid-btn-ok" class="style-btn style-btn-primary">Insert</button>
+      <span style="flex:1"></span>
+      <a id="mermaid-btn-help" href="https://mermaid.js.org/" target="_blank" title="Mermaid.js Documentation" style="font-size:12px;color:#888;text-decoration:none;padding:4px 10px;border:1px solid #ccc;border-radius:4px;cursor:pointer">Help</a>
       <button id="mermaid-btn-cancel" class="style-btn">Cancel</button>
     </div>
   </div>

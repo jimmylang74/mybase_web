@@ -3872,7 +3872,22 @@
     }
   }
 
-  /** Resize SVG in a mermaid block according to its container width and zoom level */
+  /** Store renderEl and SVG widths as the scaling baseline for drag mode */
+  function captureMermaidBase(blockEl) {
+    const renderEl = blockEl.querySelector('.mermaid-render');
+    const svgEl = renderEl ? renderEl.querySelector('svg') : null;
+    if (!renderEl || !svgEl) return;
+    blockEl.dataset.baseW = svgEl.getAttribute('width');
+    blockEl.dataset.baseRenderW = renderEl.clientWidth;
+  }
+
+  /** Size SVG in a mermaid block.
+   *  - Auto mode (block has no inline width / fit-content):
+   *    natural size × zoom, constrained to editor width.
+   *  - Drag mode (user dragged the resize handle, giving the block an
+   *    explicit inline width):
+   *    SVG scales proportionally from the last captured baseline.
+   */
   function resizeSvgToZoom(blockEl) {
     const renderEl = blockEl.querySelector('.mermaid-render');
     const svgEl = renderEl ? renderEl.querySelector('svg') : null;
@@ -3886,13 +3901,41 @@
     if (!vbW || !vbH) return;
 
     const zoom = parseInt(blockEl.dataset.zoom, 10) || 100;
-    const containerWidth = renderEl.clientWidth;
-    // Apply zoom as a multiplier of container width
-    const svgWidth = containerWidth * (zoom / 100);
-    const svgHeight = svgWidth * (vbH / vbW);
+    let svgWidth, svgHeight;
 
-    svgEl.setAttribute('width', svgWidth);
-    svgEl.setAttribute('height', svgHeight);
+    if (blockEl.style.width) {
+      const baseW = parseFloat(blockEl.dataset.baseW);
+      const baseRenderW = parseFloat(blockEl.dataset.baseRenderW);
+      const containerWidth = renderEl.clientWidth;
+      if (baseW && baseRenderW && containerWidth > 0) {
+        const scale = containerWidth / baseRenderW;
+        svgWidth = baseW * scale;
+        svgHeight = Math.round(svgWidth * (vbH / vbW));
+      } else {
+        svgWidth = vbW * (zoom / 100);
+        svgHeight = vbH * (zoom / 100);
+      }
+    } else {
+      svgWidth = vbW * (zoom / 100);
+      svgHeight = vbH * (zoom / 100);
+      const editorWidth = editor ? editor.clientWidth : window.innerWidth;
+      const maxWidth = editorWidth - 40;
+      if (svgWidth > maxWidth) {
+        const scale = maxWidth / svgWidth;
+        svgWidth = maxWidth;
+        svgHeight = Math.round(svgHeight * scale);
+      }
+    }
+
+    // Avoid redundant attribute changes that could trigger ResizeObserver loops
+    const curW = parseFloat(svgEl.getAttribute('width'));
+    const curH = parseFloat(svgEl.getAttribute('height'));
+    const newW = Math.round(svgWidth);
+    const newH = Math.round(svgHeight);
+    if (curW === newW && curH === newH) return;
+
+    svgEl.setAttribute('width', newW);
+    svgEl.setAttribute('height', newH);
   }
 
   /** Render a single mermaid block element */
@@ -3911,14 +3954,17 @@
       const { svg } = await mermaid.render(id, source);
       renderEl.innerHTML = svg;
 
-      // Size SVG according to current zoom
       resizeSvgToZoom(blockEl);
+      // Capture baseline after layout so drag mode can scale from it
+      requestAnimationFrame(() => captureMermaidBase(blockEl));
 
-      // Watch container for size changes (window resize, editor resize etc.)
       if (!renderEl.__resizeObs) {
         renderEl.__resizeObs = new ResizeObserver(() => {
-          if (blockEl.dataset.mode !== 'source') {
-            resizeSvgToZoom(blockEl);
+          if (blockEl.dataset.mode === 'source') return;
+          resizeSvgToZoom(blockEl);
+          // In auto mode (fit-content, no drag yet), refresh the baseline
+          if (!blockEl.style.width) {
+            captureMermaidBase(blockEl);
           }
         });
         renderEl.__resizeObs.observe(renderEl);
@@ -3941,6 +3987,19 @@
       renderMermaidBlock(el);
     });
   }
+
+  /** Re-constrain all rendered mermaid blocks (e.g., on editor/window resize) */
+  function refreshMermaidSizes() {
+    if (!editor) return;
+    const blocks = editor.querySelectorAll('.mermaid-block[data-mode="rendered"]');
+    blocks.forEach((el) => resizeSvgToZoom(el));
+  }
+
+  let _resizeTick = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTick);
+    _resizeTick = setTimeout(refreshMermaidSizes, 150);
+  });
 
   /** Toggle a mermaid block between rendered and source mode */
   async function toggleMermaidBlock(blockEl) {
@@ -4031,6 +4090,107 @@
     markModified();
   }
 
+  /** Resize the mermaid dialog to fit the rendered SVG */
+  function fitDialogToSvg(svgEl) {
+    const content = $('#mermaid-dialog-content');
+    const preview = $('#mermaid-dialog-preview');
+    if (!content || !preview || !svgEl) return;
+
+    // Determine SVG natural dimensions
+    let svgW = 0, svgH = 0;
+
+    // Try viewBox first (most reliable for mermaid output)
+    const viewBox = svgEl.getAttribute('viewBox');
+    if (viewBox) {
+      const parts = viewBox.trim().split(/\s+/).map(Number);
+      if (parts.length >= 4) {
+        svgW = parts[2];
+        svgH = parts[3];
+      }
+    }
+
+    // Fallback to explicit width/height
+    if (!svgW || !svgH) {
+      const wAttr = parseFloat(svgEl.getAttribute('width'));
+      const hAttr = parseFloat(svgEl.getAttribute('height'));
+      if (wAttr && hAttr) {
+        svgW = wAttr;
+        svgH = hAttr;
+      }
+      // Still try to compute from child bounding box
+      if (!svgW || !svgH) {
+        const bbox = svgEl.getBoundingClientRect();
+        if (bbox.width > 0 && bbox.height > 0) {
+          svgW = bbox.width;
+          svgH = bbox.height;
+        }
+      }
+    }
+
+    if (!svgW || !svgH) return;
+
+    // Viewport limits: keep 8% margin on each side
+    const maxW = window.innerWidth * 0.84;
+    const maxH = window.innerHeight * 0.84;
+
+    // Dialog content horizontal padding: 24px * 2
+    const hPad = 48;
+    // Vertical overhead: content padding(24*2) + header(~22px) + hint(~16px)
+    //   + textarea(200px) + margins + footer(~38px) + preview margin(12px)
+    const vOverhead = 370;
+
+    // Space available for the SVG inside the preview
+    const previewMaxW = maxW - hPad;
+    const previewMaxH = Math.max(200, maxH - vOverhead);
+
+    // Scale SVG proportionally to fit preview area
+    let displayW = svgW;
+    let displayH = svgH;
+
+    if (displayW > previewMaxW) {
+      const scale = previewMaxW / displayW;
+      displayW = previewMaxW;
+      displayH = Math.round(svgH * scale);
+    }
+    if (displayH > previewMaxH) {
+      const scale = previewMaxH / displayH;
+      displayH = previewMaxH;
+      displayW = Math.round(svgW * scale);
+    }
+
+    // Ensure minimum display size
+    displayW = Math.max(displayW, 380);
+    displayH = Math.max(displayH, 60);
+
+    // Allow content to override fixed max-width
+    content.style.maxWidth = 'none';
+    content.style.width = Math.round(displayW + hPad) + 'px';
+
+    // Size preview to fit the SVG
+    preview.style.height = Math.round(displayH) + 'px';
+    preview.style.maxHeight = Math.round(previewMaxH) + 'px';
+    preview.style.overflow = 'hidden';
+
+    // Set explicit SVG display dimensions so it renders at the right size
+    svgEl.setAttribute('width', Math.round(displayW));
+    svgEl.setAttribute('height', Math.round(displayH));
+  }
+
+  /** Reset mermaid dialog size to CSS defaults */
+  function resetDialogSize() {
+    const content = $('#mermaid-dialog-content');
+    const preview = $('#mermaid-dialog-preview');
+    if (content) {
+      content.style.width = '';
+      content.style.maxWidth = '';
+    }
+    if (preview) {
+      preview.style.height = '';
+      preview.style.maxHeight = '';
+      preview.style.overflow = '';
+    }
+  }
+
   /** Show the mermaid insert dialog */
   function promptInsertMermaid() {
     const dialog = $('#mermaid-dialog');
@@ -4048,7 +4208,8 @@
       return null;
     })();
 
-    // Reset
+    resetDialogSize();
+
     textarea.value = '';
     preview.innerHTML = '<div style="color:#999;font-size:13px">Enter source code above to preview</div>';
     dialog.style.display = 'flex';
@@ -4062,6 +4223,7 @@
         const src = this.value.trim();
         if (!src) {
           preview.innerHTML = '<div style="color:#999;font-size:13px">Enter source code above to preview</div>';
+          resetDialogSize();
           return;
         }
         try {
@@ -4070,9 +4232,12 @@
           const { svg } = await mermaid.render(id, src);
           preview.className = '';
           preview.innerHTML = svg;
+          const svgEl = preview.querySelector('svg');
+          if (svgEl) fitDialogToSvg(svgEl);
         } catch (e) {
           preview.className = 'mermaid-error';
           preview.textContent = 'Error: ' + e.message;
+          resetDialogSize();
         }
       }, 500);
     });
@@ -4135,7 +4300,12 @@
     blockEl.dataset.zoom = zoom;
     const label = blockEl.querySelector('.mermaid-zoom-label');
     if (label) label.textContent = zoom + '%';
+    // Clear baseline so resizeSvgToZoom recalculates from natural × new zoom
+    delete blockEl.dataset.baseW;
+    delete blockEl.dataset.baseRenderW;
     resizeSvgToZoom(blockEl);
+    // Re-capture baseline after zoom recalculation
+    requestAnimationFrame(() => captureMermaidBase(blockEl));
     markModified();
   }
 
