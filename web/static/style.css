@@ -479,6 +479,11 @@ body {
   word-break: break-word;
 }
 
+#editor td.col-resize-active,
+#editor th.col-resize-active {
+  cursor: col-resize;
+}
+
 #editor td:empty::before {
   content: '\200B';
   color: transparent;

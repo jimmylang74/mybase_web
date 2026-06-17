@@ -2181,6 +2181,15 @@
   // ─── Table Column Resize ─────────────────────────────────────────────
 
   let tableColResize = null;
+  let tableColResizeCell = null;
+
+  function clearColResizeCell() {
+    if (tableColResizeCell) {
+      tableColResizeCell.style.cursor = '';
+      tableColResizeCell.classList.remove('col-resize-active');
+      tableColResizeCell = null;
+    }
+  }
 
   function initTableColumnResize() {
     editor.addEventListener('mousemove', function(e) {
@@ -2188,6 +2197,7 @@
       if (editor._resizeInfo) {
         editor._resizeInfo = null;
         editor.style.cursor = '';
+        clearColResizeCell();
       }
 
       const table = e.target.closest('table');
@@ -2205,6 +2215,9 @@
         const rect = cells[i].getBoundingClientRect();
         if (Math.abs(e.clientX - rect.right) < 5) {
           editor.style.cursor = 'col-resize';
+          cells[i].style.cursor = 'col-resize';
+          cells[i].classList.add('col-resize-active');
+          tableColResizeCell = cells[i];
           editor._resizeInfo = { table, colIndex: i };
           return;
         }
@@ -2215,12 +2228,14 @@
       if (!tableColResize) {
         editor.style.cursor = '';
         editor._resizeInfo = null;
+        clearColResizeCell();
       }
     });
 
     editor.addEventListener('mousedown', function(e) {
       if (editor._resizeInfo) {
         e.preventDefault();
+        clearColResizeCell();
         const { table, colIndex } = editor._resizeInfo;
         let cols = table.querySelectorAll('col');
         // If <col> elements were stripped (e.g. by browser copy-paste),
@@ -2400,6 +2415,7 @@
         markModified();
       }
       tableColResize = null;
+      clearColResizeCell();
       document.body.style.cursor = '';
       if (editor) editor.style.cursor = '';
     }
