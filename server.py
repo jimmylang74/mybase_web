@@ -2175,8 +2175,8 @@ def get_session_user(token: str) -> dict | None:
             if sid:
                 sess['sid'] = sid
             return {'username': sess['username'], 'role': sess['role']}
-    # Single-user mode: no token needed, act as admin
-    if _single_user_mode and not token:
+    # Single-user mode: act as admin regardless of token sent
+    if _single_user_mode:
         return {'username': 'admin', 'role': 'admin'}
     return None
 

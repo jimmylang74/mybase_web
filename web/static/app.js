@@ -454,6 +454,7 @@
   async function checkAuth() {
     if (typeof singleUserMode !== 'undefined' && singleUserMode) {
       currentUser = { username: 'admin', role: 'admin' };
+      authToken = 'single-user';
       updateUserIndicator();
       updateToolbarButtons();
       return;
