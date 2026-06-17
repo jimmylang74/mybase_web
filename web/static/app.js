@@ -3952,6 +3952,36 @@
     }
   }
 
+  /** Download a mermaid block's rendered diagram as a PNG file */
+  function saveMermaidAsPng(blockEl) {
+    const renderEl = blockEl.querySelector('.mermaid-render');
+    const svgEl = renderEl ? renderEl.querySelector('svg') : null;
+    if (!svgEl) return;
+
+    // Use cached PNG data if available, otherwise generate on the fly
+    let pngData = svgEl.getAttribute('data-png');
+    if (!pngData) {
+      captureMermaidPng(blockEl);
+      pngData = svgEl.getAttribute('data-png');
+      if (!pngData) {
+        console.warn('saveMermaidAsPng: failed to generate PNG');
+        return;
+      }
+    }
+
+    // Derive filename from the first line of mermaid source
+    const source = (blockEl.dataset.mermaidSource || 'diagram').trim();
+    const firstLine = source.split('\n')[0].replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_').slice(0, 40);
+    const filename = (firstLine || 'mermaid_diagram') + '.png';
+
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = pngData;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   /** Size SVG in a mermaid block.
    *  - Auto mode (block has no inline width / fit-content):
    *    natural size × zoom, constrained to editor width.
@@ -4122,7 +4152,7 @@
       + '<button class="mermaid-del-btn" contenteditable="false" title="Delete diagram">✕</button>'
       + '</div>'
       + '</div>'
-      + '<div class="mermaid-render">Rendering...</div>'
+      + '<div class="mermaid-render" contenteditable="false">Rendering...</div>'
       + '<pre class="mermaid-source-edit" contenteditable="false">' + escapedSource + '</pre>'
       + '</div>';
   }
@@ -5067,6 +5097,10 @@
     const tableCell = e.target.closest('td, th');
     const inTable = tableCell && editor.contains(tableCell);
 
+    // Detect if right-click is inside a mermaid block
+    const mermaidBlock = e.target.closest('.mermaid-block');
+    const inMermaid = mermaidBlock && editor.contains(mermaidBlock);
+
     // Preserve multi-selection when right-clicking on a cell that is part of the selection
     if (inTable && tableSelectedCells.indexOf(tableCell) >= 0) {
       // Keep current multi-selection, right-clicked cell is part of it
@@ -5079,12 +5113,18 @@
     }
 
     // Toggle context menu items based on context
-    ctxMenu.querySelectorAll('.ctx-item:not(.ctx-table-item), .ctx-separator:not(.ctx-table-sep)').forEach(el => {
-      el.style.display = inTable ? 'none' : '';
+    ctxMenu.querySelectorAll('.ctx-item:not(.ctx-table-item):not(.ctx-mermaid-item), .ctx-separator:not(.ctx-table-sep):not(.ctx-mermaid-sep)').forEach(el => {
+      el.style.display = (inTable || inMermaid) ? 'none' : '';
     });
     ctxMenu.querySelectorAll('.ctx-table-item, .ctx-table-sep').forEach(el => {
       el.style.display = inTable ? '' : 'none';
     });
+    ctxMenu.querySelectorAll('.ctx-mermaid-item, .ctx-mermaid-sep').forEach(el => {
+      el.style.display = inMermaid ? '' : 'none';
+    });
+
+    // Store reference to the mermaid block for the save action
+    ctxMenu._mermaidBlock = inMermaid ? mermaidBlock : null;
 
     positionMenuAtEvent(ctxMenu, e);
     ctxMenu.dataset.hasSelection = selection.toString().length > 0 ? 'true' : 'false';
@@ -5105,6 +5145,13 @@
       }
       ctxMenu.style.display = 'none';
     });
+  });
+
+  $('#ctx-mermaid-save-png').addEventListener('click', () => {
+    const blockEl = ctxMenu._mermaidBlock;
+    if (!blockEl) return;
+    ctxMenu.style.display = 'none';
+    saveMermaidAsPng(blockEl);
   });
 
   $('#ctx-font-family').addEventListener('click', () => {
