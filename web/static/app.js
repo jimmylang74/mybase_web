@@ -102,6 +102,7 @@
       reset: '重置',
       font_style: '字体样式:',
       bold: '加粗',
+      italic: '斜体',
       underline: '下划线',
       strikethrough: '删除线',
       ok: '确定',
@@ -190,6 +191,14 @@
       align_left: '左对齐',
       align_center: '居中',
       align_right: '右对齐',
+      font_family: '字体',
+      font_color: '字体颜色',
+      remove_format: '清除格式',
+      insert_table: '插入表格',
+      insert_mermaid: '插入Mermaid图表',
+      save_as_png: '保存为PNG...',
+      edit_link: '编辑Link',
+      insert_link: '插入链接',
     },
     en: {
       collapse_all: 'Collapse All',
@@ -230,6 +239,7 @@
       reset: 'Reset',
       font_style: 'Font Style:',
       bold: 'Bold',
+      italic: 'Italic',
       underline: 'Underline',
       strikethrough: 'Strikethrough',
       ok: 'OK',
@@ -318,6 +328,14 @@
       align_left: 'Left',
       align_center: 'Center',
       align_right: 'Right',
+      font_family: 'Font Family',
+      font_color: 'Font Color',
+      remove_format: 'Remove Format',
+      insert_table: 'Insert Table',
+      insert_mermaid: 'Insert Mermaid Chart',
+      save_as_png: 'Save As PNG...',
+      edit_link: 'Edit Link',
+      insert_link: 'Insert Link',
     }
   };
 
@@ -1964,7 +1982,27 @@
     }
   }
 
-  function promptInsertLink() {
+  function promptInsertLink(existingLink) {
+    if (existingLink) {
+      showDialog(
+        t('edit_link'),
+        '<label>URL:</label><input type="text" id="dialog-link-url" placeholder="https://..."><label>Text:</label><input type="text" id="dialog-link-text" placeholder="Link text">',
+        () => {
+          const url = $('#dialog-link-url').value.trim();
+          const text = $('#dialog-link-text').value.trim();
+          if (!url) return true;
+          existingLink.href = url;
+          existingLink.target = '_blank';
+          if (text) existingLink.textContent = text;
+          markModified();
+          return true;
+        }
+      );
+      $('#dialog-link-url').value = existingLink.href || '';
+      $('#dialog-link-text').value = existingLink.textContent || '';
+      return;
+    }
+
     // Save selection before dialog steals focus
     const savedRange = (() => {
       const sel = window.getSelection();
@@ -1975,7 +2013,7 @@
     })();
 
     showDialog(
-      'Insert Link',
+      t('insert_link'),
       '<label>URL:</label><input type="text" id="dialog-link-url" placeholder="https://..."><label>Text:</label><input type="text" id="dialog-link-text" placeholder="Link text">',
       () => {
         const url = $('#dialog-link-url').value.trim();
@@ -3859,10 +3897,6 @@
   });
 
   $('#btn-insert-link').addEventListener('click', () => {
-    const sel = window.getSelection().toString();
-    if (sel) {
-      $('#dialog-link-text').value = sel;
-    }
     promptInsertLink();
   });
 
@@ -5250,39 +5284,49 @@
       if (inTable) cellRangeAnchor = tableCell;
     }
 
-    // Toggle context menu items based on context
-    ctxMenu.querySelectorAll('.ctx-item:not(.ctx-table-item):not(.ctx-mermaid-item), .ctx-separator:not(.ctx-table-sep):not(.ctx-mermaid-sep)').forEach(el => {
-      el.style.display = (inTable || inMermaid) ? 'none' : '';
-    });
-    ctxMenu.querySelectorAll('.ctx-table-item, .ctx-table-sep').forEach(el => {
-      el.style.display = inTable ? '' : 'none';
-    });
-    ctxMenu.querySelectorAll('.ctx-mermaid-item, .ctx-mermaid-sep').forEach(el => {
-      el.style.display = inMermaid ? '' : 'none';
-    });
+    const linkEl = e.target.closest('a');
+    const onLink = linkEl && editor.contains(linkEl);
+    ctxMenu._linkElement = onLink ? linkEl : null;
 
     // Store reference to the mermaid block for the save action
     ctxMenu._mermaidBlock = inMermaid ? mermaidBlock : null;
 
+    // Toggle context menu items based on context
+    const mainItems = [].slice.call(ctxMenu.querySelectorAll('#ctx-insert-table, #ctx-insert-mermaid, #ctx-insert-link'));
+    const tableItems = [].slice.call(ctxMenu.querySelectorAll('.ctx-table-item, .ctx-table-sep'));
+    const mermaidItems = [].slice.call(ctxMenu.querySelectorAll('.ctx-mermaid-item, .ctx-mermaid-sep'));
+
+    function show(items) { items.forEach(el => { el.style.display = ''; }); }
+    function hide(items) { items.forEach(el => { el.style.display = 'none'; }); }
+
+    if (onLink) {
+      hide(mainItems);
+      hide(tableItems);
+      hide(mermaidItems);
+      $('#ctx-insert-link').style.display = '';
+    } else if (inTable) {
+      hide(mainItems);
+      show(tableItems);
+      hide(mermaidItems);
+    } else if (inMermaid) {
+      hide(mainItems);
+      hide(tableItems);
+      show(mermaidItems);
+    } else {
+      show(mainItems);
+      hide(tableItems);
+      hide(mermaidItems);
+    }
+
+    // Refresh context menu item text to match current language
+    ctxMenu.querySelectorAll('[data-i18n]').forEach(el => {
+      el.textContent = t(el.dataset.i18n);
+    });
+    // Override link item text based on context (edit vs insert)
+    $('#ctx-insert-link').textContent = onLink ? t('edit_link') : t('insert_link');
+
     positionMenuAtEvent(ctxMenu, e);
     ctxMenu.dataset.hasSelection = selection.toString().length > 0 ? 'true' : 'false';
-  });
-
-  $$('.ctx-item[data-cmd]').forEach((item) => {
-    item.addEventListener('click', () => {
-      const cmd = item.dataset.cmd;
-      if (cmd === 'copy') {
-        document.execCommand('copy');
-      } else if (cmd === 'paste') {
-        editor.focus();
-        document.execCommand('paste');
-      } else {
-        editor.focus();
-        document.execCommand(cmd, false, null);
-        markModified();
-      }
-      ctxMenu.style.display = 'none';
-    });
   });
 
   $('#ctx-mermaid-save-png').addEventListener('click', () => {
@@ -5290,83 +5334,6 @@
     if (!blockEl) return;
     ctxMenu.style.display = 'none';
     saveMermaidAsPng(blockEl);
-  });
-
-  $('#ctx-font-family').addEventListener('click', () => {
-    ctxMenu.style.display = 'none';
-    showDialog(
-      'Set Font Family',
-      `<label>Font:</label>
-       <select id="dialog-font-family">
-         <option value="Arial">Arial</option>
-         <option value="Times New Roman">Times New Roman</option>
-         <option value="Courier New">Courier New</option>
-         <option value="Georgia">Georgia</option>
-         <option value="Verdana">Verdana</option>
-         <option value="SimSun">SimSun</option>
-         <option value="Microsoft YaHei">Microsoft YaHei</option>
-       </select>`,
-      () => {
-        const val = $('#dialog-font-family').value;
-        editor.focus();
-        document.execCommand('fontName', false, val);
-        markModified();
-        return true;
-      }
-    );
-  });
-
-  $('#ctx-font-color').addEventListener('click', () => {
-    ctxMenu.style.display = 'none';
-    const colors = ['#ffffff','#000000','#ff0000','#00ff00','#0000ff','transparent'];
-    const colorLabels = ['White','Black','Red','Green','Blue','Transparent'];
-    let swatchesHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
-    colors.forEach((c, i) => {
-      const isTransparent = c === 'transparent';
-      const swatchStyle = isTransparent
-        ? 'background:repeating-conic-gradient(#e0e0e0 0% 25%, transparent 0% 50%) 50% / 12px 12px;border:1px solid #ccc;'
-        : `background:${c};`;
-      const content = isTransparent ? '<span style="color:#e74c3c;font-size:16px;font-weight:bold">⊘</span>' : '';
-      swatchesHtml += `<div class="ctx-color-swatch" data-color="${c}" title="${colorLabels[i]}" style="width:32px;height:32px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;${swatchStyle}">${content}</div>`;
-    });
-    swatchesHtml += '</div>';
-
-    showDialog(
-      'Set Font Color',
-      `<div id="ctx-color-picker">${swatchesHtml}<label>Custom:</label><input type="color" id="dialog-font-color" value="#ff0000" style="width:100%;height:32px;padding:1px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:none;margin-top:4px"></div>`,
-      () => {
-        const val = $('#dialog-font-color').value;
-        editor.focus();
-        document.execCommand('foreColor', false, val);
-        markModified();
-        return true;
-      }
-    );
-
-    setTimeout(() => {
-      $('#ctx-color-picker').querySelectorAll('.ctx-color-swatch').forEach((s) => {
-        s.addEventListener('click', () => {
-          const color = s.dataset.color;
-          if (color === 'transparent') {
-            editor.focus();
-            document.execCommand('foreColor', false, '#000000');
-          } else {
-            $('#dialog-font-color').value = color;
-            editor.focus();
-            document.execCommand('foreColor', false, color);
-          }
-          markModified();
-          $('#dialog-overlay').style.display = 'none';
-        });
-      });
-    }, 0);
-  });
-
-  $('#ctx-remove-format').addEventListener('click', () => {
-    editor.focus();
-    document.execCommand('removeFormat', false, null);
-    markModified();
-    ctxMenu.style.display = 'none';
   });
 
   function restoreContextMenuRange() {
@@ -5384,14 +5351,21 @@
     promptInsertTable();
   });
 
-  $('#ctx-insert-link').addEventListener('click', () => {
+  $('#ctx-insert-mermaid').addEventListener('click', () => {
     ctxMenu.style.display = 'none';
     restoreContextMenuRange();
-    const sel = window.getSelection().toString();
-    if (sel) {
-      $('#dialog-link-text').value = sel;
+    promptInsertMermaid();
+  });
+
+  $('#ctx-insert-link').addEventListener('click', () => {
+    ctxMenu.style.display = 'none';
+    const linkEl = ctxMenu._linkElement;
+    if (linkEl) {
+      promptInsertLink(linkEl);
+    } else {
+      restoreContextMenuRange();
+      promptInsertLink(null);
     }
-    promptInsertLink();
   });
 
   function getTableContext() {
