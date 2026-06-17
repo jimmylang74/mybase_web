@@ -4761,9 +4761,10 @@ def _generate_pdf(items, title, tab_name=None):
                                     pdf.ln(3)
                                 except Exception:
                                     pass
-                    # Cap image width at 90pt = 31.75mm (fpdf2 uses mm)
-                    max_w = min(pdf.epw - indent - 20, 31.75)
-                    if max_w > 20:
+                    # SVG/Mermaid diagrams — use full available page width so
+                    # text-heavy diagrams (esp. sequence diagrams) are readable
+                    svg_max_w = pdf.epw - indent - 20
+                    if svg_max_w > 20:
                         for svg_match in re.finditer(r'<svg\b[^>]*>.*?</svg>', segment, flags=re.DOTALL):
                             svg_str = svg_match.group(0)
                             png_src = re.search(r'data-png="(data:image/png;base64,[^"]*)"', svg_str)
@@ -4771,7 +4772,7 @@ def _generate_pdf(items, title, tab_name=None):
                                 try:
                                     b64_data = png_src.group(1).split(',', 1)[1]
                                     png_data = base64.b64decode(b64_data)
-                                    pdf.image(io.BytesIO(png_data), w=max_w)
+                                    pdf.image(io.BytesIO(png_data), w=svg_max_w)
                                     pdf.ln(3)
                                 except Exception:
                                     pass

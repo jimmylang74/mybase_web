@@ -3892,8 +3892,9 @@
     const renderEl = blockEl.querySelector('.mermaid-render');
     const svgEl = renderEl ? renderEl.querySelector('svg') : null;
     if (!svgEl) return;
-    // Cap at 720px to keep storage reasonable
-    const targetWidth = Math.min(parseInt(svgEl.getAttribute('width')) || 360, 720);
+    // Cap at 1920px to keep storage reasonable while supporting
+    // wide diagrams (sequence/flow) rendered crisply in PDF export
+    const targetWidth = Math.min(parseInt(svgEl.getAttribute('width')) || 360, 1920);
     try {
       // Clone SVG and replace <foreignObject> with <text> so the
       // canvas (toDataURL) is not tainted by cross-origin content.
@@ -3952,34 +3953,154 @@
     }
   }
 
-  /** Download a mermaid block's rendered diagram as a PNG file */
+  /** Render an SVG element to a canvas and return the PNG data URL.
+   *  Tries the original SVG first (preserves foreignObject content such as
+   *  class diagrams). Falls back to cloning + replacing foreignObject with
+   *  text elements when the canvas is tainted. */
+  function svgToPngDataUrl(svgEl, width, height) {
+    return new Promise(function (resolve) {
+      // Try original SVG first — preserves foreignObject layout
+      try {
+        const svgData = new XMLSerializer().serializeToString(svgEl);
+        const svgFull = svgData.includes('xmlns')
+          ? svgData
+          : svgData.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+        const blob = new Blob([svgFull], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/png'));
+          } catch (e) {
+            // Canvas tainted — use fallback with cloned SVG
+            console.warn('svgToPng canvas tainted, using fallback:', e);
+            resolve(fallbackSvgToPng(svgEl, width, height));
+          }
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      } catch (e) {
+        console.warn('svgToPng failed:', e);
+        resolve(null);
+      }
+    });
+  }
+
+  /** Fallback: clone SVG, replace foreignObject with text elements,
+   *  then render to canvas at the requested size. */
+  function fallbackSvgToPng(svgEl, width, height) {
+    try {
+      const clone = svgEl.cloneNode(true);
+      clone.querySelectorAll('foreignObject').forEach(function (fo) {
+        // Use innerText from the XHTML container so block-level element
+        // boundaries (div, br, hr) produce line separators, unlike
+        // textContent which concatenates without gaps.
+        const xhtmlDiv = fo.querySelector('div');
+        const text = xhtmlDiv && typeof xhtmlDiv.innerText === 'string'
+          ? xhtmlDiv.innerText.trim()
+          : (fo.textContent || '').trim();
+        if (!text) { fo.remove(); return; }
+        const w = parseFloat(fo.getAttribute('width')) || 0;
+        const h = parseFloat(fo.getAttribute('height')) || 0;
+        // Sum translate transforms from parent <g> chain
+        let tx = 0, ty = 0, p = fo.parentElement;
+        while (p && p !== clone) {
+          const tf = p.getAttribute('transform');
+          if (tf) {
+            const m = tf.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
+            if (m) { tx += parseFloat(m[1]); ty += parseFloat(m[2]); }
+          }
+          p = p.parentElement;
+        }
+        // Split multi-line text into separate <tspan> elements
+        const lines = text.split('\n');
+        const te = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        te.setAttribute('x', tx + w / 2);
+        te.setAttribute('y', ty + h / 2);
+        te.setAttribute('text-anchor', 'middle');
+        te.setAttribute('dominant-baseline', 'central');
+        te.setAttribute('font-size', '14');
+        te.setAttribute('fill', '#333');
+        if (lines.length === 1) {
+          te.textContent = text;
+        } else {
+          const lineH = Math.max(14, h / lines.length);
+          const startY = ty + h / 2 - (lines.length - 1) * lineH / 2;
+          lines.forEach(function (line, i) {
+            const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+            tspan.setAttribute('x', tx + w / 2);
+            tspan.setAttribute('dy', i === 0 ? startY - (ty + h / 2) : lineH);
+            tspan.textContent = line;
+            te.appendChild(tspan);
+          });
+        }
+        fo.parentNode.replaceChild(te, fo);
+      });
+      const svgData = new XMLSerializer().serializeToString(clone);
+      const svgFull = svgData.includes('xmlns')
+        ? svgData
+        : svgData.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      const blob = new Blob([svgFull], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      return new Promise(function (resolve) {
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/png'));
+          } catch (e) {
+            console.warn('fallbackSvgToPng draw:', e);
+            resolve(null);
+          }
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      });
+    } catch (e) {
+      console.warn('fallbackSvgToPng err:', e);
+      return null;
+    }
+  }
+
+  /** Download a mermaid block's rendered diagram as a PNG file.
+   *  Renders at the full SVG resolution for crisp output. */
   function saveMermaidAsPng(blockEl) {
     const renderEl = blockEl.querySelector('.mermaid-render');
     const svgEl = renderEl ? renderEl.querySelector('svg') : null;
     if (!svgEl) return;
 
-    // Use cached PNG data if available, otherwise generate on the fly
-    let pngData = svgEl.getAttribute('data-png');
-    if (!pngData) {
-      captureMermaidPng(blockEl);
-      pngData = svgEl.getAttribute('data-png');
+    // Use actual rendered dimensions
+    const width = parseInt(svgEl.getAttribute('width'));
+    const height = parseInt(svgEl.getAttribute('height'));
+    if (!width || !height) return;
+
+    svgToPngDataUrl(svgEl, width, height).then(function (pngData) {
       if (!pngData) {
         console.warn('saveMermaidAsPng: failed to generate PNG');
         return;
       }
-    }
 
-    // Derive filename from the first line of mermaid source
-    const source = (blockEl.dataset.mermaidSource || 'diagram').trim();
-    const firstLine = source.split('\n')[0].replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_').slice(0, 40);
-    const filename = (firstLine || 'mermaid_diagram') + '.png';
+      // Derive filename from the first line of mermaid source
+      const source = (blockEl.dataset.mermaidSource || 'diagram').trim();
+      const firstLine = source.split('\n')[0].replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_').slice(0, 40);
+      const filename = (firstLine || 'mermaid_diagram') + '.png';
 
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = pngData;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = pngData;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
   }
 
   /** Size SVG in a mermaid block.
