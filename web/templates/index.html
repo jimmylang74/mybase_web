@@ -37,64 +37,67 @@
     <div id="splitter"></div>
     <div id="editor-area">
       <div id="editor-toolbar">
-        <select id="font-family" title="Font Family">
-          <option value="Arial">Arial</option>
-          <option value="Times New Roman">Times New Roman</option>
-          <option value="Courier New">Courier New</option>
-          <option value="Georgia">Georgia</option>
-          <option value="Verdana">Verdana</option>
-          <option value="SimSun">SimSun (宋体)</option>
-          <option value="Microsoft YaHei">Microsoft YaHei</option>
-        </select>
-        <select id="font-size" title="Font Size">
-          <option value="1">Small</option>
-          <option value="3">Normal</option>
-          <option value="5" selected>Large</option>
-          <option value="7">X-Large</option>
-        </select>
-        <button class="tool-btn" data-cmd="bold" title="Bold"><b>B</b></button>
-        <button class="tool-btn" data-cmd="italic" title="Italic"><i>I</i></button>
-        <button class="tool-btn" data-cmd="underline" title="Underline"><u>U</u></button>
-        <button class="tool-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
-        <span class="color-btn-wrap">
-          <button class="tool-btn" id="btn-apply-color" title="Text Color">
-            <span class="color-swatch" id="color-swatch" style="background:#ff0000;display:inline-block;width:16px;height:16px;border-radius:2px;vertical-align:middle"></span>
-          </button>
-          <button class="color-arrow" id="btn-color-arrow" title="Choose Color">▾</button>
-          <input type="color" id="text-color" value="#ff0000" class="color-input-hidden">
-        </span>
-        <span class="color-btn-wrap">
-          <button class="tool-btn" id="btn-apply-bgcolor" title="Text Background Color">
-            <span class="color-swatch" id="bgcolor-swatch" style="background:#ffff00;display:inline-block;width:16px;height:16px;border-radius:2px;vertical-align:middle"></span>
-          </button>
-          <button class="color-arrow" id="btn-bgcolor-arrow" title="Choose Background Color">▾</button>
-          <input type="color" id="text-bgcolor" value="#ffff00" class="color-input-hidden">
-        </span>
-        <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
-        <button class="tool-btn" id="btn-insert-table" title="Insert Table">⊞ Table</button>
-        <button class="tool-btn" id="btn-insert-mermaid" title="Insert Mermaid Diagram">📊 Mermaid</button>
-        <span class="separator"></span>
-        <label class="search-checkbox-label" title="Search all knowledge bases">
-          <input type="checkbox" id="search-global"> <span data-i18n="global_search">全局搜索</span>
-        </label>
-        <label class="search-checkbox-label" title="Use regular expression">
-          <input type="checkbox" id="search-regex"> <span data-i18n="regex">正则</span>
-        </label>
-        <input type="text" id="search-input" class="search-input" data-i18n-placeholder="search_placeholder" placeholder="输入搜索关键词..." title="Search">
-        <button class="tool-btn" id="btn-search" title="Search">🔍 <span data-i18n="search">搜索</span></button>
-        <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
-        <button class="tool-btn" id="btn-new-tab" title="New Tab" data-i18n="new_kb">新增知识库</button>
-        <button class="tool-btn" id="btn-backup" data-i18n-title="backup_kb" title="备份知识库"{% if single_user %} style="display:inline-flex"{% endif %}>📦 <span data-i18n="backup_kb">备份知识库</span></button>
-        <div class="kb-selector-wrap">
-          <label class="kb-all-checkbox-label" id="kb-all-label" data-i18n-title="all_kb" title="全部知识库">
-            <input type="checkbox" id="kb-all-checkbox">
-            <span class="kb-all-text" data-i18n="all_kb">全部知识库</span>
-          </label>
-          <span class="kb-dropdown-arrow" id="kb-dropdown-arrow">▾</span>
-          <div id="kb-dropdown" style="display:none"></div>
+        <div class="toolbar-row toolbar-row-1">
+          <select id="font-family" title="Font Family">
+            <option value="Arial">Arial</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Courier New">Courier New</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Verdana">Verdana</option>
+            <option value="SimSun">SimSun (宋体)</option>
+            <option value="Microsoft YaHei">Microsoft YaHei</option>
+          </select>
+          <select id="font-size" title="Font Size">
+            <option value="1">Small</option>
+            <option value="3">Normal</option>
+            <option value="5" selected>Large</option>
+            <option value="7">X-Large</option>
+          </select>
+          <button class="tool-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+          <button class="tool-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+          <button class="tool-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+          <button class="tool-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+          <span class="color-btn-wrap">
+            <button class="tool-btn" id="btn-apply-color" title="Text Color">
+              <span class="color-swatch" id="color-swatch" style="background:#ff0000;display:inline-block;width:16px;height:16px;border-radius:2px;vertical-align:middle"></span>
+            </button>
+            <button class="color-arrow" id="btn-color-arrow" title="Choose Color">▾</button>
+            <input type="color" id="text-color" value="#ff0000" class="color-input-hidden">
+          </span>
+          <span class="color-btn-wrap">
+            <button class="tool-btn" id="btn-apply-bgcolor" title="Text Background Color">
+              <span class="color-swatch" id="bgcolor-swatch" style="background:#ffff00;display:inline-block;width:16px;height:16px;border-radius:2px;vertical-align:middle"></span>
+            </button>
+            <button class="color-arrow" id="btn-bgcolor-arrow" title="Choose Background Color">▾</button>
+            <input type="color" id="text-bgcolor" value="#ffff00" class="color-input-hidden">
+          </span>
+          <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
+          <button class="tool-btn" id="btn-insert-table" title="Insert Table">⊞ Table</button>
+          <button class="tool-btn" id="btn-insert-mermaid" title="Insert Mermaid Diagram">📊 Mermaid</button>
+          <span class="separator"></span>
         </div>
-        <span id="indexing-status" style="display:none"></span>
-
+        <div class="toolbar-row toolbar-row-2">
+          <label class="search-checkbox-label" title="Search all knowledge bases">
+            <input type="checkbox" id="search-global"> <span data-i18n="global_search">全局搜索</span>
+          </label>
+          <label class="search-checkbox-label" title="Use regular expression">
+            <input type="checkbox" id="search-regex"> <span data-i18n="regex">正则</span>
+          </label>
+          <input type="text" id="search-input" class="search-input" data-i18n-placeholder="search_placeholder" placeholder="输入搜索关键词..." title="Search">
+          <button class="tool-btn" id="btn-search" title="Search">🔍 <span data-i18n="search">搜索</span></button>
+          <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
+          <button class="tool-btn" id="btn-new-tab" title="New Tab" data-i18n="new_kb">新增知识库</button>
+          <button class="tool-btn" id="btn-backup" data-i18n-title="backup_kb" title="备份知识库"{% if single_user %} style="display:inline-flex"{% endif %}>📦 <span data-i18n="backup_kb">备份知识库</span></button>
+          <div class="kb-selector-wrap">
+            <label class="kb-all-checkbox-label" id="kb-all-label" data-i18n-title="all_kb" title="全部知识库">
+              <input type="checkbox" id="kb-all-checkbox">
+              <span class="kb-all-text" data-i18n="all_kb">全部知识库</span>
+            </label>
+            <span class="kb-dropdown-arrow" id="kb-dropdown-arrow">▾</span>
+            <div id="kb-dropdown" style="display:none"></div>
+          </div>
+          <span id="indexing-status" style="display:none"></span>
+        </div>
       </div>
       <!-- Formula Bar for Excel-like calculations -->
       <div id="formula-bar" style="display:none">

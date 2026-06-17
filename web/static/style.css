@@ -331,11 +331,17 @@ body {
   padding: 6px 10px;
   border-bottom: 1px solid #ddd;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
-  flex-wrap: wrap;
   background: #fafafa;
   flex-shrink: 0;
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 #editor-toolbar select {
@@ -1042,6 +1048,9 @@ body {
     padding: 4px 6px;
     gap: 2px;
   }
+  .toolbar-row {
+    gap: 2px;
+  }
   #editor-toolbar select {
     padding: 4px 4px;
     font-size: 11px;
@@ -1220,6 +1229,9 @@ body {
   }
   #editor-toolbar {
     padding: 4px 8px;
+    gap: 2px;
+  }
+  .toolbar-row {
     gap: 2px;
   }
   .tool-btn {
