@@ -4672,6 +4672,33 @@ def _html_to_pdf_text(html):
     return text.strip()
 
 
+def _iter_dom_elements(html):
+    """Yield (type, content) tuples preserving DOM order.
+
+    Types: 'text', 'img', 'svg', 'table' — yielded in the exact order
+    they appear in the HTML so PDF rendering respects the document order.
+    """
+    pat = re.compile(
+        r'(<table\b[^>]*>.*?</table>)'
+        r'|(<img\b[^>]*/?>)'
+        r'|(<svg\b[^>]*>.*?</svg>)',
+        re.DOTALL | re.IGNORECASE,
+    )
+    pos = 0
+    for m in pat.finditer(html):
+        if m.start() > pos:
+            yield ('text', html[pos : m.start()])
+        if m.group(1):
+            yield ('table', m.group(1))
+        elif m.group(2):
+            yield ('img', m.group(2))
+        elif m.group(3):
+            yield ('svg', m.group(3))
+        pos = m.end()
+    if pos < len(html):
+        yield ('text', html[pos:])
+
+
 def _generate_pdf(items, title, tab_name=None):
     regular_ttf = _PDF_FONT_DIR / 'NotoSansSC-Regular.ttf'
     bold_ttf = _PDF_FONT_DIR / 'NotoSansSC-Bold.ttf'
@@ -4695,6 +4722,70 @@ def _generate_pdf(items, title, tab_name=None):
             return read_tab_file(tab_name, src.lstrip('/'))
         return None
 
+    def _render_text_html(pdf, html_text, indent):
+        link_pat = re.compile(
+            r'<a\b[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)</a>',
+            re.DOTALL | re.IGNORECASE,
+        )
+        if not link_pat.search(html_text):
+            text = _html_to_pdf_text(html_text)
+            if text:
+                pdf.set_x(pdf.l_margin + indent + 4)
+                pdf.set_font('CJK', '', 9)
+                pdf.multi_cell(pdf.epw - indent - 4, 5, text)
+                pdf.ln(2)
+            return
+        # multi_cell draws text at (cell_x + cm, cell_y + cm) while
+        # write() draws at (x, y) directly.  We add c_margin to the
+        # left margin and starting y so link text aligns with non-link
+        # text, then advance to bottom of the last line plus spacing.
+        cm = pdf.c_margin
+        old_lm = pdf.l_margin
+        blk_close = re.compile(
+            r'</(?:div|pre|p|blockquote|li|h[1-6])>\s*$', re.IGNORECASE
+        )
+        blk_open = re.compile(
+            r'^\s*<(?:div|pre|p|blockquote|li|h[1-6])\b', re.IGNORECASE
+        )
+        try:
+            new_lm = pdf.l_margin + indent + 4 + cm
+            pdf.set_left_margin(new_lm)
+            pdf.set_x(pdf.l_margin)
+            pdf.set_y(pdf.get_y() + cm)
+            pdf.set_font('CJK', '', 9)
+            pos = 0
+            for m in link_pat.finditer(html_text):
+                if m.start() > pos:
+                    seg = html_text[pos : m.start()]
+                    t = _html_to_pdf_text(seg)
+                    if t:
+                        # _html_to_pdf_text.strip() removes trailing \n
+                        # from block-level close tags; restore it so
+                        # the link starts on its own line.
+                        if blk_close.search(seg):
+                            t += '\n'
+                        pdf.write(5, t)
+                link_txt = _html_to_pdf_text(m.group(2))
+                link_url = m.group(1)
+                if link_txt:
+                    pdf.set_text_color(0, 0, 255)
+                    pdf.write(5, link_txt, link=link_url)
+                    pdf.set_text_color(0, 0, 0)
+                pos = m.end()
+            if pos < len(html_text):
+                seg = html_text[pos:]
+                t = _html_to_pdf_text(seg)
+                if t:
+                    if blk_open.search(seg):
+                        t = '\n' + t
+                    pdf.write(5, t)
+        finally:
+            pdf.set_left_margin(old_lm)
+        # write(5, ...) leaves y at top of last line (no advance on
+        # single-line text).  Jump to bottom of last line (=5mm) plus
+        # 2mm spacing, minus the cm we added at the start.
+        pdf.ln(7 - cm)
+
     def _render_item(pdf, label, content_html, depth, sep=True):
         if not has_font:
             pdf.set_font('Courier', '', 10)
@@ -4709,19 +4800,10 @@ def _generate_pdf(items, title, tab_name=None):
         pdf.ln(1)
 
         if content_html and content_html.strip():
-            # Split by <table> boundaries so tables interleave correctly with text/images
-            segments = re.split(
-                r'(<table\b[^>]*>.*?</table>)',
-                content_html,
-                flags=re.DOTALL | re.IGNORECASE,
-            )
-            for segment in segments:
-                segment = segment.strip()
-                if not segment:
-                    continue
-                if re.match(r'<table\b', segment, re.IGNORECASE):
-                    # ── Render HTML table via fpdf2 table() ──
-                    cells, has_th = _parse_html_table(segment)
+            # Process elements (text, table, img, svg) in DOM order
+            for elem_type, elem_content in _iter_dom_elements(content_html):
+                if elem_type == 'table':
+                    cells, has_th = _parse_html_table(elem_content)
                     if cells:
                         pdf.set_x(pdf.l_margin + indent + 4)
                         pdf.set_font('CJK', '', 9)
@@ -4739,43 +4821,35 @@ def _generate_pdf(items, title, tab_name=None):
                                 for cell_text in row_data:
                                     row.cell(cell_text)
                         pdf.ln(3)
-                else:
-                    # ── Text + images + SVG diagrams ──
-                    text_only = re.sub(r'<img[^>]+>', '', segment)
-                    text_only = re.sub(r'<svg\b[^>]*>.*?</svg>', '', text_only, flags=re.DOTALL)
-                    text = _html_to_pdf_text(text_only)
-                    if text:
-                        pdf.set_x(pdf.l_margin + indent + 4)
-                        pdf.set_font('CJK', '', 9)
-                        pdf.multi_cell(pdf.epw - indent - 4, 5, text)
-                        pdf.ln(2)
-                    for match in re.finditer(r'<img[^>]+src=[\'"]([^\'"]+)[\'"]', segment):
-                        src = match.group(1)
-                        img_data = _resolve_img_data(src)
+                elif elem_type == 'text':
+                    _render_text_html(pdf, elem_content, indent)
+                elif elem_type == 'img':
+                    src_match = re.search(r'src=[\'"]([^\'"]+)[\'"]', elem_content)
+                    if src_match:
+                        img_data = _resolve_img_data(src_match.group(1))
                         if img_data:
-                            # Cap image width at 90pt = 31.75mm (fpdf2 uses mm)
-                            max_w = min(pdf.epw - indent - 20, 31.75)
+                            # Image width: full available width with a reasonable cap
+                            max_w = min(pdf.epw - indent - 20, 150)
                             if max_w > 20:
                                 try:
                                     pdf.image(io.BytesIO(img_data), w=max_w)
                                     pdf.ln(3)
                                 except Exception:
                                     pass
-                    # SVG/Mermaid diagrams — use full available page width so
-                    # text-heavy diagrams (esp. sequence diagrams) are readable
-                    svg_max_w = pdf.epw - indent - 20
-                    if svg_max_w > 20:
-                        for svg_match in re.finditer(r'<svg\b[^>]*>.*?</svg>', segment, flags=re.DOTALL):
-                            svg_str = svg_match.group(0)
-                            png_src = re.search(r'data-png="(data:image/png;base64,[^"]*)"', svg_str)
-                            if png_src:
-                                try:
-                                    b64_data = png_src.group(1).split(',', 1)[1]
-                                    png_data = base64.b64decode(b64_data)
-                                    pdf.image(io.BytesIO(png_data), w=svg_max_w)
-                                    pdf.ln(3)
-                                except Exception:
-                                    pass
+                elif elem_type == 'svg':
+                    png_src = re.search(
+                        r'data-png="(data:image/png;base64,[^"]*)"', elem_content
+                    )
+                    if png_src:
+                        svg_max_w = pdf.epw - indent - 20
+                        if svg_max_w > 20:
+                            try:
+                                b64_data = png_src.group(1).split(',', 1)[1]
+                                png_data = base64.b64decode(b64_data)
+                                pdf.image(io.BytesIO(png_data), w=svg_max_w)
+                                pdf.ln(3)
+                            except Exception:
+                                pass
         if sep:
             pdf.ln(2)
             pdf.set_draw_color(200, 200, 200)
