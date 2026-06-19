@@ -4286,6 +4286,7 @@
     if (mode === 'rendered') {
       // Switch to source mode
       blockEl.dataset.mode = 'source';
+      blockEl.classList.remove('selected');
       if (sourceEl) {
         sourceEl.contentEditable = 'true';
         sourceEl.focus();
@@ -4635,6 +4636,8 @@
       const inRender = e.target.closest('.mermaid-render');
       const isSvg = e.target.closest('svg');
       if (inRender && !isSvg) return;
+
+      if (e.target.closest('.mermaid-source-edit')) return;
 
       editor.querySelectorAll('.mermaid-block.selected').forEach((el) => el.classList.remove('selected'));
       blockEl.classList.add('selected');
