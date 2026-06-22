@@ -4344,6 +4344,99 @@ def paste_menu_item(tab):
     return jsonify(new_item), 201
 
 
+@app.route('/api/<tab>/menu/import-md', methods=['POST'])
+def import_markdown_to_menu(tab):
+    _auth_check_write(tab)
+    if not get_tab_path(tab):
+        return jsonify({'error': 'Tab not found'}), 404
+
+    data = request.get_json()
+    if not data or 'md_text' not in data or 'after_id' not in data:
+        return jsonify({'error': 'md_text and after_id are required'}), 400
+
+    md_text = data['md_text']
+    after_id = data['after_id']
+    label = data.get('label') or 'Imported'
+
+    import markdown_it
+    from bs4 import BeautifulSoup
+    md_parser = markdown_it.MarkdownIt('commonmark').enable('table')
+    html_content = md_parser.render(md_text)
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    for table in soup.find_all('table'):
+        max_cols = 0
+        for row in table.find_all('tr'):
+            cols_in_row = sum(int(c.get('colspan', 1)) for c in row.find_all(['th', 'td']))
+            max_cols = max(max_cols, cols_in_row)
+        if max_cols > 0 and not table.find('colgroup'):
+            colgroup = soup.new_tag('colgroup')
+            for _ in range(max_cols):
+                col = soup.new_tag('col')
+                col['style'] = 'width:80px'
+                colgroup.append(col)
+            table.insert(0, colgroup)
+        if not table.find('tbody'):
+            tbody = soup.new_tag('tbody')
+            for row in table.find_all('tr'):
+                tbody.append(row.extract())
+            table.append(tbody)
+
+    for pre in soup.find_all('pre'):
+        code = pre.find('code')
+        if not code:
+            continue
+        classes = code.get('class', [])
+        if 'language-mermaid' not in classes:
+            continue
+        source = code.get_text()
+        escaped_source = source.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        attr_source = source.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+
+        block_id = 'mmb-' + uuid.uuid4().hex[:8]
+        block_html = (
+            f'<div class="mermaid-block" id="{block_id}" data-mode="rendered" '
+            f'data-zoom="100" data-mermaid-source="{attr_source}">'
+            f'<div class="mermaid-header" contenteditable="false">'
+            f'<span class="mermaid-label">📊 Sequence Diagram</span>'
+            f'<div class="mermaid-header-actions">'
+            f'<div class="mermaid-zoom-control" contenteditable="false">'
+            f'<button class="mermaid-zoom-out" contenteditable="false" title="Zoom out">-</button>'
+            f'<span class="mermaid-zoom-label" contenteditable="false">100%</span>'
+            f'<button class="mermaid-zoom-in" contenteditable="false" title="Zoom in">+</button>'
+            f'</div>'
+            f'<button class="mermaid-toggle-btn" contenteditable="false">Source</button>'
+            f'<button class="mermaid-del-btn" contenteditable="false" title="Delete diagram">✕</button>'
+            f'</div></div>'
+            f'<div class="mermaid-render" contenteditable="false">Rendering...</div>'
+            f'<pre class="mermaid-source-edit" contenteditable="false">{escaped_source}</pre>'
+            f'</div>'
+        )
+        block_soup = BeautifulSoup(block_html, 'html.parser')
+        pre.replace_with(block_soup)
+
+    html_content = str(soup)
+
+    new_item = {
+        'id': str(uuid.uuid4()),
+        'label': label,
+        'children': []
+    }
+
+    menu = load_menu(tab)
+    success = add_menu_item_after(menu, new_item, after_id)
+    if not success:
+        return jsonify({'error': 'Target item not found'}), 404
+
+    save_menu(tab, menu)
+    save_content(tab, new_item['id'], html_content)
+    _run_in_background(update_item_in_index, tab, new_item['id'])
+
+    ws_emit_menu_changed(tab)
+    return jsonify(new_item), 201
+
+
 @app.route('/api/<tab>/tree')
 def get_tree(tab):
     if not get_tab_path(tab):

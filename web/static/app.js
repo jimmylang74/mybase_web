@@ -74,6 +74,13 @@
       move_to: '移动到...',
       copy: '拷贝',
       paste: '粘贴',
+      import_md: '导入Markdown',
+      import_md_no_file: '所选文件夹中未找到 .md 文件',
+      import_md_select: '选择要导入的Markdown文件',
+      import_md_has_images: '该文件引用了以下本地图片，请选择图片所在文件夹：',
+      import_md_select_folder: '请点击"确定"后选择包含图片的文件夹（也可跳过，图片将保持原路径）。',
+      import_md_uploading: '正在上传图片',
+      import_md_done: 'Markdown 导入完成',
       copy_progress: '正在拷贝内容',
       copy_done: '拷贝完成 ✓',
       edit: '编辑',
@@ -211,6 +218,13 @@
       move_to: 'Move To...',
       copy: 'Copy',
       paste: 'Paste',
+      import_md: 'Import Markdown',
+      import_md_no_file: 'No .md file found in selected folder',
+      import_md_select: 'Select Markdown file to import',
+      import_md_has_images: 'This file references the following local images. Please select the folder containing them:',
+      import_md_select_folder: 'Click "OK" then choose the image folder (or cancel to skip image upload).',
+      import_md_uploading: 'Uploading images',
+      import_md_done: 'Markdown import complete',
       copy_progress: 'Copying content',
       copy_done: 'Copy complete ✓',
       edit: 'Edit',
@@ -3257,7 +3271,122 @@
           })();
           break;
         }
-        case 'move-to':
+        case 'import-md': {
+          (async function() {
+            var selectedMd = await new Promise(function(resolve) {
+              var input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.md,.markdown';
+              input.onchange = function() { resolve(input.files[0] || null); };
+              input.oncancel = function() { resolve(null); };
+              input.click();
+            });
+            if (!selectedMd) return;
+
+            var mdText = await selectedMd.text();
+            var label = selectedMd.name.replace(/\.(md|markdown)$/i, '');
+
+            var imgRefs = [];
+            var imgRegex = /!\[[^\]]*\]\(([^)]+)\)/g;
+            var m;
+            while ((m = imgRegex.exec(mdText)) !== null) imgRefs.push(m[1]);
+            var htmlImgRegex = /<img[^>]+src=["']([^"']+)["']/gi;
+            while ((m = htmlImgRegex.exec(mdText)) !== null) imgRefs.push(m[1]);
+
+            var localRefs = imgRefs.filter(function(p) {
+              return !p.startsWith('http://') && !p.startsWith('https://') &&
+                     !p.startsWith('data:') && !p.startsWith('//');
+            });
+            localRefs = localRefs.filter(function(v, i, a) { return a.indexOf(v) === i; });
+
+            var pathMap = {};
+            if (localRefs.length > 0) {
+              var proceed = await new Promise(function(resolve) {
+                var listHtml = '<p>' + t('import_md_has_images') + '</p><ul style="max-height:120px;overflow-y:auto;margin:8px 0;padding-left:20px">';
+                localRefs.forEach(function(ref) {
+                  listHtml += '<li style="font-size:12px;color:#666;word-break:break-all">' + escapeHtml(ref) + '</li>';
+                });
+                listHtml += '</ul><p>' + t('import_md_select_folder') + '</p>';
+                showDialog(t('import_md'), listHtml, function() { return true; }).then(function(r) { resolve(r); });
+              });
+              if (!proceed) return;
+
+              var folderFiles = await new Promise(function(resolve) {
+                var input = document.createElement('input');
+                input.type = 'file';
+                input.webkitdirectory = true;
+                input.multiple = true;
+                input.onchange = function() { resolve(Array.from(input.files)); };
+                input.oncancel = function() { resolve([]); };
+                input.click();
+              });
+
+              if (folderFiles.length > 0) {
+                var fileMap = {};
+                folderFiles.forEach(function(f) {
+                  var rel = f.webkitRelativePath || f.name;
+                  var parts = rel.split('/');
+                  if (parts.length > 1) parts.shift();
+                  var key = parts.join('/');
+                  fileMap[key] = f;
+                  fileMap[f.name] = f;
+                });
+
+                var toUpload = [];
+                localRefs.forEach(function(ref) {
+                  var cleanRef = ref.replace(/^\.\//, '');
+                  var candidates = [cleanRef, cleanRef.split('/').pop()];
+                  for (var ci = 0; ci < candidates.length; ci++) {
+                    if (fileMap[candidates[ci]]) {
+                      toUpload.push({ ref: ref, file: fileMap[candidates[ci]] });
+                      break;
+                    }
+                  }
+                });
+
+                for (var ui = 0; ui < toUpload.length; ui++) {
+                  try {
+                    var uploadResult = await apiUpload('/api/' + encodeURIComponent(currentTab) + '/upload', toUpload[ui].file);
+                    if (uploadResult && uploadResult.url) {
+                      pathMap[toUpload[ui].ref] = uploadResult.url;
+                    }
+                  } catch (e) {
+                    console.error('Failed to upload image:', toUpload[ui].ref, e);
+                  }
+                }
+              }
+            }
+
+            var processedMd = mdText;
+            Object.keys(pathMap).forEach(function(oldPath) {
+              var escaped = oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              processedMd = processedMd.replace(
+                new RegExp('(!\\[[^\\]]*\\]\\()' + escaped + '\\)', 'g'),
+                '$1' + pathMap[oldPath] + ')'
+              );
+              processedMd = processedMd.replace(
+                new RegExp('(src=["\'])' + escaped + '(["\'])', 'g'),
+                '$1' + pathMap[oldPath] + '$2'
+              );
+            });
+
+            try {
+              var result = await api('POST', '/api/' + encodeURIComponent(currentTab) + '/menu/import-md', {
+                md_text: processedMd,
+                after_id: id,
+                label: label
+              });
+              await reloadMenu();
+              if (result && result.id) {
+                scrollToTreeNode(result.id);
+                selectItem(result.id);
+              }
+            } catch (e) {
+              showDialog('Error', '<p>' + escapeHtml(e.message) + '</p>');
+            }
+          })();
+          break;
+        }
           showMoveToDialog(id);
           break;
         case 'edit': {
