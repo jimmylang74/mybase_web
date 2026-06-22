@@ -3938,45 +3938,84 @@
 
   /** Render the SVG element to a PNG data URL and store in data-png.
    *  This provides a fallback for PDF export when cairosvg cannot handle
-   *  browser-specific SVG features like foreignObject.
-   *
-   *  We clone the SVG and replace <foreignObject> with <text> elements
-   *  so the canvas (and subsequent toDataURL) is not tainted by cross-origin
-   *  content that browsers associate with foreignObject. */
+   *  browser-specific SVG features like foreignObject. */
   function captureMermaidPng(blockEl) {
     const renderEl = blockEl.querySelector('.mermaid-render');
     const svgEl = renderEl ? renderEl.querySelector('svg') : null;
     if (!svgEl) return;
-    // Cap at 1920px to keep storage reasonable while supporting
-    // wide diagrams (sequence/flow) rendered crisply in PDF export
     const targetWidth = Math.min(parseInt(svgEl.getAttribute('width')) || 360, 1920);
     try {
-      // Clone SVG and replace <foreignObject> with <text> so the
-      // canvas (toDataURL) is not tainted by cross-origin content.
       const clone = svgEl.cloneNode(true);
       clone.querySelectorAll('foreignObject').forEach(function (fo) {
-        const text = (fo.textContent || '').trim();
+        const xhtmlDiv = fo.querySelector('div');
+        const text = xhtmlDiv && typeof xhtmlDiv.innerText === 'string'
+          ? xhtmlDiv.innerText.trim()
+          : (fo.textContent || '').trim();
         if (!text) { fo.remove(); return; }
         const w = parseFloat(fo.getAttribute('width')) || 0;
         const h = parseFloat(fo.getAttribute('height')) || 0;
-        // Sum translate transforms from parent <g> chain
-        let tx = 0, ty = 0, p = fo.parentElement;
-        while (p && p !== clone) {
-          const tf = p.getAttribute('transform');
-          if (tf) {
-            const m = tf.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
-            if (m) { tx += parseFloat(m[1]); ty += parseFloat(m[2]); }
+        
+        let tx = 0, ty = 0;
+        try {
+          const ctm = fo.getCTM ? fo.getCTM() : null;
+          if (ctm) {
+            tx = ctm.e;
+            ty = ctm.f;
+          } else {
+            let p = fo.parentElement;
+            while (p && p !== clone) {
+              const tf = p.getAttribute('transform');
+              if (tf) {
+                const translateMatch = tf.match(/translate\(\s*([-\d.]+)[,\s]+([-\d.]+)\s*\)/);
+                if (translateMatch) {
+                  tx += parseFloat(translateMatch[1]);
+                  ty += parseFloat(translateMatch[2]);
+                }
+                const matrixMatch = tf.match(/matrix\(\s*([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)\s*\)/);
+                if (matrixMatch) {
+                  tx += parseFloat(matrixMatch[5]);
+                  ty += parseFloat(matrixMatch[6]);
+                }
+              }
+              p = p.parentElement;
+            }
           }
-          p = p.parentElement;
+        } catch (e) {
+          console.warn('captureMermaidPng transform calc:', e);
         }
+        
+        let fontSize = '16';
+        let fontFamily = 'sans-serif';
+        let fill = '#333';
+        if (xhtmlDiv) {
+          const computedStyle = window.getComputedStyle(xhtmlDiv);
+          fontSize = computedStyle.fontSize || '16';
+          fontFamily = computedStyle.fontFamily || 'sans-serif';
+          fill = computedStyle.color || '#333';
+        }
+        
+        const lines = text.split('\n');
         const te = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         te.setAttribute('x', tx + w / 2);
         te.setAttribute('y', ty + h / 2);
         te.setAttribute('text-anchor', 'middle');
         te.setAttribute('dominant-baseline', 'central');
-        te.setAttribute('font-size', '16');
-        te.setAttribute('fill', '#333');
-        te.textContent = text;
+        te.setAttribute('font-size', fontSize);
+        te.setAttribute('font-family', fontFamily);
+        te.setAttribute('fill', fill);
+        if (lines.length === 1) {
+          te.textContent = text;
+        } else {
+          const lineH = Math.max(parseFloat(fontSize) || 16, h / lines.length);
+          const startY = ty + h / 2 - (lines.length - 1) * lineH / 2;
+          lines.forEach(function (line, i) {
+            const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+            tspan.setAttribute('x', tx + w / 2);
+            tspan.setAttribute('dy', i === 0 ? startY - (ty + h / 2) : lineH);
+            tspan.textContent = line;
+            te.appendChild(tspan);
+          });
+        }
         fo.parentNode.replaceChild(te, fo);
       });
       const svgData = new XMLSerializer().serializeToString(clone);
@@ -4062,16 +4101,46 @@
         if (!text) { fo.remove(); return; }
         const w = parseFloat(fo.getAttribute('width')) || 0;
         const h = parseFloat(fo.getAttribute('height')) || 0;
-        // Sum translate transforms from parent <g> chain
-        let tx = 0, ty = 0, p = fo.parentElement;
-        while (p && p !== clone) {
-          const tf = p.getAttribute('transform');
-          if (tf) {
-            const m = tf.match(/translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/);
-            if (m) { tx += parseFloat(m[1]); ty += parseFloat(m[2]); }
+        
+        let tx = 0, ty = 0;
+        try {
+          const ctm = fo.getCTM ? fo.getCTM() : null;
+          if (ctm) {
+            tx = ctm.e;
+            ty = ctm.f;
+          } else {
+            let p = fo.parentElement;
+            while (p && p !== clone) {
+              const tf = p.getAttribute('transform');
+              if (tf) {
+                const translateMatch = tf.match(/translate\(\s*([-\d.]+)[,\s]+([-\d.]+)\s*\)/);
+                if (translateMatch) {
+                  tx += parseFloat(translateMatch[1]);
+                  ty += parseFloat(translateMatch[2]);
+                }
+                const matrixMatch = tf.match(/matrix\(\s*([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)[,\s]+([-\d.]+)\s*\)/);
+                if (matrixMatch) {
+                  tx += parseFloat(matrixMatch[5]);
+                  ty += parseFloat(matrixMatch[6]);
+                }
+              }
+              p = p.parentElement;
+            }
           }
-          p = p.parentElement;
+        } catch (e) {
+          console.warn('fallbackSvgToPng transform calc:', e);
         }
+        
+        let fontSize = '14';
+        let fontFamily = 'sans-serif';
+        let fill = '#333';
+        if (xhtmlDiv) {
+          const computedStyle = window.getComputedStyle(xhtmlDiv);
+          fontSize = computedStyle.fontSize || '14';
+          fontFamily = computedStyle.fontFamily || 'sans-serif';
+          fill = computedStyle.color || '#333';
+        }
+        
         // Split multi-line text into separate <tspan> elements
         const lines = text.split('\n');
         const te = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -4079,12 +4148,13 @@
         te.setAttribute('y', ty + h / 2);
         te.setAttribute('text-anchor', 'middle');
         te.setAttribute('dominant-baseline', 'central');
-        te.setAttribute('font-size', '14');
-        te.setAttribute('fill', '#333');
+        te.setAttribute('font-size', fontSize);
+        te.setAttribute('font-family', fontFamily);
+        te.setAttribute('fill', fill);
         if (lines.length === 1) {
           te.textContent = text;
         } else {
-          const lineH = Math.max(14, h / lines.length);
+          const lineH = Math.max(parseFloat(fontSize) || 14, h / lines.length);
           const startY = ty + h / 2 - (lines.length - 1) * lineH / 2;
           lines.forEach(function (line, i) {
             const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');

@@ -1,4 +1,4 @@
-# KBase v6.8.10
+# KBase v6.9.10
 
 **Web of Mybase Knowledge Server** — A Chinese knowledge base management system built with Flask + PaddleOCR.
 
