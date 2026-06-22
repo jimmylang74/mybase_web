@@ -36,6 +36,7 @@ from flask import Flask, jsonify, request, render_template, send_from_directory,
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.utils import secure_filename
 import html.parser
+import html as html_module
 from fpdf import FPDF
 
 # Password hashing and encryption
@@ -5091,6 +5092,235 @@ def _copy_export_images(html_content, tab_name, dest_dir):
     return img_pattern.sub(_replace_img, html_content)
 
 
+# ─── Markdown Export Helpers ─────────────────────────────────────────────
+
+_MERMAID_OPEN_PAT = re.compile(
+    r'<div\b[^>]*?class="[^"]*mermaid-block[^"]*"[^>]*>',
+    re.IGNORECASE,
+)
+_MERMAID_SOURCE_PAT = re.compile(r'data-mermaid-source="([^"]*)"')
+
+
+def _replace_mermaid_blocks(html_content):
+    """Replace mermaid-block divs with placeholders.
+
+    Returns (modified_html, {placeholder_key: mermaid_source}).
+    Uses depth-counting to correctly match nested <div> tags.
+    """
+    sources = {}
+    pieces = []
+    pos = 0
+    counter = 0
+
+    for m in _MERMAID_OPEN_PAT.finditer(html_content):
+        source_m = _MERMAID_SOURCE_PAT.search(m.group(0))
+        if not source_m:
+            continue
+
+        # Find matching </div> by counting depth
+        start = m.start()
+        scan = m.end()
+        depth = 1
+        div_open_re = re.compile(r'<div\b', re.IGNORECASE)
+        div_close_re = re.compile(r'</div>', re.IGNORECASE)
+
+        while depth > 0 and scan < len(html_content):
+            next_open = div_open_re.search(html_content, scan)
+            next_close = div_close_re.search(html_content, scan)
+            if next_close is None:
+                scan = len(html_content)
+                break
+            if next_open and next_open.start() < next_close.start():
+                depth += 1
+                scan = next_open.end()
+            else:
+                depth -= 1
+                scan = next_close.end()
+                if depth == 0:
+                    break
+
+        key = f'\x00MERMAID{counter}\x00'
+        sources[key] = html_module.unescape(source_m.group(1))
+        pieces.append(html_content[pos:start])
+        pieces.append(key)
+        pos = scan
+        counter += 1
+
+    pieces.append(html_content[pos:])
+    return ''.join(pieces), sources
+
+
+def _table_to_md(rows, has_th):
+    """Convert table rows to Markdown pipe-table syntax."""
+    if not rows:
+        return ''
+
+    max_cols = max(len(row) for row in rows)
+    for row in rows:
+        while len(row) < max_cols:
+            row.append('')
+
+    lines = []
+    lines.append('| ' + ' | '.join(rows[0]) + ' |')
+    lines.append('| ' + ' | '.join(['---'] * max_cols) + ' |')
+    for row in rows[1:]:
+        lines.append('| ' + ' | '.join(row) + ' |')
+
+    return '\n'.join(lines) + '\n'
+
+
+def _copy_image_for_md(src, tab_name, dest_dir):
+    """Copy an image to dest_dir/images/ and return the relative path for MD.
+
+    Handles both data: URIs and /uploads/<tab>/images/<filename> paths.
+    Returns None if the image can't be resolved.
+    """
+    if not src:
+        return None
+
+    if src.startswith('data:'):
+        m = re.match(r'data:image/(\w+);base64,(.+)', src, re.DOTALL)
+        if m:
+            ext = m.group(1)
+            if ext == 'jpeg':
+                ext = 'jpg'
+            try:
+                img_data = base64.b64decode(m.group(2))
+            except Exception:
+                return None
+            img_dir = dest_dir / 'images'
+            img_dir.mkdir(exist_ok=True)
+            filename = f'inline_{uuid.uuid4().hex[:8]}.{ext}'
+            (img_dir / filename).write_bytes(img_data)
+            return f'images/{filename}'
+        return None
+
+    img_data = None
+    img_filename = None
+
+    m = re.match(r'^/uploads/([^/]+)/images/(.+)$', src)
+    if m:
+        img_data = read_tab_file(m.group(1), f'images/{m.group(2)}')
+        img_filename = m.group(2)
+    else:
+        rel = src.lstrip('/')
+        img_data = read_tab_file(tab_name, rel)
+        img_filename = os.path.basename(rel)
+
+    if img_data is not None and img_filename:
+        img_dir = dest_dir / 'images'
+        img_dir.mkdir(exist_ok=True)
+        (img_dir / img_filename).write_bytes(img_data)
+        return f'images/{img_filename}'
+
+    return None
+
+
+def _generate_md(items, title, tab_name, dest_dir):
+    """Generate Markdown content from collected items.
+
+    items: [(label, content_html, depth), ...]
+    Images are copied to dest_dir/images/.
+    Returns the markdown string.
+    """
+    try:
+        from markdownify import markdownify as md_convert
+    except ImportError:
+        md_convert = None
+
+    lines = [f'# {title}\n']
+
+    for label, content_html, depth in items:
+        heading = '#' * min(depth + 2, 6)
+        lines.append(f'\n{heading} {label}\n')
+
+        if not content_html or not content_html.strip():
+            continue
+
+        processed_html, mermaid_sources = _replace_mermaid_blocks(content_html)
+
+        for elem_type, fragment in _iter_dom_elements(processed_html):
+            if elem_type == 'text':
+                for key, source in mermaid_sources.items():
+                    if key in fragment:
+                        lines.append(f'\n```mermaid\n{source}\n```\n')
+                        fragment = fragment.replace(key, '')
+
+                fragment = re.sub(
+                    r'<div\b[^>]*class="[^"]*mermaid-(?:header|render)[^"]*"[^>]*>.*?</div>',
+                    '', fragment, flags=re.DOTALL | re.IGNORECASE,
+                )
+                fragment = re.sub(
+                    r'<pre\b[^>]*class="[^"]*mermaid-source-edit[^"]*"[^>]*>.*?</pre>',
+                    '', fragment, flags=re.DOTALL | re.IGNORECASE,
+                )
+
+                if md_convert:
+                    md_text = md_convert(
+                        fragment,
+                        strip=['img', 'svg'],
+                        heading_style='ATX',
+                        bullets='-',
+                    )
+                else:
+                    md_text = _html_to_pdf_text(fragment)
+
+                if md_text and md_text.strip():
+                    lines.append(md_text.strip() + '\n')
+
+            elif elem_type == 'table':
+                rows, has_th = _parse_html_table(fragment)
+                if rows:
+                    lines.append(_table_to_md(rows, has_th))
+
+            elif elem_type == 'img':
+                src_match = re.search(r'src=[\'"]([^\'"]+)[\'"]', fragment)
+                if src_match:
+                    local_path = _copy_image_for_md(src_match.group(1), tab_name, dest_dir)
+                    if local_path:
+                        lines.append(f'\n![]({local_path})\n')
+
+            elif elem_type == 'svg':
+                # Skip SVGs — mermaid ones already handled via source code
+                pass
+
+    return '\n'.join(lines)
+
+
+def _build_md_export(tab_name, items, title, filename_base):
+    """Build MD export: plain .md if no images, ZIP (.md + images/) otherwise.
+
+    Returns (file_path, download_filename, mimetype).
+    """
+    tmp_dir = _export_temp_dir()
+    try:
+        md_content = _generate_md(items, title, tab_name, tmp_dir)
+        has_images = (tmp_dir / 'images').exists() and any((tmp_dir / 'images').iterdir())
+
+        if not has_images:
+            md_filename = f'{filename_base}.md'
+            md_path = _EXPORT_DIR / md_filename
+            md_path.write_text(md_content, encoding='utf-8')
+            return md_path, md_filename, 'text/markdown'
+
+        (tmp_dir / 'index.md').write_text(md_content, encoding='utf-8')
+        date_str = datetime.now().strftime('%Y%m%d')
+        zip_filename = f'{filename_base}-{date_str}.zip'
+        zip_path = _EXPORT_DIR / zip_filename
+
+        with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(tmp_dir):
+                rel_dir = os.path.relpath(root, tmp_dir)
+                for f in files:
+                    file_path = os.path.join(root, f)
+                    arcname = os.path.join(rel_dir, f)
+                    zf.write(file_path, arcname)
+
+        return zip_path, zip_filename, 'application/zip'
+    finally:
+        shutil.rmtree(str(tmp_dir), ignore_errors=True)
+
+
 # ─── Tab PDF Export ──────────────────────────────────────────────────────
 
 @app.route('/api/<tab>/export/pdf')
@@ -5260,6 +5490,66 @@ def export_tree_item_zip(tab, item_id):
     except Exception as e:
         log_error('export_tree_item_zip', e, f'{tab}/{item_id}')
         return jsonify({'error': f'ZIP generation failed: {e}'}), 500
+
+
+# ─── Markdown Export ─────────────────────────────────────────────────────
+
+@app.route('/api/<tab>/export/md')
+def export_tab_md(tab):
+    if _single_user_mode:
+        user = {'username': 'admin', 'role': 'admin'}
+    else:
+        token = request.headers.get('X-Auth-Token', '')
+        user = get_session_user(token)
+    if not user or not can_export_tab(tab, user):
+        return jsonify({'error': '无权限导出该知识库'}), 403
+    try:
+        if not get_tab_path(tab):
+            return jsonify({'error': 'Tab not found'}), 404
+
+        items = _collect_all_tab_content(tab)
+        if not items:
+            return jsonify({'error': 'No content to export'}), 400
+
+        _cleanup_old_exports()
+        safe_name = re.sub(r'[\\/*?:"<>|]', '_', tab)
+        file_path, filename, mimetype = _build_md_export(tab, items, tab, safe_name)
+        return send_file(str(file_path), mimetype=mimetype, as_attachment=True, download_name=filename)
+    except Exception as e:
+        log_error('export_tab_md', e, tab)
+        return jsonify({'error': f'MD generation failed: {e}'}), 500
+
+
+@app.route('/api/<tab>/export/md/<item_id>')
+def export_tree_item_md(tab, item_id):
+    if _single_user_mode:
+        user = {'username': 'admin', 'role': 'admin'}
+    else:
+        token = request.headers.get('X-Auth-Token', '')
+        user = get_session_user(token)
+    if not user or not can_export_tab(tab, user):
+        return jsonify({'error': '无权限导出'}), 403
+    try:
+        if not get_tab_path(tab):
+            return jsonify({'error': 'Tab not found'}), 404
+
+        menu = load_menu(tab)
+        item = find_menu_item(menu, item_id)
+        if not item:
+            return jsonify({'error': 'Item not found'}), 404
+
+        items = _collect_subtree_content(tab, menu, item_id, 0)
+        if not items:
+            return jsonify({'error': 'No content to export'}), 400
+
+        title = f"{tab} - {item['label']}"
+        _cleanup_old_exports()
+        safe_name = re.sub(r'[\\/*?:"<>|]', '_', item['label'])
+        file_path, filename, mimetype = _build_md_export(tab, items, title, safe_name)
+        return send_file(str(file_path), mimetype=mimetype, as_attachment=True, download_name=filename)
+    except Exception as e:
+        log_error('export_tree_item_md', e, f'{tab}/{item_id}')
+        return jsonify({'error': f'MD generation failed: {e}'}), 500
 
 
 # ─── User Authentication API Routes ─────────────────────────────────────────

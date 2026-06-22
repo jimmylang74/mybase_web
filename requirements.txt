@@ -17,6 +17,9 @@ paddlex>=3.0.0
 # PDF 导出
 fpdf2>=2.8.0
 
+# Markdown 导出（HTML → Markdown 转换）
+markdownify>=0.11.0
+
 # Windows 平台依赖（可选）
 click>=8.0.0
 

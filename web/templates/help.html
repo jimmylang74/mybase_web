@@ -190,7 +190,7 @@
     <tr><td>Move Up</td><td>Move the item up in the list</td></tr>
     <tr><td>Move Down</td><td>Move the item down in the list</td></tr>
     <tr><td>Move To...</td><td>Move item to a different parent</td></tr>
-    <tr><td>Export</td><td>Export this item and its children as PDF or ZIP</td></tr>
+    <tr><td>Export</td><td>Export this item and its children as PDF, ZIP, or MD</td></tr>
     <tr><td>Edit</td><td>Rename the current menu item</td></tr>
     <tr><td>Custom Style</td><td>Set icon (Emoji), font, size, color, bold style</td></tr>
     <tr><td>Delete</td><td>Delete this item and all its children (requires confirmation)</td></tr>
@@ -378,7 +378,7 @@
   <table>
     <tr><th>Action</th><th>Description</th></tr>
     <tr><td>Edit</td><td>Rename the tab</td></tr>
-    <tr><td>Export</td><td>Export as PDF or ZIP</td></tr>
+    <tr><td>Export</td><td>Export as PDF, ZIP, or MD</td></tr>
     <tr><td>Close</td><td>Hide the tab (can be restored later)</td></tr>
     <tr><td>Delete</td><td>Permanently delete the tab and all its data</td></tr>
   </table>
@@ -548,13 +548,14 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
 
   <!-- ============================================================ -->
   <h2 id="export">8. Export</h2>
-  <p>The system provides flexible export functionality, supporting PDF and ZIP formats at two granularity levels.</p>
+  <p>The system provides flexible export functionality, supporting PDF, ZIP, and MD formats at two granularity levels.</p>
 
   <h3>8.1 Tab-Level Export</h3>
   <p><strong>Right-click</strong> a tab and choose <strong>"Export"</strong> → select format:</p>
   <ul>
     <li><strong>PDF</strong> — Recursively collects all menu items' content under the current KB and merges them into a single PDF document. Items are indented by depth. Uses NotoSansSC font for CJK character support.</li>
     <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code>, and all other files. Unzip and browse as a standalone HTML page.</li>
+    <li><strong>MD</strong> — Converts all menu items' content into a single Markdown document. Tables are converted to pipe-table syntax, Mermaid diagrams to <code>```mermaid</code> fenced code blocks, and images are copied to an <code>images/</code> folder. If images are present, the output is a ZIP (<code>index.md</code> + <code>images/</code>); otherwise a plain <code>.md</code> file is returned.</li>
   </ul>
 
   <h3>8.2 Menu Item-Level Export</h3>
@@ -562,10 +563,14 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <ul>
     <li><strong>PDF</strong> — Exports the selected item and all its children into one PDF, arranged by hierarchy depth.</li>
     <li><strong>ZIP</strong> — Generates a standalone HTML page containing the entire subtree content (with inline JSON data), copies referenced images to <code>images/</code>, and packages as a ZIP. Unzip and open <code>index.html</code> to browse offline.</li>
+    <li><strong>MD</strong> — Exports the selected item and all its children into a Markdown document. Menu hierarchy is represented by heading levels (depth 0 → <code>##</code>, depth 1 → <code>###</code>, etc.). Tables, Mermaid diagrams, and images are handled the same as tab-level MD export.</li>
   </ul>
 
   <div class="tip">
     <strong>Tip:</strong> PDF export requires <code>pdf_fonts/NotoSansSC-Regular.ttf</code>. If missing, Courier monospace font is used as fallback.
+  </div>
+  <div class="tip">
+    <strong>Tip:</strong> MD export preserves Mermaid diagram source code as fenced code blocks, which render natively in GitHub, VS Code, Obsidian, and other Markdown viewers that support Mermaid.
   </div>
 
   <!-- ============================================================ -->
@@ -709,7 +714,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <tr><td>上移</td><td>将菜单项在同级列表中向上移动一位</td></tr>
     <tr><td>下移</td><td>将菜单项在同级列表中向下移动一位</td></tr>
     <tr><td>移动到...</td><td>弹出目标选择树，将项目移动到指定位置</td></tr>
-    <tr><td>导出</td><td>导出当前菜单项及其子项为 PDF 或 ZIP 文件</td></tr>
+    <tr><td>导出</td><td>导出当前菜单项及其子项为 PDF、ZIP 或 MD 文件</td></tr>
     <tr><td>编辑</td><td>重命名当前菜单项</td></tr>
     <tr><td>定制样式</td><td>设置图标（Emoji）、字体、字号、颜色、加粗等样式</td></tr>
     <tr><td>删除</td><td>删除当前菜单项及其所有子项（需确认）</td></tr>
@@ -898,7 +903,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <table>
     <tr><th>功能</th><th>说明</th></tr>
     <tr><td>编辑</td><td>重命名当前 Tab</td></tr>
-    <tr><td>导出</td><td>导出当前知识库为 PDF 或 ZIP 文件</td></tr>
+    <tr><td>导出</td><td>导出当前知识库为 PDF、ZIP 或 MD 文件</td></tr>
     <tr><td>关闭</td><td>隐藏当前 Tab（可在"全部知识库"下拉菜单中重新显示）</td></tr>
     <tr><td>删除</td><td>永久删除 Tab 及其所有数据（需确认）</td></tr>
   </table>
@@ -1177,13 +1182,14 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   <!-- ============================================================ -->
   <h2 id="export">八、导出功能</h2>
 
-  <p>系统提供灵活的导出功能，支持将知识库内容导出为 PDF 或 ZIP 格式。</p>
+  <p>系统提供灵活的导出功能，支持将知识库内容导出为 PDF、ZIP 或 MD 格式。</p>
 
   <h3>8.1 Tab 级导出</h3>
   <p>在 Tab 标签上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
   <ul>
     <li><strong>PDF</strong> — 将当前知识库下所有菜单项的内容递归收集，合并生成一个 PDF 文档。菜单项按深度缩进，使用 NotoSansSC 字体支持中文显示。</li>
     <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code> 等所有文件。解压后可作为独立 HTML 页面浏览。</li>
+    <li><strong>MD</strong> — 将当前知识库下所有菜单项的内容转换为 Markdown 文档。表格转换为管道表格语法，Mermaid 图表转换为 <code>```mermaid</code> 代码块，图片复制到 <code>images/</code> 目录。如果包含图片，输出为 ZIP 包（<code>index.md</code> + <code>images/</code>）；否则直接返回 <code>.md</code> 文件。</li>
   </ul>
 
   <h3>8.2 菜单项级导出</h3>
@@ -1191,10 +1197,14 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   <ul>
     <li><strong>PDF</strong> — 导出该菜单项及其所有子项的内容，合并为一个 PDF，按层级深度缩进排列。</li>
     <li><strong>ZIP</strong> — 生成一个独立的 HTML 页面，包含该子树所有内容（内嵌 JSON 数据），并复制引用的图片到 <code>images/</code> 目录，打包为 ZIP 文件。解压后可直接打开 <code>index.html</code> 浏览。</li>
+    <li><strong>MD</strong> — 导出该菜单项及其所有子项为 Markdown 文档。菜单层级通过标题级别表示（depth 0 → <code>##</code>，depth 1 → <code>###</code>，依此类推）。表格、Mermaid 图表和图片的处理方式与 Tab 级 MD 导出相同。</li>
   </ul>
 
   <div class="tip">
     <strong>提示：</strong> PDF 导出需要 <code>pdf_fonts/NotoSansSC-Regular.ttf</code> 字体文件，缺失时自动使用 Courier 等宽字体代替。
+  </div>
+  <div class="tip">
+    <strong>提示：</strong> MD 导出会保留 Mermaid 图表的源代码作为代码块，在 GitHub、VS Code、Obsidian 等支持 Mermaid 的 Markdown 阅读器中可直接渲染显示。
   </div>
 
   <!-- ============================================================ -->
