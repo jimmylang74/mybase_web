@@ -6102,6 +6102,8 @@
       triggerDownload(`/api/${encodedName}/export/pdf`);
     } else if (action === 'export-tab-zip') {
       triggerDownload(`/api/${encodedName}/export/zip`);
+    } else if (action === 'export-tab-md') {
+      triggerDownload(`/api/${encodedName}/export/md`);
     }
   }
 
@@ -6202,6 +6204,8 @@
       triggerDownload(`/api/${encodedTab}/export/pdf/${id}`);
     } else if (action === 'export-tree-zip') {
       triggerDownload(`/api/${encodedTab}/export/zip/${id}`);
+    } else if (action === 'export-tree-md') {
+      triggerDownload(`/api/${encodedTab}/export/md/${id}`);
     }
   }
 
