@@ -1,0 +1,27 @@
+# ============================================================
+# Web of Mybase Knowledge Server，知识库KBase v4.5.4
+# ============================================================
+# 核心 Web 框架
+flask>=3.0.0
+flask-socketio>=5.3.0
+werkzeug>=3.0.0
+
+# PaddleOCR 光学字符识别（图片文字提取）
+# 如需 GPU 加速，请将 paddlepaddle 替换为 paddlepaddle-gpu
+paddlepaddle>=3.0.0
+paddleocr>=3.0.0
+
+# PaddleX 模型管理依赖
+paddlex>=3.0.0
+
+# PDF 导出
+fpdf2>=2.8.0
+
+# Windows 平台依赖（可选）
+click>=8.0.0
+
+# 密码加密（BCrypt）
+bcrypt>=4.0.0
+
+# AES 文件加密
+pycryptodome>=3.20.0

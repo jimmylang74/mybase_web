@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% if lang == 'en' %}Help - KBase {{ version }}{% else %}帮助 - 知识库KBase {{ version }}{% endif %}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f2f5;
+    color: #333;
+    line-height: 1.8;
+    font-size: 14px;
+  }
+  .help-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+  h1 {
+    font-size: 28px;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    padding-bottom: 16px;
+    border-bottom: 3px solid #3498db;
+  }
+  h2 {
+    font-size: 20px;
+    color: #2c3e50;
+    margin: 32px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #ddd;
+  }
+  h3 {
+    font-size: 16px;
+    color: #2980b9;
+    margin: 20px 0 8px;
+  }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0 8px 20px; }
+  li { margin: 4px 0; }
+  code {
+    background: #eef4f8;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: 'Courier New', monospace;
+    color: #c0392b;
+  }
+  pre {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 14px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 12px 0;
+  }
+  pre code {
+    background: transparent;
+    color: #ecf0f1;
+    padding: 0;
+  }
+  .tip {
+    background: #eaf7ea;
+    border-left: 4px solid #27ae60;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .tip strong { color: #27ae60; }
+  .note {
+    background: #fef9e7;
+    border-left: 4px solid #f39c12;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .note strong { color: #e67e22; }
+  .shortcut {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    box-shadow: 0 1px 0 #ccc;
+    margin: 0 2px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    font-size: 13px;
+  }
+  th {
+    background: #f5f7fa;
+    font-weight: 600;
+    color: #555;
+  }
+  tr:nth-child(even) { background: #fafbfc; }
+  .kbd {
+    display: inline-block;
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    box-shadow: 0 1px 0 #bbb;
+    margin: 0 2px;
+    white-space: nowrap;
+  }
+  .kbd-group {
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .section-nav {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+  .section-nav a {
+    display: block;
+    padding: 4px 0;
+    color: #2980b9;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .section-nav a:hover { text-decoration: underline; }
+  @media (max-width: 768px) {
+    .help-container { padding: 16px; }
+    h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="help-container">
+
+{% if lang == 'en' %}
+  <h1>KBase {{ version }} Help</h1>
+  <p style="color:#888;margin-bottom:24px">Web of Mybase Knowledge Server — Help Documentation (by Jimmy Lang, jimmylang1974@126.com)</p>
+
+  <div class="section-nav">
+    <strong style="color:#2c3e50;font-size:15px">Contents</strong>
+    <a href="#menu">1. Menu Operations</a>
+    <a href="#editor">2. Content Editor</a>
+    <a href="#table">2.7 Table Operations</a>
+    <a href="#tabs">3. Tab Operations</a>
+    <a href="#search">4. Search</a>
+    <a href="#index">5. Index System</a>
+    <a href="#server">6. Server Commands</a>
+    <a href="#tips">7. Tips & Tricks</a>
+    <a href="#export">8. Export</a>
+    <a href="#encrypt">9. Knowledge Base Encryption</a>
+    <a href="#sync">10. Real-time Sync (WebSocket)</a>
+    <a href="#users">11. Multi-User Management</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="menu">1. Menu Operations</h2>
+  <p>The left sidebar organizes knowledge base content in a tree structure, supporting nested menus, drag-and-drop, and custom styles.</p>
+
+  <h3>1.1 Tree Toolbar</h3>
+  <p>Click the <strong>"☰ Menu"</strong> button at the top of the sidebar to open the dropdown:</p>
+  <ul>
+    <li><strong>Collapse All</strong> — Collapse all expanded tree nodes</li>
+    <li><strong>Expand All</strong> — Expand all collapsible tree nodes</li>
+    <li><strong>Add Root Menu</strong> — Add a new menu item at the root level</li>
+  </ul>
+
+  <h3>1.2 Right-Click Menu</h3>
+  <p><strong>Right-click</strong> on any menu item to open the context menu:</p>
+  <table>
+    <tr><th>Action</th><th>Description</th></tr>
+    <tr><td>Add Child Menu</td><td>Create a sub-item under the current item</td></tr>
+    <tr><td>Add Menu Item</td><td>Create a new item after the current one</td></tr>
+    <tr><td>Move Up</td><td>Move the item up in the list</td></tr>
+    <tr><td>Move Down</td><td>Move the item down in the list</td></tr>
+    <tr><td>Move To...</td><td>Move item to a different parent</td></tr>
+    <tr><td>Export</td><td>Export this item and its children as PDF or ZIP</td></tr>
+    <tr><td>Edit</td><td>Rename the current menu item</td></tr>
+    <tr><td>Custom Style</td><td>Set icon (Emoji), font, size, color, bold style</td></tr>
+    <tr><td>Delete</td><td>Delete this item and all its children (requires confirmation)</td></tr>
+  </table>
+
+  <h3>1.3 Inline Rename</h3>
+  <p><strong>Double-click</strong> a selected menu item to rename it inline:</p>
+  <ul>
+    <li><span class="kbd">Enter</span> — Save and confirm</li>
+    <li><span class="kbd">Esc</span> — Cancel editing</li>
+  </ul>
+
+  <h3>1.4 Custom Style</h3>
+  <p>Use the <strong>"Custom Style"</strong> dialog to personalize menu items:</p>
+  <ul>
+    <li><strong>Icon</strong> — Emoji support (e.g. 📁 🔖 ⭐)</li>
+    <li><strong>Font / Size</strong> — Independent of editor font</li>
+    <li><strong>Text / Background Color</strong> — Custom color scheme</li>
+    <li><strong>Bold / Underline / Strikethrough</strong> — Text decoration</li>
+  </ul>
+  <div class="tip">
+    <strong>Tip:</strong> Click <strong>"Reset Style"</strong> to clear all custom styles and restore defaults.
+  </div>
+
+  <h3>1.5 Expand & Collapse</h3>
+  <p>Click the <strong>▸ / ▾</strong> arrow to toggle node expansion. State is saved automatically when switching tabs.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="editor">2. Content Editor</h2>
+  <p>The right panel is a WYSIWYG rich text editor with extensive formatting options.</p>
+
+  <h3>2.1 Editor Toolbar</h3>
+  <table>
+    <tr><th>Control</th><th>Function</th></tr>
+    <tr><td>Font dropdown</td><td>Set text font (Arial, SimSun, Microsoft YaHei, etc.)</td></tr>
+    <tr><td>Size dropdown</td><td>Set text size (Small / Normal / Large / X-Large)</td></tr>
+    <tr><td><b>B</b> (Bold)</td><td>Toggle bold</td></tr>
+    <tr><td><i>I</i> (Italic)</td><td>Toggle italic</td></tr>
+    <tr><td><u>U</u> (Underline)</td><td>Toggle underline</td></tr>
+    <tr><td><s>S</s> (Strikethrough)</td><td>Toggle strikethrough</td></tr>
+    <tr><td>Color (swatch▾)</td><td>Set text color — click swatch to apply, ▾ to pick</td></tr>
+    <tr><td>🔗 (Link)</td><td>Insert hyperlink (URL + display text)</td></tr>
+    <tr><td>💾 Save</td><td>Save current content manually</td></tr>
+  </table>
+
+  <h3>2.2 Keyboard Shortcuts</h3>
+  <ul>
+    <li><span class="kbd">Ctrl + S</span> — Save current content</li>
+    <li><span class="kbd">Esc</span> — Close any popup menu or dialog</li>
+  </ul>
+
+  <h3>2.3 Right-Click Context Menu</h3>
+  <p><strong>Right-click</strong> in the editor to open the edit menu:</p>
+  <ul>
+    <li><strong>Bold / Italic / Underline / Strikethrough</strong> — Text formatting</li>
+    <li><strong>Font Family</strong> — Set font</li>
+    <li><strong>Font Color</strong> — Set text color</li>
+    <li><strong>Remove Format</strong> — Clear formatting from selection</li>
+    <li><strong>Copy / Paste</strong> — Copy and paste (browser native)</li>
+  </ul>
+
+  <h3>2.4 Paste Operations</h3>
+  <p>The editor supports smart paste:</p>
+  <ul>
+    <li><strong>Paste text</strong> — Plain text inserted automatically (no external formatting)</li>
+    <li><strong>Paste images</strong> — Paste images directly from clipboard (Ctrl+V), auto-uploaded</li>
+    <li><strong>Paste rich text</strong> — HTML formatted content preserved</li>
+  </ul>
+  <div class="tip">
+    <strong>Tip:</strong> Pasted images are automatically scaled to 50% of original size.
+  </div>
+
+  <h3>2.5 Save Mechanism</h3>
+  <ul>
+    <li>Editor status bar shows current editing state</li>
+    <li><strong>"(unsaved)"</strong> indicator appears when content is modified</li>
+    <li>Tab name shows <strong>"*"</strong> when the KB has unsaved content</li>
+    <li>Content is auto-saved when switching tabs</li>
+    <li>Index is automatically updated after saving</li>
+  </ul>
+
+  <h3>2.6 Image Operations</h3>
+  <ul>
+    <li><strong>Paste images</strong> — Directly from clipboard (PNG, JPG, etc.)</li>
+    <li><strong>Link clicking</strong> — Links open in a new tab automatically</li>
+  </ul>
+
+  <h3 id="table">2.7 Table Operations</h3>
+
+  <h4>2.7.1 Insert Table</h4>
+  <p>Click the <strong>"⊞ Table"</strong> button on the toolbar. In the dialog, set the number of <strong>columns</strong> (max 20) and <strong>rows</strong> (max 50), then click OK. The first row is automatically styled as a header row (blue background, white bold text).</p>
+
+  <h4>2.7.2 Navigation & Keyboard Shortcuts</h4>
+  <table>
+    <tr><th>Key</th><th>Action</th></tr>
+    <tr><td><span class="kbd">Tab</span></td><td>Move to the next cell (wraps to the next row at the end)</td></tr>
+    <tr><td><span class="kbd">Shift + Tab</span></td><td>Move to the previous cell</td></tr>
+    <tr><td><span class="kbd">Enter</span> (in last cell)</td><td>Insert a new row below the current row</td></tr>
+    <tr><td><span class="kbd">Backspace</span> (at start of first cell)</td><td>Remove the current row (if more than one row remains)</td></tr>
+  </table>
+
+  <h4>2.7.3 Right-Click Context Menu</h4>
+  <p><strong>Right-click</strong> inside a table cell to access table-specific operations:</p>
+  <table>
+    <tr><th>Action</th><th>Description</th></tr>
+    <tr><td>Insert Column</td><td>Insert a new column to the left of the current cell</td></tr>
+    <tr><td>Insert Row</td><td>Insert a new row above the current cell</td></tr>
+    <tr><td>Delete Column</td><td>Delete the current column</td></tr>
+    <tr><td>Delete Row</td><td>Delete the current row</td></tr>
+    <tr><td>Set Cell Format</td><td>Open the cell format dialog (background color, vertical/horizontal alignment)</td></tr>
+  </table>
+
+  <h4>2.7.4 Column Resize</h4>
+  <p>Drag the <strong>right border</strong> of any column header to resize the column width. The cursor changes to a <span style="cursor:col-resize">↔</span> resize cursor when hovering over the column edge.</p>
+
+  <h4>2.7.5 Cell Format</h4>
+  <p>In the cell format dialog you can set:</p>
+  <ul>
+    <li><strong>Background Color</strong> — Pick a color for the cell background</li>
+    <li><strong>Vertical Alignment</strong> — Top / Middle / Bottom</li>
+    <li><strong>Horizontal Alignment</strong> — Left / Center / Right</li>
+  </ul>
+
+  <h4>2.7.6 Formula Support</h4>
+  <p>Tables support spreadsheet-style formulas powered by <strong>HyperFormula</strong> (GPL v3). To use a formula, type <code>=</code> followed by the formula expression into a cell. The formula will be evaluated automatically, and the result is displayed in the cell.</p>
+
+  <p>A <strong>formula bar</strong> appears below the toolbar when a table with formulas is active. It shows the cell reference and the formula content of the active cell. You can edit the formula directly in the formula bar.</p>
+
+  <div class="tip">
+    <strong>Tip:</strong> Cells containing formulas are highlighted with a light blue background. If a formula has an error, the cell is highlighted in red and the original formula text is shown instead of the error value.
+  </div>
+
+  <p><strong>Supported aggregate functions:</strong></p>
+  <p><code>SUM</code>, <code>AVERAGE</code>, <code>AVERAGEA</code>, <code>COUNT</code>, <code>COUNTA</code>, <code>MAX</code>, <code>MIN</code>, <code>PRODUCT</code>, <code>STDEV</code>, <code>STDEVP</code>, <code>VAR</code>, <code>VARP</code>, <code>MEDIAN</code>, <code>MODE</code></p>
+
+  <p><strong>Formula examples (with a table that has header columns named "Price", "Quantity", "Total"):</strong></p>
+  <table>
+    <tr><th>Example</th><th>Description</th></tr>
+    <tr>
+      <td><code>=SUM(Price)</code></td>
+      <td>Sum all values in the "Price" column</td>
+    </tr>
+    <tr>
+      <td><code>=AVERAGE(Price)</code></td>
+      <td>Average of all values in the "Price" column</td>
+    </tr>
+    <tr>
+      <td><code>=MAX(Price)</code></td>
+      <td>Maximum value in the "Price" column</td>
+    </tr>
+    <tr>
+      <td><code>=Price * Quantity</code></td>
+      <td>Multiply values from "Price" and "Quantity" columns in the same row</td>
+    </tr>
+    <tr>
+      <td><code>=SUM(Price1:Price5)</code></td>
+      <td>Sum a specific range of rows (rows 1 to 5) in the "Price" column</td>
+    </tr>
+    <tr>
+      <td><code>=Price + 10</code></td>
+      <td>Add a constant value to the Price column value</td>
+    </tr>
+    <tr>
+      <td><code>=A1 + B1</code></td>
+      <td>Reference cells directly by column letter and row number (A=first data column, row number starts at 1)</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <strong>Note:</strong> When using column header names in formulas (e.g., <code>Price</code>), the header name must not contain spaces. Formulas are re-evaluated when any cell value in the table changes. The full HyperFormula function library is available — any standard spreadsheet function can be used.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="tabs">3. Tab Operations</h2>
+  <p>The top tab bar manages multiple knowledge base pages with support for switching, sorting, renaming, hiding, and deleting.</p>
+
+  <h3>3.1 Basic Operations</h3>
+  <ul>
+    <li><strong>Left-click</strong> tab name — Switch to that KB</li>
+    <li><strong>Right-click</strong> tab name — Open context menu</li>
+    <li><strong>Drag</strong> tab left/right — Reorder tabs</li>
+  </ul>
+
+  <h3>3.2 Tab Right-Click Menu</h3>
+  <table>
+    <tr><th>Action</th><th>Description</th></tr>
+    <tr><td>Edit</td><td>Rename the tab</td></tr>
+    <tr><td>Export</td><td>Export as PDF or ZIP</td></tr>
+    <tr><td>Close</td><td>Hide the tab (can be restored later)</td></tr>
+    <tr><td>Delete</td><td>Permanently delete the tab and all its data</td></tr>
+  </table>
+
+  <h3>3.3 Drag & Drop Sorting</h3>
+  <p>Drag tabs horizontally to reorder. A <span style="color:#3498db">blue indicator</span> shows the drop position. Order is persisted to the server immediately.</p>
+
+  <h3>3.4 Tab Scrolling</h3>
+  <p>When tabs overflow, <span class="tab-scroll-btn" style="position:static;display:inline-flex;width:24px;height:24px;font-size:12px;background:#34495e;border-radius:3px;color:#bdc3c7">‹</span> and <span class="tab-scroll-btn" style="position:static;display:inline-flex;width:24px;height:24px;font-size:12px;background:#34495e;border-radius:3px;color:#bdc3c7">›</span> arrows appear. Use mouse wheel or click arrows to scroll.</p>
+
+  <h3>3.5 Creating New KB</h3>
+  <p>Click <strong>"New KB"</strong> on the toolbar, enter a name, and the new KB is created with an empty menu structure.</p>
+
+  <h3>3.6 KB Visibility</h3>
+  <p>The KB selector (bottom of toolbar) lets you filter which KBs to display. Uncheck "All KBs" to choose individually.</p>
+
+  <h3>3.7 Reading Position Memory</h3>
+  <p>The system remembers which menu item was last selected for each tab. When you switch back, the same item is automatically selected.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="search">4. Search</h2>
+  <p>SQLite-based full-text search with OCR support for image text.</p>
+
+  <h3>4.1 Basic Search</h3>
+  <p>Enter keywords in the search box and click <strong>🔍 Search</strong> or press <span class="kbd">Enter</span>.</p>
+
+  <h3>4.2 Search Modes</h3>
+  <ul>
+    <li><strong>Regular Search</strong> — Match keywords (with stemming)</li>
+    <li><strong>Regex Search</strong> — Enable <strong>"Regex"</strong> checkbox for pattern matching</li>
+    <li><strong>Global Search</strong> — Enable <strong>"Global Search"</strong> to search all KBs</li>
+  </ul>
+
+  <h3>4.3 Smart Search Syntax (non-Regex Mode)</h3>
+  <p>When the <strong>"Regex"</strong> checkbox is <strong>not</strong> checked, the search box supports these formats:</p>
+  <table>
+    <tr><th>Format</th><th>Description</th><th>Example</th></tr>
+    <tr>
+      <td><code>xxxx</code></td>
+      <td>Simple search: match items containing the keyword</td>
+      <td><code>setup guide</code> → search "setup guide"</td>
+    </tr>
+    <tr>
+      <td><code>aaa | bbb | ccc</code></td>
+      <td>OR search: match items containing <strong>any</strong> keyword (<code>|</code> separator)</td>
+      <td><code>install | config | deploy</code> → match any</td>
+    </tr>
+    <tr>
+      <td><code>aaa bbb ccc</code> or<br><code>aaa && bbb && ccc</code></td>
+      <td>AND search: match items containing <strong>all</strong> keywords (space or <code>&&</code> separator)</td>
+      <td><code>Python install config</code> → all must match</td>
+    </tr>
+    <tr>
+      <td><code>aaa ^ bbb</code></td>
+      <td>Exclusion search: match items containing <code>aaa</code> but <strong>not</strong> <code>bbb</code> (<code>^</code> precedes excluded terms)</td>
+      <td><code>Python ^ Java</code> → has Python but not Java</td>
+    </tr>
+  </table>
+  <div class="tip">
+    <strong>Tip:</strong> Space-separated words default to AND logic. Use regex mode if you need to search for an exact phrase containing spaces.
+  </div>
+
+  <h3>4.4 Search Results Panel</h3>
+  <p>Results show KB name, path, and content snippet. Click a result to navigate directly. The panel is resizable by dragging the splitter handle above it.</p>
+
+  <h3>4.5 Regex Syntax</h3>
+  <p>Supports SQLite regex syntax (X REGEXP Y). Common patterns:</p>
+  <ul>
+    <li><code>^prefix</code> — Match at start</li>
+    <li><code>suffix$</code> — Match at end</li>
+    <li><code>pat1|pat2</code> — Match either pattern</li>
+    <li><code>.*</code> — Match any characters</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="index">5. Index System</h2>
+  <p>Automatic indexing of all KB content with incremental updates and OCR support.</p>
+
+  <h3>5.1 Auto-Indexing</h3>
+  <ul>
+    <li>New KBs are indexed automatically on server startup</li>
+    <li>Content saves trigger incremental index updates</li>
+    <li>OCR processes images and indexes recognized text</li>
+  </ul>
+
+  <h3>5.2 Manual Rebuild</h3>
+  <p>Run <code>python server.py --force-index</code> to rebuild all indexes. Use <code>--force-index my_kb</code> for a specific KB.</p>
+
+  <h3>5.3 Index Status</h3>
+  <p>The <span style="color:#e67e22">📇 Indexing...</span> indicator in the toolbar shows when background indexing is active.</p>
+
+  <h3>5.4 OCR Text Index</h3>
+  <p>Images in content are processed by PaddleOCR. OCR runs in background processes and does not block the server.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="server">6. Server Commands</h2>
+
+  <h3>6.1 Basic Usage</h3>
+  <pre><code>python server.py
+python server.py --port 8080 --data /path/to/data</code></pre>
+
+  <h3>6.2 Parameters</h3>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>--port PORT</code></td><td>9999</td><td>Server port</td></tr>
+    <tr><td><code>--data DIR</code></td><td>data</td><td>Data root directory</td></tr>
+    <tr><td><code>--force-index [NAME]</code></td><td>—</td><td>Force rebuild index (all or specific KB)</td></tr>
+    <tr><td><code>--disable-ocr</code></td><td>—</td><td>Disable OCR</td></tr>
+    <tr><td><code>--mobile-ocr true|false</code></td><td>—</td><td>Use lightweight mobile OCR model (less accurate, lower memory). Enabled by default on Windows. Use <code>--mobile-ocr false</code> to force server model on Windows</td></tr>
+    <tr><td><code>--workers-ocr N</code></td><td>8</td><td>OCR worker processes</td></tr>
+    <tr><td><code>--workers-menu N</code></td><td>8</td><td>Menu item index workers</td></tr>
+    <tr><td><code>--no-debug</code></td><td>—</td><td>Disable debug logging</td></tr>
+  </table>
+
+  <h3>6.3 Examples</h3>
+  <pre><code># Specific port and data directory
+python server.py --port 8080 --data /path/to/data
+
+# Force rebuild all indexes
+python server.py --force-index
+
+# Rebuild specific KB, disable OCR
+python server.py --force-index my_kb --disable-ocr
+
+# Low-resource environment
+python server.py --workers-ocr 2 --workers-menu 2</code></pre>
+
+  <h3>6.4 Server Log</h3>
+  <p>Logs are written to <code>mybase.log</code> in the project root. Use <code>--no-debug</code> to suppress debug messages.</p>
+
+  <h3>6.5 Graceful Shutdown</h3>
+  <p>Press <span class="kbd">Ctrl + C</span> to stop the server. Active tasks will complete before shutdown.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="tips">7. Tips & Tricks</h2>
+
+  <h3>7.1 Efficient Editing</h3>
+  <ul>
+    <li>Use <span class="kbd">Ctrl + S</span> frequently to save</li>
+    <li>Double-click menu items for quick rename</li>
+    <li>Drag tabs to reorder</li>
+  </ul>
+
+  <h3>7.2 Data Safety</h3>
+  <ul>
+    <li>Use <strong>"Backup KB"</strong> to download a ZIP of all data</li>
+    <li>Copy the <code>data/</code> directory for manual backups</li>
+    <li>Use <code>--data</code> to specify custom data paths</li>
+  </ul>
+
+  <h3>7.3 Search Tips</h3>
+  <ul>
+    <li>Use regex for complex patterns</li>
+    <li>Use global search to find content across all KBs</li>
+    <li>OCR enables searching text within images</li>
+  </ul>
+
+  <h3>7.4 Performance</h3>
+  <ul>
+    <li>Reduce <code>--workers-ocr</code> and <code>--workers-menu</code> on low-resource machines</li>
+    <li>Disable OCR with <code>--disable-ocr</code> if not needed</li>
+    <li>Use <code>--no-debug</code> to reduce disk I/O</li>
+  </ul>
+
+  <h3>7.5 External Docs</h3>
+  <p>See the <code>README.md</code> for full documentation. The help page is also available via the <strong>"?"</strong> button.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="export">8. Export</h2>
+  <p>The system provides flexible export functionality, supporting PDF and ZIP formats at two granularity levels.</p>
+
+  <h3>8.1 Tab-Level Export</h3>
+  <p><strong>Right-click</strong> a tab and choose <strong>"Export"</strong> → select format:</p>
+  <ul>
+    <li><strong>PDF</strong> — Recursively collects all menu items' content under the current KB and merges them into a single PDF document. Items are indented by depth. Uses NotoSansSC font for CJK character support.</li>
+    <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code>, and all other files. Unzip and browse as a standalone HTML page.</li>
+  </ul>
+
+  <h3>8.2 Menu Item-Level Export</h3>
+  <p><strong>Right-click</strong> a tree menu item and choose <strong>"Export"</strong> → select format:</p>
+  <ul>
+    <li><strong>PDF</strong> — Exports the selected item and all its children into one PDF, arranged by hierarchy depth.</li>
+    <li><strong>ZIP</strong> — Generates a standalone HTML page containing the entire subtree content (with inline JSON data), copies referenced images to <code>images/</code>, and packages as a ZIP. Unzip and open <code>index.html</code> to browse offline.</li>
+  </ul>
+
+  <div class="tip">
+    <strong>Tip:</strong> PDF export requires <code>pdf_fonts/NotoSansSC-Regular.ttf</code>. If missing, Courier monospace font is used as fallback.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="encrypt">9. Knowledge Base Encryption</h2>
+
+  <p>The system supports password protection for <strong>individual knowledge bases (Tabs)</strong>. Encrypted content is stored on disk using the AES-256-GCM algorithm and cannot be viewed or synced until unlocked.</p>
+
+  <h3>9.1 Setting a Password</h3>
+  <ul>
+    <li><strong>Right-click</strong> a tab → <strong>"Set Password"</strong></li>
+    <li>Enter a password and confirm</li>
+    <li>Once set, all existing content is automatically encrypted, and new content is stored in encrypted form</li>
+  </ul>
+
+  <h3>9.2 Unlocking a Knowledge Base</h3>
+  <ul>
+    <li>Click an encrypted tab, and the system will automatically prompt for a password</li>
+    <li>Enter the correct password to unlock. You can then view and edit normally <strong>within the same browser tab</strong></li>
+    <li>After closing the tab or browser window, you must enter the password again to re-access</li>
+  </ul>
+
+  <h3>9.3 Changing / Removing Password</h3>
+  <ul>
+    <li><strong>Right-click</strong> an unlocked encrypted tab → <strong>"Change Password"</strong> (requires original password)</li>
+    <li><strong>Right-click</strong> an unlocked encrypted tab → <strong>"Remove Password"</strong> (decrypts all files)</li>
+  </ul>
+
+  <h3>9.4 Important Notes</h3>
+  <ul>
+    <li><strong>Passwords cannot be recovered</strong> — If you forget the password, you will lose access to the knowledge base content</li>
+    <li><strong>Encryption does not affect search indexing</strong> — Content can be searched normally once unlocked</li>
+    <li><strong>Encrypted KBs do not support real-time sync</strong> — WebSocket synchronization is blocked for security</li>
+    <li><strong>Standalone export is unavailable</strong> — Encrypted KBs cannot generate public standalone HTML pages</li>
+    <li><strong>Backups include encrypted files</strong> — Encrypted files in the backup ZIP remain encrypted</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="sync">10. Real-time Sync (WebSocket)</h2>
+
+  <p>The system uses WebSocket technology to enable real-time collaboration and content synchronization across multiple windows or browsers.</p>
+
+  <h3>10.1 Multi-window Collaboration</h3>
+  <ul>
+    <li><strong>Content Sync</strong> — Content changes are broadcast to all clients viewing the same document in real-time</li>
+    <li><strong>Menu Sync</strong> — Menu structure changes (add, rename, move, delete) are broadcast to all clients viewing the same KB</li>
+    <li><strong>Tab Lifecycle</strong> — Tab operations (create, rename, delete) are broadcast to all connected clients</li>
+  </ul>
+
+  <h3>10.2 Document Locking</h3>
+  <p>To prevent concurrent editing conflicts, the system implements a document locking mechanism. When a user starts editing a document, it is locked for other users. The lock is released when the user saves or navigates away.</p>
+
+  <h3>10.3 Security & Limitations</h3>
+  <ul>
+    <li><strong>Encrypted KBs</strong> — For security reasons, encrypted knowledge bases cannot use real-time sync</li>
+    <li><strong>Connection Status</strong> — The system automatically handles connect, disconnect, and room management (join/leave) for tabs and documents</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="users">11. Multi-User Management</h2>
+
+  <p>KBase supports multi-user management, allowing an administrator to manage users and control permissions for different knowledge bases.</p>
+
+  <h3>11.1 Login & Default Password</h3>
+  <ul>
+    <li>Open the Settings dialog from the toolbar to log in</li>
+    <li><strong>Default admin password</strong>: <code>1234</code></li>
+    <li>Once logged in as admin, you can manage users from the Settings panel</li>
+  </ul>
+
+  <h3>11.2 User Roles</h3>
+  <table>
+    <tr><th>Role</th><th>Description</th></tr>
+    <tr>
+      <td>Admin</td>
+      <td>Can create/delete users, create public KBs visible to all users, assign KB owners, and publish bulletin-style content synced in real-time to all logged-in users</td>
+    </tr>
+    <tr>
+      <td>Regular User</td>
+      <td>Owns their own KBs, can only see their own KBs plus admin's public KBs. Cannot export or modify admin's KBs</td>
+    </tr>
+  </table>
+
+  <h3>11.3 Creating & Deleting Users</h3>
+  <ul>
+    <li>Admin can create new users from the Settings panel</li>
+    <li><strong>Deleting a user</strong> reassigns all their KBs to admin. The deleted user is immediately logged out in all open windows</li>
+  </ul>
+
+  <h3>11.4 KB Ownership & Permissions</h3>
+  <ul>
+    <li><strong>Public KBs</strong> (created by admin) — visible to all users, editable only by admin</li>
+    <li><strong>Private KBs</strong> (created by a user) — owned by that user, visible only to the owner and admin</li>
+    <li>Admin can assign KB ownership to a different user</li>
+    <li><strong>Export permission</strong> — Regular users can only export KBs they own. Export menu items for admin-owned KBs are grayed out</li>
+  </ul>
+
+  <h3>11.5 Real-time Sync (Admin Broadcast)</h3>
+  <ul>
+    <li>When admin edits content in a public KB, changes are synced in real-time to all logged-in users viewing that KB via WebSocket</li>
+    <li>This enables a bulletin-board-style workflow where admin pushes updates to users</li>
+  </ul>
+
+{% else %}
+  <h1>知识库 KBase {{ version }} 使用帮助</h1>
+  <p style="color:#888;margin-bottom:24px">中文知识库管理系统 &mdash; 帮助文档 (by Jimmy Lang, jimmylang1974@126.com)</p>
+
+  <div class="section-nav">
+    <strong style="color:#2c3e50;font-size:15px">目录</strong>
+    <a href="#menu">一、菜单窗口操作</a>
+    <a href="#editor">二、内容窗口编辑与粘贴</a>
+    <a href="#tabs">三、Tab 页面操作</a>
+    <a href="#search">四、搜索功能</a>
+    <a href="#index">五、索引系统</a>
+    <a href="#server">六、Server.py 命令行</a>
+    <a href="#tips">七、使用技巧</a>
+    <a href="#export">八、导出功能</a>
+    <a href="#encrypt">九、知识库加密</a>
+    <a href="#sync">十、WebSocket 实时同步</a>
+    <a href="#users">十一、多用户管理</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="menu">一、菜单窗口操作</h2>
+
+  <p>左侧菜单窗口（侧边栏）以树形结构组织知识库内容，支持多级嵌套、拖拽排序、自定义样式等功能。</p>
+
+  <h3>1.1 树形菜单工具栏</h3>
+  <p>侧边栏顶部为 <strong>"☰ Menu"</strong> 按钮，点击展开下拉菜单：</p>
+  <ul>
+    <li><strong>全部收起</strong> — 折叠所有已展开的树节点</li>
+    <li><strong>全部展开</strong> — 展开所有可展开的树节点</li>
+    <li><strong>新增根菜单项</strong> — 在当前知识库根级别添加新菜单项</li>
+  </ul>
+
+  <h3>1.2 右键菜单操作</h3>
+  <p>在任意菜单项上 <strong>右键点击</strong> 弹出上下文菜单：</p>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>新增子菜单项</td><td>在当前项下创建子级菜单</td></tr>
+    <tr><td>新增菜单项</td><td>在当前项同级后创建新菜单项</td></tr>
+    <tr><td>上移</td><td>将菜单项在同级列表中向上移动一位</td></tr>
+    <tr><td>下移</td><td>将菜单项在同级列表中向下移动一位</td></tr>
+    <tr><td>移动到...</td><td>弹出目标选择树，将项目移动到指定位置</td></tr>
+    <tr><td>导出</td><td>导出当前菜单项及其子项为 PDF 或 ZIP 文件</td></tr>
+    <tr><td>编辑</td><td>重命名当前菜单项</td></tr>
+    <tr><td>定制样式</td><td>设置图标（Emoji）、字体、字号、颜色、加粗等样式</td></tr>
+    <tr><td>删除</td><td>删除当前菜单项及其所有子项（需确认）</td></tr>
+  </table>
+
+  <h3>1.3 内联重命名</h3>
+  <p>左键 <strong>双击</strong> 已选中的菜单项，可直接在树中 inline 编辑名称：</p>
+  <ul>
+    <li><span class="kbd">Enter</span> — 确认保存</li>
+    <li><span class="kbd">Esc</span> — 取消编辑</li>
+  </ul>
+
+  <h3>1.4 自定义样式</h3>
+  <p>通过右键 <strong>"定制样式"</strong> 可为菜单项设置个性化外观：</p>
+  <ul>
+    <li><strong>图标</strong> — 支持 Emoji 字符（如 📁 🔖 ⭐）</li>
+    <li><strong>字体 / 字号</strong> — 独立于编辑器字体</li>
+    <li><strong>文字颜色 / 背景颜色</strong> — 自定义配色</li>
+    <li><strong>加粗 / 下划线 / 删除线</strong> — 文字装饰</li>
+  </ul>
+  <div class="tip">
+    <strong>提示：</strong> 点击 <strong>"重置样式"</strong> 可一键清除所有自定义样式，恢复默认外观。
+  </div>
+
+  <h3>1.5 展开与折叠</h3>
+  <p>点击节点左侧的 <strong>▸ / ▾</strong> 箭头切换展开/折叠状态。展开/折叠状态会在切换 Tab 时自动保存。</p>
+
+  <!-- ============================================================ -->
+  <h2 id="editor">二、内容窗口编辑与粘贴</h2>
+
+  <p>右侧内容窗口为富文本编辑器（WYSIWYG），支持丰富的格式化操作。</p>
+
+  <h3>2.1 编辑器工具栏</h3>
+  <table>
+    <tr><th>控件</th><th>功能</th></tr>
+    <tr><td>字体下拉框</td><td>设置当前文本字体（Arial、宋体、微软雅黑等）</td></tr>
+    <tr><td>字号下拉框</td><td>设置文字大小（Small / Normal / Large / X-Large）</td></tr>
+    <tr><td><b>B</b> (粗体)</td><td>切换粗体</td></tr>
+    <tr><td><i>I</i> (斜体)</td><td>切换斜体</td></tr>
+    <tr><td><u>U</u> (下划线)</td><td>切换下划线</td></tr>
+    <tr><td><s>S</s> (删除线)</td><td>切换删除线</td></tr>
+    <tr><td>颜色（色块▾）</td><td>设置文字颜色 — 点击色块应用，点击 ▾ 选择颜色</td></tr>
+    <tr><td>🔗 (链接)</td><td>插入超链接（URL + 显示文字）</td></tr>
+    <tr><td>💾 Save</td><td>手动保存当前内容</td></tr>
+  </table>
+
+  <h3>2.2 键盘快捷键</h3>
+  <ul>
+    <li><span class="kbd">Ctrl + S</span> — 保存当前编辑的内容</li>
+    <li><span class="kbd">Esc</span> — 关闭任意弹出菜单或对话框</li>
+  </ul>
+
+  <h3>2.3 右键上下文菜单</h3>
+  <p>在编辑器中 <strong>右键点击</strong> 弹出编辑菜单：</p>
+  <ul>
+    <li><strong>Bold / Italic / Underline / Strikethrough</strong> — 文字格式化</li>
+    <li><strong>Font Family</strong> — 设置字体</li>
+    <li><strong>Font Color</strong> — 设置文字颜色</li>
+    <li><strong>Remove Format</strong> — 清除选中内容的格式</li>
+    <li><strong>Copy / Paste</strong> — 复制和粘贴（使用浏览器原生命令）</li>
+  </ul>
+
+  <h3>2.4 粘贴操作</h3>
+  <p>编辑器支持智能粘贴：</p>
+  <ul>
+    <li><strong>粘贴文本</strong> — 纯文本自动插入（不会带入外部格式）</li>
+    <li><strong>粘贴图片</strong> — 从剪贴板直接粘贴图片（Ctrl+V），图片会自动上传到服务器并插入到光标位置</li>
+    <li><strong>粘贴富文本</strong> — 保留 HTML 格式内容</li>
+  </ul>
+  <div class="tip">
+    <strong>提示：</strong> 粘贴图片后图片会自动缩放为原尺寸的 50%，并保持宽高比。
+  </div>
+
+  <h3>2.5 保存机制</h3>
+  <ul>
+    <li>编辑器右上角状态栏显示当前编辑状态</li>
+    <li>内容修改后状态栏显示 <strong>"(unsaved)"</strong> 标记</li>
+    <li>Tab 名称前出现 <strong>"*"</strong> 号表示该知识库有未保存内容</li>
+    <li>切换 Tab 时会自动保存当前内容</li>
+    <li>保存成功后索引会自动增量更新</li>
+  </ul>
+
+  <h3>2.6 图片操作</h3>
+  <ul>
+    <li><strong>粘贴图片</strong> — 从剪贴板直接粘贴（支持 PNG、JPG 等常见格式）</li>
+    <li><strong>链接点击</strong> — 编辑器中的链接点击后自动在新标签页打开</li>
+  </ul>
+
+  <h3 id="table">2.7 表格操作</h3>
+
+  <h4>2.7.1 插入表格</h4>
+  <p>点击工具栏的 <strong>"⊞ Table"</strong> 按钮，在弹出的对话框中设置 <strong>列数</strong>（最多 20 列）和 <strong>行数</strong>（最多 50 行），点击确定即可插入。首行自动设置为表头行（蓝底白字加粗）。</p>
+
+  <h4>2.7.2 导航与键盘快捷键</h4>
+  <table>
+    <tr><th>按键</th><th>操作</th></tr>
+    <tr><td><span class="kbd">Tab</span></td><td>移动到下一个单元格（行末自动换行）</td></tr>
+    <tr><td><span class="kbd">Shift + Tab</span></td><td>移动到上一个单元格</td></tr>
+    <tr><td><span class="kbd">Enter</span>（最后一个单元格中）</td><td>在下方插入新行</td></tr>
+    <tr><td><span class="kbd">Backspace</span>（第一个单元格开头）</td><td>删除当前行（至少保留一行）</td></tr>
+  </table>
+
+  <h4>2.7.3 右键菜单</h4>
+  <p>在表格单元格上 <strong>右键点击</strong> 可弹出表格专用的上下文菜单：</p>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>插入列</td><td>在当前单元格左侧插入一列</td></tr>
+    <tr><td>插入行</td><td>在当前单元格上方插入一行</td></tr>
+    <tr><td>删除列</td><td>删除当前列</td></tr>
+    <tr><td>删除行</td><td>删除当前行</td></tr>
+    <tr><td>设置单元格格式</td><td>打开单元格格式对话框（背景色、垂直/水平对齐）</td></tr>
+  </table>
+
+  <h4>2.7.4 列宽调整</h4>
+  <p>鼠标悬停在列标题的 <strong>右边框</strong> 上，当光标变为 <span style="cursor:col-resize">↔</span> 调整图标时，拖拽即可调整列宽。</p>
+
+  <h4>2.7.5 单元格格式</h4>
+  <p>在单元格格式对话框中可以设置：</p>
+  <ul>
+    <li><strong>背景颜色</strong> — 选择单元格背景色</li>
+    <li><strong>垂直对齐</strong> — 顶部 / 居中 / 底部</li>
+    <li><strong>水平对齐</strong> — 左对齐 / 居中 / 右对齐</li>
+  </ul>
+
+  <h4>2.7.6 公式支持</h4>
+  <p>表格支持类似电子表格的公式计算功能，底层使用 <strong>HyperFormula</strong>（GPL v3 协议）。在单元格中输入以 <code>=</code> 开头的公式表达式，系统会自动计算并显示结果。</p>
+
+  <p>当表格中包含公式时，工具栏下方会显示 <strong>公式栏</strong>，显示当前选中单元格的引用位置和公式内容，你可以在公式栏中直接编辑公式。</p>
+
+  <div class="tip">
+    <strong>提示：</strong> 包含公式的单元格会以浅蓝色背景高亮显示。如果公式计算出错，单元格会以红色背景显示，并显示原始公式文本。
+  </div>
+
+  <p><strong>支持的聚合函数：</strong></p>
+  <p><code>SUM</code>（求和）、<code>AVERAGE</code>（平均值）、<code>COUNT</code>（计数）、<code>MAX</code>（最大值）、<code>MIN</code>（最小值）、<code>PRODUCT</code>（乘积）、<code>MEDIAN</code>（中位数）、<code>MODE</code>（众数）等。</p>
+
+  <p><strong>公式示例（假设表头列名为"单价"、"数量"、"总价"）：</strong></p>
+  <table>
+    <tr><th>示例</th><th>说明</th></tr>
+    <tr>
+      <td><code>=SUM(单价)</code></td>
+      <td>对"单价"列所有值求和</td>
+    </tr>
+    <tr>
+      <td><code>=AVERAGE(单价)</code></td>
+      <td>计算"单价"列的平均值</td>
+    </tr>
+    <tr>
+      <td><code>=MAX(单价)</code></td>
+      <td>求"单价"列的最大值</td>
+    </tr>
+    <tr>
+      <td><code>=单价 * 数量</code></td>
+      <td>同一行中"单价"乘以"数量"</td>
+    </tr>
+    <tr>
+      <td><code>=SUM(单价1:单价5)</code></td>
+      <td>对"单价"列第 1 到第 5 行范围内的值求和</td>
+    </tr>
+    <tr>
+      <td><code>=单价 + 10</code></td>
+      <td>将"单价"列的值加上常数 10</td>
+    </tr>
+    <tr>
+      <td><code>=A1 + B1</code></td>
+      <td>直接按列字母+行号引用单元格（A 为第一个数据列，行号从 1 开始）</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <strong>注意：</strong> 在公式中使用表头列名（如 <code>单价</code>）时，列名不能包含空格。修改表格中任意单元格的值后，所有公式会自动重新计算。HyperFormula 支持完整的电子表格函数库，任何标准表格函数均可使用。
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="tabs">三、Tab 页面操作</h2>
+
+  <p>顶部 Tab 栏管理多个知识库页面，支持切换、排序、重命名、隐藏和删除。</p>
+
+  <h3>3.1 基本操作</h3>
+  <ul>
+    <li><strong>左键点击</strong> Tab 名称 — 切换到该知识库</li>
+    <li><strong>右键点击</strong> Tab 名称 — 弹出 Tab 操作菜单</li>
+  </ul>
+
+  <h3>3.2 Tab 右键菜单</h3>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>编辑</td><td>重命名当前 Tab</td></tr>
+    <tr><td>导出</td><td>导出当前知识库为 PDF 或 ZIP 文件</td></tr>
+    <tr><td>关闭</td><td>隐藏当前 Tab（可在"全部知识库"下拉菜单中重新显示）</td></tr>
+    <tr><td>删除</td><td>永久删除 Tab 及其所有数据（需确认）</td></tr>
+  </table>
+
+  <h3>3.3 拖拽排序</h3>
+  <p>直接 <strong>拖拽</strong> Tab 标签可调整知识库的排列顺序：</p>
+  <ul>
+    <li>拖到 Tab 左侧 — 插入到目标 Tab 之前</li>
+    <li>拖到 Tab 右侧 — 插入到目标 Tab 之后</li>
+    <li>拖到 Tab 栏空白处 — 排到最后</li>
+  </ul>
+  <div class="tip">
+    <strong>提示：</strong> 拖拽时有蓝色高亮指示放置位置，松开鼠标即完成排序。
+  </div>
+
+  <h3>3.4 Tab 滚动</h3>
+  <p>当 Tab 过多超出可视区域时，Tab 栏左右两端会出现 <strong>‹</strong> 和 <strong>›</strong> 滚动按钮。支持：</p>
+  <ul>
+    <li>点击滚动按钮 — 步进滚动</li>
+    <li>长按滚动按钮 — 连续滚动</li>
+    <li>鼠标滚轮 — 水平滚动 Tab 栏</li>
+  </ul>
+
+  <h3>3.5 创建新知识库</h3>
+  <p>点击工具栏中的 <strong>"新增知识库"</strong> 按钮，输入名称创建新的知识库 Tab。创建后会自动建立索引。</p>
+
+  <h3>3.6 知识库可见性管理</h3>
+  <p>工具栏中的 <strong>"全部知识库"</strong> 下拉菜单：</p>
+  <ul>
+    <li>勾选/取消勾选单个知识库名称 — 控制该知识库在 Tab 栏的显示/隐藏</li>
+    <li><strong>"全部知识库"</strong> 复选框 — 一键显示或隐藏所有知识库</li>
+    <li>复选框状态：<strong>✓</strong>（全部可见）/ <strong>—</strong>（部分可见）/ 空白（全部隐藏）</li>
+  </ul>
+
+  <h3>3.7 阅读位置记忆</h3>
+  <p>系统会自动记录每个 Tab 中最后编辑的菜单项，切换回来时自动恢复阅读位置。</p>
+
+  <!-- ============================================================ -->
+  <h2 id="search">四、搜索功能</h2>
+
+  <p>搜索功能支持单知识库搜索和全局搜索，以及正则表达式搜索。</p>
+
+  <h3>4.1 基本搜索</h3>
+  <ol>
+    <li>在工具栏搜索框中输入关键词</li>
+    <li>按 <span class="kbd">Enter</span> 或点击 <strong>"🔍 搜索"</strong> 按钮执行搜索</li>
+    <li>搜索结果显示在底部的搜索结果面板中</li>
+  </ol>
+
+  <h3>4.2 搜索模式</h3>
+  <table>
+    <tr><th>模式</th><th>说明</th></tr>
+    <tr><td>当前知识库</td><td>仅搜索当前 Tab 的内容（默认，不勾选"全局搜索"）</td></tr>
+    <tr><td>全局搜索</td><td>勾选 <strong>"全局搜索"</strong> 复选框，搜索所有可见知识库</td></tr>
+    <tr><td>正则搜索</td><td>勾选 <strong>"正则"</strong> 复选框，使用正则表达式进行高级搜索</td></tr>
+  </table>
+
+  <h3>4.3 智能搜索语法（非正则模式）</h3>
+  <p>当 <strong>"正则"</strong> 复选框<strong>未</strong>勾选时，搜索框支持以下智能语法：</p>
+  <table>
+    <tr><th>格式</th><th>说明</th><th>示例</th></tr>
+    <tr>
+      <td><code>xxxx</code></td>
+      <td>简单搜索：匹配包含该关键词的内容</td>
+      <td><code>安装步骤</code> → 搜索"安装步骤"</td>
+    </tr>
+    <tr>
+      <td><code>aaa | bbb | ccc</code></td>
+      <td>OR 搜索：匹配包含<strong>任意一个</strong>关键词的内容（<code>|</code> 分隔）</td>
+      <td><code>安装 | 配置 | 部署</code> → 匹配任一</td>
+    </tr>
+    <tr>
+      <td><code>aaa bbb ccc</code> 或<br><code>aaa && bbb && ccc</code></td>
+      <td>AND 搜索：匹配<strong>同时包含</strong>所有关键词的内容（空格或 <code>&&</code> 分隔）</td>
+      <td><code>Python 安装 配置</code> → 全部匹配</td>
+    </tr>
+    <tr>
+      <td><code>aaa ^ bbb</code></td>
+      <td>排除搜索：匹配包含 <code>aaa</code> 但<strong>不包含</strong> <code>bbb</code> 的内容（<code>^</code> 后面的词被排除）</td>
+      <td><code>Python ^ Java</code> → 含 Python 但不含 Java</td>
+    </tr>
+  </table>
+  <div class="tip">
+    <strong>提示：</strong> 空格分隔的多个词默认按 AND 逻辑搜索。需要搜索包含空格的精确短语时，请启用正则模式。
+  </div>
+
+  <h3>4.4 搜索结果面板</h3>
+  <ul>
+    <li>结果按 <strong>知识库 | 路径 | 内容简述</strong> 三列展示</li>
+    <li>点击结果项自动切换到对应知识库和菜单项</li>
+    <li>列标题之间的分隔线可 <strong>拖拽调整</strong> 列宽</li>
+    <li>点击右上角 <strong>✕</strong> 关闭搜索结果面板</li>
+    <li>搜索结果面板可通过上边缘的 <strong>分割线</strong> 拖拽调整高度</li>
+  </ul>
+
+  <h3>4.5 正则表达式语法</h3>
+  <p>启用正则模式后，搜索框中支持：</p>
+  <ul>
+    <li><code>.</code> — 匹配任意单个字符</li>
+    <li><code>*</code> — 匹配前一个字符 0 次或多次</li>
+    <li><code>+</code> — 匹配前一个字符 1 次或多次</li>
+    <li><code>|</code> — 逻辑或（如 <code>abc|def</code> 匹配 abc 或 def）</li>
+    <li><code>()</code> — 分组</li>
+  </ul>
+  <div class="note">
+    <strong>注意：</strong> 正则搜索性能低于普通搜索，建议在普通搜索无法满足需求时使用。
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="index">五、索引系统</h2>
+
+  <p>系统使用 SQLite 全文索引引擎，为每个知识库建立独立索引，支持高效的关键词检索。</p>
+
+  <h3>5.1 自动索引</h3>
+  <ul>
+    <li>服务器启动时自动检测新知识库并建立索引</li>
+    <li>创建新知识库时自动触发索引</li>
+    <li>保存内容时自动增量更新索引（无需手动操作）</li>
+  </ul>
+
+  <h3>5.2 手动强制重建索引</h3>
+  <p>通过命令行参数 <code>--force-index</code> 强制重建指定（或全部）知识库的索引：</p>
+  <pre><code># 重建所有知识库的索引
+python server.py --force-index
+
+# 重建指定知识库的索引
+python server.py --force-index my_kb_name</code></pre>
+
+  <h3>5.3 索引状态</h3>
+  <ul>
+    <li>索引进行时工具栏会显示 <strong>"📇 索引中..."</strong> 状态提示</li>
+    <li>服务器控制台实时显示索引进度：<code>[当前/总数] 项名称</code></li>
+  </ul>
+
+  <h3>5.4 OCR 文本索引</h3>
+  <ul>
+    <li>自动识别内容中的图片文字（使用 PaddleOCR）</li>
+    <li>OCR 识别结果会合并到索引中，实现图片文字搜索</li>
+    <li>可通过 <code>--disable-ocr</code> 参数关闭 OCR 识别</li>
+    <li>OCR 识别在独立的进程池中并行执行</li>
+  </ul>
+
+  <h3>5.5 索引文件位置</h3>
+  <p>索引数据库存储在 <code>data/db/index_db/</code> 目录下，每个知识库对应一个 <code>.db</code> 文件。</p>
+
+  <!-- ============================================================ -->
+  <h2 id="server">六、Server.py 命令行</h2>
+
+  <p>服务器支持丰富的命令行参数，用于配置运行环境。</p>
+
+  <h3>6.1 基本用法</h3>
+  <pre><code>python server.py [选项]</code></pre>
+
+  <h3>6.2 完整参数列表</h3>
+  <table>
+    <tr><th style="width:200px">参数</th><th>默认值</th><th>说明</th></tr>
+    <tr>
+      <td><code>--port PORT</code></td>
+      <td>9999</td>
+      <td>服务器监听端口</td>
+    </tr>
+    <tr>
+      <td><code>--data DIR</code></td>
+      <td>data</td>
+      <td>数据根目录（存放知识库、数据库等）</td>
+    </tr>
+    <tr>
+      <td><code>--force-index [NAME]</code></td>
+      <td>—</td>
+      <td>强制重建索引：指定知识库名称只重建该库；不指定则重建全部</td>
+    </tr>
+    <tr>
+      <td><code>--disable-ocr</code></td>
+      <td>—</td>
+      <td>禁用 OCR 图片文字识别功能</td>
+    </tr>
+    <tr>
+      <td><code>--mobile-ocr true|false</code></td>
+      <td>—</td>
+      <td>使用轻量级 Mobile OCR 模型（精度较低但内存占用更少）。Windows 上默认启用。使用 <code>--mobile-ocr false</code> 在 Windows 上强制使用服务器模型</td>
+    </tr>
+    <tr>
+      <td><code>--workers-ocr N</code></td>
+      <td>8</td>
+      <td>OCR 工作进程数（每个进程持有一个 PaddleOCR 实例，Windows 上限为 1）</td>
+    </tr>
+    <tr>
+      <td><code>--workers-menu N</code></td>
+      <td>8</td>
+      <td>菜单项索引并行处理数（Windows 上限为 1）</td>
+    </tr>
+    <tr>
+      <td><code>--no-debug</code></td>
+      <td>—</td>
+      <td>关闭详细的调试日志（默认开启 debug 日志写入 mybase.log）</td>
+    </tr>
+    <tr>
+      <td><code>--help</code></td>
+      <td>—</td>
+      <td>显示帮助信息</td>
+    </tr>
+  </table>
+
+  <h3>6.3 使用示例</h3>
+  <pre><code># 默认启动（端口 9999）
+python server.py
+
+# 指定端口 8080
+python server.py --port 8080
+
+# 指定数据目录
+python server.py --data /path/to/data
+
+# 启动时强制重建所有索引
+python server.py --force-index
+
+# 启动时强制重建指定索引 + 禁用 OCR
+python server.py --force-index my_kb --disable-ocr
+
+# 生产环境：指定数据目录 + 减少 OCR 进程
+python server.py --data /var/kbdata --workers-ocr 2</code></pre>
+
+  <h3>6.4 服务器日志</h3>
+  <ul>
+    <li><strong>控制台输出</strong> — 实时显示启动信息、索引进度、错误信息</li>
+    <li><strong>日志文件</strong> — <code>mybase.log</code>，记录详细调试信息（仅在 debug 模式下）和错误信息（始终记录）</li>
+  </ul>
+
+  <h3>6.5 优雅关闭</h3>
+  <p>按 <span class="kbd">Ctrl + C</span> 可安全关闭服务器，系统会自动：</p>
+  <ul>
+    <li>发送关闭信号给所有工作线程</li>
+    <li>等待 OCR 进程池清理完成</li>
+    <li>确保数据完整性</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="tips">七、使用技巧</h2>
+
+  <h3>7.1 高效编辑</h3>
+  <ul>
+    <li>使用 <span class="kbd">Ctrl + S</span> 经常保存，避免丢失内容</li>
+    <li>利用"全部知识库"下拉菜单快速切换可见知识库</li>
+    <li>双击已选中的菜单项直接重命名，无需右键菜单</li>
+  </ul>
+
+  <h3>7.2 数据安全</h3>
+  <ul>
+    <li>定期点击 <strong>"📦 备份知识库"</strong> 按钮打包备份所有数据</li>
+    <li>备份文件为 ZIP 格式，包含完整的知识库目录结构和内容</li>
+    <li>可通过 <code>--data</code> 参数将数据目录指向外部存储或备份路径</li>
+  </ul>
+
+  <h3>7.3 搜索技巧</h3>
+  <ul>
+    <li>使用 <strong>全局搜索</strong> 替代逐个切换知识库搜索</li>
+    <li>启用 <strong>正则模式</strong> 进行模糊匹配（如 <code>安装|配置</code> 匹配任一关键词）</li>
+    <li>搜索结果面板的列宽可拖拽调整，方便查看长路径或内容</li>
+  </ul>
+
+  <h3>7.4 性能优化</h3>
+  <ul>
+    <li>大型知识库首次启动索引可能需要较长时间，请耐心等待</li>
+    <li>可通过 <code>--workers-ocr</code> 和 <code>--workers-menu</code> 调整并行度</li>
+    <li>不需要 OCR 功能时使用 <code>--disable-ocr</code> 可加速启动和保存</li>
+  </ul>
+
+  <h3>7.5 外部帮助文档</h3>
+  <p>本帮助文档为 HTML 格式文件，存放在 <code>web/templates/help.html</code>。您可以：</p>
+  <ul>
+    <li>直接修改此文件来自定义帮助内容</li>
+    <li>在 <code>web/</code> 目录下创建更多 HTML 帮助文档，通过链接引用</li>
+    <li>添加 <code>web/</code> 目录下的其他静态资源（图片、样式等）来丰富帮助文档</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="export">八、导出功能</h2>
+
+  <p>系统提供灵活的导出功能，支持将知识库内容导出为 PDF 或 ZIP 格式。</p>
+
+  <h3>8.1 Tab 级导出</h3>
+  <p>在 Tab 标签上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
+  <ul>
+    <li><strong>PDF</strong> — 将当前知识库下所有菜单项的内容递归收集，合并生成一个 PDF 文档。菜单项按深度缩进，使用 NotoSansSC 字体支持中文显示。</li>
+    <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code> 等所有文件。解压后可作为独立 HTML 页面浏览。</li>
+  </ul>
+
+  <h3>8.2 菜单项级导出</h3>
+  <p>在树形菜单项上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
+  <ul>
+    <li><strong>PDF</strong> — 导出该菜单项及其所有子项的内容，合并为一个 PDF，按层级深度缩进排列。</li>
+    <li><strong>ZIP</strong> — 生成一个独立的 HTML 页面，包含该子树所有内容（内嵌 JSON 数据），并复制引用的图片到 <code>images/</code> 目录，打包为 ZIP 文件。解压后可直接打开 <code>index.html</code> 浏览。</li>
+  </ul>
+
+  <div class="tip">
+    <strong>提示：</strong> PDF 导出需要 <code>pdf_fonts/NotoSansSC-Regular.ttf</code> 字体文件，缺失时自动使用 Courier 等宽字体代替。
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="encrypt">九、知识库加密</h2>
+
+  <p>系统支持对 <strong>单个知识库（Tab）</strong> 设置密码保护，加密后的内容在磁盘上以 AES-256-GCM 算法加密存储，未解锁前无法查看或同步。</p>
+
+  <h3>9.1 设置密码</h3>
+  <ul>
+    <li>在 Tab 标签上 <strong>右键</strong> → <strong>"设定密码"</strong></li>
+    <li>输入密码并确认</li>
+    <li>设置成功后，所有已有内容自动加密，新内容也以加密形式存储</li>
+  </ul>
+
+  <h3>9.2 解锁知识库</h3>
+  <ul>
+    <li>点击已加密的 Tab 标签，系统自动弹出密码输入框</li>
+    <li>输入正确密码后解锁，<strong>同一标签页内</strong>可正常查看和编辑</li>
+    <li>关闭标签页或浏览器窗口后，重新打开需要再次输入密码</li>
+  </ul>
+
+  <h3>9.3 修改／解除密码</h3>
+  <ul>
+    <li>在已加密的 Tab 上 <strong>右键</strong> → <strong>"修改密码"</strong>（需输入原密码）</li>
+    <li>在已加密的 Tab 上 <strong>右键</strong> → <strong>"解除密码"</strong>（解密所有文件）</li>
+  </ul>
+
+  <h3>9.4 注意事项</h3>
+  <ul>
+    <li><strong>密码无法找回</strong> — 忘记密码后将无法访问该知识库内容</li>
+    <li><strong>加密不影响搜索索引</strong> — 解锁后可正常搜索</li>
+    <li><strong>加密知识库不支持实时同步</strong> — WebSocket 同步被阻止，保证数据安全</li>
+    <li><strong>独立导出不可用</strong> — 加密知识库无法生成公开的独立 HTML 页面</li>
+    <li><strong>备份包含加密文件</strong> — 备份 ZIP 中的加密文件保持加密状态</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="sync">十、WebSocket 实时同步</h2>
+
+  <p>系统采用 WebSocket 技术，支持多窗口或多浏览器之间的实时协作与内容同步。</p>
+
+  <h3>10.1 多窗口协作</h3>
+  <ul>
+    <li><strong>内容同步</strong> — 文档内容的修改会实时广播给所有正在查看该文档的客户端</li>
+    <li><strong>菜单同步</strong> — 菜单结构的变更（新增、重命名、移动、删除）会实时同步给所有查看该知识库的客户端</li>
+    <li><strong>标签页生命周期</strong> — 知识库标签页的创建、重命名、删除等操作会广播给所有在线客户端</li>
+  </ul>
+
+  <h3>10.2 文档锁定机制</h3>
+  <p>为防止多人同时编辑同一文档造成冲突，系统引入了文档锁定机制。当一名用户开始编辑文档时，该文档会对其他用户锁定。用户保存内容或离开页面后，锁定会自动解除。</p>
+
+  <h3>10.3 安全与限制</h3>
+  <ul>
+    <li><strong>加密知识库</strong> — 出于安全考虑，已加密的知识库不支持 WebSocket 实时同步</li>
+    <li><strong>连接管理</strong> — 系统自动处理 WebSocket 的连接、断开以及 Tab/文档的加入与退出管理</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2 id="users">十一、多用户管理</h2>
+
+  <p>KBase 支持多用户管理，管理员可以管理用户账号并控制不同知识库的访问权限。</p>
+
+  <h3>11.1 登录与默认密码</h3>
+  <ul>
+    <li>点击工具栏中的设置按钮打开设置对话框，在设置中登录</li>
+    <li><strong>默认管理员密码</strong>：<code>1234</code></li>
+    <li>以管理员身份登录后，即可在设置面板中管理用户</li>
+  </ul>
+
+  <h3>11.2 用户角色</h3>
+  <table>
+    <tr><th>角色</th><th>说明</th></tr>
+    <tr>
+      <td>Admin（管理员）</td>
+      <td>可以创建/删除用户、创建对所有用户可见的公共知识库、指定知识库所有者、将编辑内容实时同步到所有在线用户</td>
+    </tr>
+    <tr>
+      <td>普通用户</td>
+      <td>拥有自己创建的知识库，仅可见自己创建的知识库和管理员发布的公共知识库。无法导出或修改管理员的知识库</td>
+    </tr>
+  </table>
+
+  <h3>11.3 创建与删除用户</h3>
+  <ul>
+    <li>管理员可以在设置面板中创建新用户</li>
+    <li><strong>删除用户</strong>后，该用户的所有知识库归管理员所有，该用户在所有打开窗口中立即被强制登出</li>
+  </ul>
+
+  <h3>11.4 知识库归属与权限</h3>
+  <ul>
+    <li><strong>公共知识库</strong>（管理员创建）— 所有用户可见，仅管理员可编辑</li>
+    <li><strong>私有知识库</strong>（普通用户创建）— 归属该用户，仅所有者和管理员可见</li>
+    <li>管理员可以将知识库所有者变更为其他用户</li>
+    <li><strong>导出权限</strong> — 普通用户只能导出自己拥有的知识库，管理员拥有的知识库导出菜单项为灰色不可用状态</li>
+  </ul>
+
+  <h3>11.5 实时同步（管理员广播）</h3>
+  <ul>
+    <li>管理员在公共知识库中编辑内容时，修改会通过 WebSocket 实时同步给所有正在查看该知识库的登录用户</li>
+    <li>这实现了公告板式的工作流，管理员可以即时推送更新给用户</li>
+  </ul>
+
+  <hr style="margin:40px 0;border:none;border-top:1px solid #ddd;">
+  <p style="text-align:center;color:#999;font-size:12px">{% if lang == 'en' %}KBase {{ version }} &mdash; Help Documentation{% else %}知识库KBase {{ version }} &mdash; 帮助文档{% endif %}</p>
+
+{% endif %}
+</div>
+</body>
+</html>

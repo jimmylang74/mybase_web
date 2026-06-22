@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库 KBase — 设计文档</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: #f5f7fa;
+    color: #333;
+    line-height: 1.8;
+    font-size: 14px;
+  }
+  .doc-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 32px 100px;
+  }
+  h1 {
+    font-size: 28px;
+    color: #2c3e50;
+    margin-bottom: 4px;
+    padding-bottom: 16px;
+    border-bottom: 3px solid #3498db;
+  }
+  h1 small { font-size:14px; font-weight:normal; color:#888; }
+  h2 {
+    font-size: 22px;
+    color: #2c3e50;
+    margin: 40px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #3498db;
+  }
+  h3 {
+    font-size: 17px;
+    color: #2980b9;
+    margin: 28px 0 10px;
+  }
+  h4 {
+    font-size: 15px;
+    color: #555;
+    margin: 20px 0 8px;
+  }
+  p { margin: 10px 0; }
+  ul, ol { margin: 8px 0 8px 22px; }
+  li { margin: 4px 0; }
+  code {
+    background: #eef4f8;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    color: #c0392b;
+  }
+  pre {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 14px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 12px 0;
+  }
+  pre code { background:transparent; color:#ecf0f1; padding:0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    font-size: 13px;
+  }
+  th { background: #f5f7fa; font-weight: 600; color: #555; }
+  tr:nth-child(even) { background: #fafbfc; }
+  .tip {
+    background: #eaf7ea;
+    border-left: 4px solid #27ae60;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .note {
+    background: #fef9e7;
+    border-left: 4px solid #f39c12;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .signature {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 2px solid #ddd;
+    text-align: center;
+    color: #888;
+    font-size: 13px;
+  }
+  .toc { background:#fff; border:1px solid #ddd; border-radius:6px; padding:16px 24px; margin:20px 0; }
+  .toc a { display:block; padding:3px 0; color:#2980b9; text-decoration:none; font-size:14px; }
+  .toc a:hover { text-decoration:underline; }
+  .toc .l2 { padding-left:20px; font-size:13px; }
+  .toc .l3 { padding-left:40px; font-size:13px; }
+  .diagram {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 20px;
+    margin: 16px 0;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .arch-box {
+    display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0;
+  }
+  .arch-box > div {
+    flex: 1; min-width: 200px;
+    background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px;
+  }
+  .arch-box h4 { margin:0 0 8px; color:#2c3e50; }
+  .badge {
+    display:inline-block; background:#3498db; color:#fff; padding:0 8px; border-radius:3px; font-size:12px; font-weight:600;
+  }
+  .badge-green { background:#27ae60; }
+  .badge-orange { background:#e67e22; }
+  .badge-purple { background:#8e44ad; }
+  @media (max-width:768px) {
+    .doc-container { padding:20px 16px 60px; }
+    h1 { font-size:22px; }
+  }
+</style>
+</head>
+<body>
+<div class="doc-container">
+
+<h1>知识库 KBase <small>设计文档</small></h1>
+<p style="color:#888;margin-bottom:24px">
+  项目名称：Web of Mybase Knowledge Server &nbsp;|&nbsp; 版本：v5.4.6 &nbsp;|&nbsp; 最后更新：2026-06-12
+</p>
+
+<div class="toc">
+  <strong style="color:#2c3e50;font-size:15px">目录</strong>
+  <a href="#sec1">4.1 项目基本需求</a>
+  <a href="#sec2">4.2 项目目录结构</a>
+  <a href="#sec3">4.3 依赖安装</a>
+  <a href="#sec4">4.4 项目详细设计</a>
+  <a href="#sec4-1" class="l2">4.4.1 功能设计</a>
+  <a href="#sec4-1-3" class="l3">4.4.1.3 导出系统</a>
+  <a href="#sec4-1-4" class="l3">4.4.1.4 WebSocket 实时同步</a>
+  <a href="#sec4-1-5" class="l3">4.4.1.5 Cython 编译与打包</a>
+  <a href="#sec4-2" class="l2">4.4.2 UI界面设计</a>
+  <a href="#sec4-3" class="l2">4.4.3 架构设计</a>
+  <a href="#sec4-4" class="l2">4.4.4 关键技术设计</a>
+  <a href="#sec5">4.5 TODO：后续增加功能</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec1">4.1 项目基本需求</h2>
+
+<h3>4.1.1 项目定位</h3>
+<p>
+  知识库 KBase 是一个面向个人（或小团队）的知识库管理系统，旨在提供一个轻量级、本地化部署的知识管理解决方案。用户可以通过浏览器访问系统，创建多个独立的知识库（Tab），以树形目录组织知识条目，通过富文本编辑器撰写和保存内容，并借助全文搜索和 OCR 文字识别功能快速检索知识。
+</p>
+
+<h3>4.1.2 核心用户场景</h3>
+<ul>
+  <li><strong>知识整理</strong>：收集和整理技术文档、学习笔记、项目资料等</li>
+  <li><strong>本地搜索</strong>：对大量知识内容进行全文关键词搜索，包括图片中的文字</li>
+  <li><strong>数据导出</strong>：将知识库打包备份或导出为独立 HTML 页面</li>
+</ul>
+
+<h3>4.1.3 版本说明</h3>
+<ul>
+  <li>个人版，无登录密码保护，所有功能在本地网络内可直接访问</li>
+  <li>支持 Windows / Linux / macOS 三大平台</li>
+  <li>Python 运行环境要求 &gt;= 3.8</li>
+</ul>
+
+<h3>4.1.4 功能清单</h3>
+<table>
+  <tr><th>功能模块</th><th>说明</th><th>优先级</th></tr>
+  <tr><td>多知识库管理（Tab）</td><td>创建、重命名、删除、拖拽排序、可见性控制</td><td>核心</td></tr>
+  <tr><td>树形菜单组织</td><td>多级嵌套、增删改、拖拽移动、上下排序、自定义样式</td><td>核心</td></tr>
+  <tr><td>富文本编辑</td><td>所见即所得编辑器，支持字体/颜色/大小/粗斜体/链接等</td><td>核心</td></tr>
+  <tr><td>全文搜索</td><td>SQLite 索引，支持单库/全局搜索、正则表达式搜索</td><td>核心</td></tr>
+  <tr><td>OCR 图片文字识别</td><td>基于 PaddleOCR，自动提取图片文字并纳入索引</td><td>核心</td></tr>
+  <tr><td>一键备份</td><td>ZIP 打包所有知识库数据，支持下载</td><td>重要</td></tr>
+  <tr><td>独立导出</td><td>每个知识库生成独立单页 HTML</td><td>重要</td></tr>
+  <tr><td>知识库加密</td><td>BCrypt 密码验证 + AES-256-GCM 文件加密，基于会话的解锁</td><td>重要</td></tr>
+  <tr><td>导出功能</td><td>支持 Tab 级和菜单项级的 PDF/ZIP 导出</td><td>重要</td></tr>
+  <tr><td>帮助文档</td><td>内置 HTML 帮助页面</td><td>补充</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec2">4.2 项目目录结构</h2>
+
+<pre>
+├── server.py                        # 主服务器程序（Flask 后端，~4139 行）
+├── main.py                          # Cython 加载器
+├── setup.py                         # Cython 编译脚本
+├── Makefile                         # 编译/清理/打包脚本
+├── requirements.txt                 # Python 依赖清单
+├── read_version.py                  # 读取版本号的辅助工具
+├── set_version.py                   # 更新版本号的辅助工具
+├── mybase.log                       # 运行时日志文件
+├── test.png                         # 测试图片
+│
+├── web/                             # 前端资源
+│   ├── templates/                   # HTML 模板（Flask Jinja2）
+│   │   ├── index.html               # 主界面（单页应用）
+│   │   └── help.html                # 帮助文档页面
+│   └── static/                      # 静态资源
+│       ├── app.js                   # 前端 JavaScript 逻辑（~3847 行）
+│       └── style.css                # 前端样式表（~1607 行）
+│
+├── data/                            # 数据存储根目录
+│   ├── mybase/                      # 知识库数据（每个子目录为一个知识库）
+│   │   └── &lt;知识库名称&gt;/            # 示例：逆向工程/
+│   │       ├── menu.json            # 树形菜单结构（JSON）
+│   │       ├── menu.js              # 前端用菜单数据（JS 变量）
+│   │       ├── index.html           # 独立导出 HTML 页面
+│   │       ├── nav.html             # （可选）遗留导航文件
+│   │       ├── content/             # 条目内容文件（UUID.html，加密后为 .html.enc）
+│   │       ├── images/              # 上传的图片文件（加密后为 .enc 后缀）
+│   │       ├── menu.json            # 菜单文件（加密时保存为 menu.json.enc）
+│   │       └── *.qrich.html         # （遗留）旧版富文本文件
+│   └── db/                          # 数据库目录
+│       ├── common.db                # 通用配置数据库（SQLite）
+│       └── index_db/                # 全文搜索索引数据库
+│           └── &lt;知识库名称&gt;.db       # 每个知识库的独立索引
+│
+├── models/                          # AI 模型目录
+│   └── ocr/                         # PaddleOCR / PaddleX 模型缓存
+│       ├── official_models/         # 官方预训练模型
+│       │   ├── PP-OCRv5_server_det/ # 文字检测模型
+│       │   ├── UVDoc/               # 文档矫正模型
+│       │   └── PP-LCNet_x1_0_doc_ori/ # 文档方向分类模型
+│       └── ...
+│
+├── pdf_fonts/                       # PDF 导出字体目录
+│
+└── .sisyphus/                       # 开发工具配置（可忽略）
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="sec3">4.3 依赖安装</h2>
+
+<h3>4.3.1 环境要求</h3>
+<ul>
+  <li>Python &gt;= 3.8</li>
+  <li>操作系统：Windows / Linux / macOS</li>
+  <li>建议内存 &gt;= 4GB（OCR 模型加载需要）</li>
+</ul>
+
+<h3>4.3.2 核心依赖（requirements.txt）</h3>
+<table>
+  <tr><th>包名</th><th>版本</th><th>用途</th></tr>
+  <tr><td>flask</td><td>&gt;=3.0.0</td><td>Web 框架，HTTP 路由和 REST API</td></tr>
+  <tr><td>werkzeug</td><td>&gt;=3.0.0</td><td>WSGI 工具集，文件上传安全处理</td></tr>
+  <tr><td>paddlepaddle</td><td>&gt;=3.0.0</td><td>深度学习框架，OCR 模型推理基础</td></tr>
+  <tr><td>paddleocr</td><td>&gt;=3.0.0</td><td>OCR 光学字符识别库</td></tr>
+  <tr><td>paddlex</td><td>&gt;=3.0.0</td><td>Paddle 模型管理工具</td></tr>
+  <tr><td>bcrypt</td><td>&gt;=4.0.0</td><td>密码哈希，知识库密码验证</td></tr>
+  <tr><td>pycryptodome</td><td>&gt;=3.20.0</td><td>AES-256-GCM 文件加密解密</td></tr>
+  <tr><td>flask-socketio</td><td>&gt;=5.3.0</td><td>WebSocket 实时同步</td></tr>
+  <tr><td>fpdf2</td><td>&gt;=2.8.0</td><td>PDF 导出</td></tr>
+  <tr><td>click</td><td>&gt;=8.0.0</td><td>Windows 平台兼容（可选）</td></tr>
+</table>
+
+<h3>4.3.3 GPU 加速（可选）</h3>
+<p>如使用 NVIDIA GPU 加速 OCR，需将 paddlepaddle 替换为 paddlepaddle-gpu：</p>
+<pre><code>pip uninstall paddlepaddle -y
+pip install paddlepaddle-gpu</code></pre>
+
+<h3>4.3.4 安装命令</h3>
+<pre><code># 创建虚拟环境（推荐）
+python -m venv venv
+source venv/bin/activate    # Linux / macOS
+venv\Scripts\activate       # Windows
+
+# 安装依赖
+pip install -r requirements.txt</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="sec4">4.4 项目详细设计</h2>
+
+<!-- ============================================================ -->
+<h3 id="sec4-1">4.4.1 功能设计</h3>
+
+<h4>4.4.1.1 功能模块划分</h4>
+
+<table>
+  <tr><th>模块</th><th>后端文件</th><th>前端文件</th><th>功能描述</th></tr>
+  <tr>
+    <td>Tab 管理</td>
+    <td><code>server.py</code> (list_tabs, create_tab, rename_tab, delete_tab)</td>
+    <td><code>app.js</code> (loadTabs, switchTab, renameTab)</td>
+    <td>多知识库的增删改查、排序、可见性控制、阅读位置记忆</td>
+  </tr>
+  <tr>
+    <td>菜单管理</td>
+    <td><code>server.py</code> (get_menu, create_menu_item, update_menu_item, delete_menu_item, move_menu_item)</td>
+    <td><code>app.js</code> (renderTree, addMenuItem, deleteMenuItem, moveMenuItem, startInlineEdit)</td>
+    <td>树形菜单的 CRUD、拖拽排序、移动、内联重命名、自定义样式</td>
+  </tr>
+  <tr>
+    <td>内容编辑</td>
+    <td><code>server.py</code> (get_content, save_content_route, upload_image)</td>
+    <td><code>app.js</code> (loadContent, saveContent, handlePaste, uploadAndInsertImage)</td>
+    <td>富文本内容的加载、保存、图片粘贴上传</td>
+  </tr>
+  <tr>
+    <td>搜索引擎</td>
+    <td><code>server.py</code> (search_index, search_all_tabs, search)</td>
+    <td><code>app.js</code> (performSearch, navigateToSearchResult)</td>
+    <td>SQLite 全文索引搜索，支持普通匹配和正则表达式</td>
+  </tr>
+  <tr>
+    <td>索引引擎</td>
+    <td><code>server.py</code> (index_tab, index_all_tabs, update_item_in_index, ensure_indexes)</td>
+    <td><code>app.js</code> (checkIndexingStatus)</td>
+    <td>自动/增量/强制重建索引，索引状态轮询</td>
+  </tr>
+  <tr>
+    <td>OCR 引擎</td>
+    <td><code>server.py</code> (OCRProcessPool, extract_text_from_html_images)</td>
+    <td>—</td>
+    <td>多进程 PaddleOCR 文字识别，图片文字提取并纳入索引</td>
+  </tr>
+  <tr>
+    <td>备份系统</td>
+    <td><code>server.py</code> (start_backup, get_backup_status, download_backup)</td>
+    <td><code>app.js</code> (btn-backup click handler)</td>
+    <td>异步 ZIP 打包，进度轮询，自动下载</td>
+  </tr>
+  <tr>
+    <td>加密系统</td>
+    <td><code>server.py</code> (AES-256-GCM 加解密, PBKDF2 密钥派生, BCrypt 密码哈希, WebSocket 同步阻断)</td>
+    <td><code>app.js</code> (password dialog, session unlock tracking, context menu handlers)</td>
+    <td>用户密码 → BCrypt 验证 → PBKDF2 派生 AES 密钥 → AES-256-GCM 文件加密</td>
+  </tr>
+  <tr>
+    <td>WebSocket 同步</td>
+    <td><code>server.py</code> (ws_* handlers, SocketIO events)</td>
+    <td><code>app.js</code> (WebSocket connection, room management, lock handling)</td>
+    <td>基于 flask-socketio 的跨浏览器窗口实时内容同步、文档锁定、加密知识库同步阻断</td>
+  </tr>
+  <tr>
+    <td>导出系统</td>
+    <td><code>server.py</code> (export_tab_pdf, export_tab_zip, export_tree_item_pdf, export_tree_item_zip)</td>
+    <td><code>app.js</code> (handleTabExport, handleTreeExport, triggerDownload)</td>
+    <td>Tab 级和菜单项级的 PDF/ZIP 导出，子树递归收集，图片复制</td>
+  </tr>
+  <tr>
+    <td>独立导出</td>
+    <td><code>server.py</code> (generate_standalone_html)</td>
+    <td>—</td>
+    <td>每个知识库生成自包含的单页 HTML</td>
+  </tr>
+</table>
+
+<h4>4.4.1.2 前后端调用逻辑（REST API）</h4>
+
+<table>
+  <tr><th>方法</th><th>路由</th><th>前端调用</th><th>描述</th></tr>
+  <tr><td>GET</td><td><code>/api/tabs</code></td><td><code>loadTabs()</code></td><td>列出所有知识库（按序）</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs</code></td><td><code>btn-new-tab</code></td><td>创建新知识库</td></tr>
+  <tr><td>PUT</td><td><code>/api/tabs/&lt;old_name&gt;</code></td><td><code>renameTab()</code></td><td>重命名知识库</td></tr>
+  <tr><td>DELETE</td><td><code>/api/tabs/&lt;tab&gt;</code></td><td><code>deleteTab()</code></td><td>删除知识库</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/menu</code></td><td><code>loadMenu()</code></td><td>获取树形菜单</td></tr>
+  <tr><td>POST</td><td><code>/api/&lt;tab&gt;/menu</code></td><td><code>addMenuItem()</code></td><td>新增菜单项</td></tr>
+  <tr><td>PUT</td><td><code>/api/&lt;tab&gt;/menu/&lt;id&gt;</code></td><td><code>updateMenuItem()</code></td><td>更新菜单项（重命名/样式）</td></tr>
+  <tr><td>DELETE</td><td><code>/api/&lt;tab&gt;/menu/&lt;id&gt;</code></td><td><code>deleteMenuItem()</code></td><td>删除菜单项</td></tr>
+  <tr><td>PUT</td><td><code>/api/&lt;tab&gt;/menu/&lt;id&gt;/move</code></td><td><code>moveMenuItem()</code></td><td>移动菜单项</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/content/&lt;id&gt;</code></td><td><code>loadContent()</code></td><td>加载条目内容</td></tr>
+  <tr><td>PUT</td><td><code>/api/&lt;tab&gt;/content/&lt;id&gt;</code></td><td><code>saveContent()</code></td><td>保存条目内容</td></tr>
+  <tr><td>POST</td><td><code>/api/&lt;tab&gt;/upload</code></td><td><code>uploadAndInsertImage()</code></td><td>上传图片</td></tr>
+  <tr><td>GET</td><td><code>/api/search</code></td><td><code>performSearch()</code></td><td>全文搜索</td></tr>
+  <tr><td>GET</td><td><code>/api/tab-visibility</code></td><td><code>loadTabs()</code></td><td>获取知识库可见性</td></tr>
+  <tr><td>PUT</td><td><code>/api/tab-visibility</code></td><td><code>onKbItemToggle()</code></td><td>设置知识库可见性</td></tr>
+  <tr><td>GET</td><td><code>/api/font-config</code></td><td><code>loadFontConfig()</code></td><td>获取字体配置</td></tr>
+  <tr><td>PUT</td><td><code>/api/font-config</code></td><td><code>saveFontConfig()</code></td><td>保存字体配置</td></tr>
+  <tr><td>POST</td><td><code>/api/backup</code></td><td>btn-backup</td><td>启动知识库备份</td></tr>
+  <tr><td>GET</td><td><code>/api/backup/status/&lt;id&gt;</code></td><td>（轮询）</td><td>查询备份进度</td></tr>
+  <tr><td>GET</td><td><code>/api/backup/download/&lt;id&gt;</code></td><td>（下载）</td><td>下载备份 ZIP</td></tr>
+  <tr><td>GET</td><td><code>/api/indexing-status</code></td><td><code>checkIndexingStatus()</code></td><td>查询索引状态</td></tr>
+  <tr><td>PUT</td><td><code>/api/tab-order</code></td><td><code>doTabReorder()</code></td><td>保存 Tab 排序</td></tr>
+  <tr><td>PUT</td><td><code>/api/tab-current-item</code></td><td><code>selectItem()</code></td><td>保存阅读位置</td></tr>
+  <tr><td>GET</td><td><code>/api/tab-current-items</code></td><td><code>loadTabs()</code></td><td>获取所有知识库的当前阅读位置</td></tr>
+  <tr><td>GET</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>获取系统配置</td></tr>
+  <tr><td>PUT</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>设置系统配置</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>加密对话框</td><td>设置/修改知识库密码</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/verify-password</code></td><td>解锁对话框</td><td>验证知识库密码（解锁）</td></tr>
+  <tr><td>DELETE</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>右键菜单</td><td>移除知识库密码</td></tr>
+  <tr><td>GET</td><td><code>/api/encrypted-tabs</code></td><td><code>loadTabs()</code></td><td>列出已加密的知识库</td></tr>
+  <tr><td>POST</td><td><code>/api/clear-encryption-cache</code></td><td>—</td><td>清除加密密钥缓存</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/tree</code></td><td>—</td><td>获取扁平化的树形数据</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf</code></td><td>Tab 右键菜单 → Export → PDF</td><td>导出整个知识库为 PDF</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/zip</code></td><td>Tab 右键菜单 → Export → ZIP</td><td>导出整个知识库文件夹为 ZIP</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf/&lt;id&gt;</code></td><td>菜单项右键菜单 → Export → PDF</td><td>导出菜单项及其子树为 PDF</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/zip/&lt;id&gt;</code></td><td>菜单项右键菜单 → Export → ZIP</td><td>导出菜单项及其子树为独立 HTML ZIP</td></tr>
+</table>
+
+<h4 id="sec4-1-3">4.4.1.3 导出系统详细说明</h4>
+<p><span class="badge badge-green">导出</span> 系统支持两种粒度的导出，每种支持 PDF 和 ZIP 两种格式：</p>
+<ul>
+  <li><strong>Tab 级导出</strong>：在 Tab 右键菜单中选择「Export」→「PDF/ZIP」，导出整个知识库的所有内容
+    <ul>
+      <li>PDF：将 Tab 下所有菜单项递归收集，生成一个 PDF 文档，使用 NotoSansSC 字体（CJK 支持）</li>
+      <li>ZIP：直接将 Tab 的数据文件夹（<code>data/mybase/&lt;tab&gt;/</code>）打包为 ZIP</li>
+    </ul>
+  </li>
+  <li><strong>菜单项级导出</strong>：在树形菜单项的右键菜单中选择「Export」→「PDF/ZIP」，导出该菜单项及其子树的全部内容
+    <ul>
+      <li>PDF：递归收集子树所有菜单项，合并在一个 PDF 中，按深度缩进层次</li>
+      <li>ZIP：生成独立的 HTML 页面（包含所有子树内容序列化为 JSON 的交互页面），复制引用的图片到 <code>images/</code> 目录，打包为 ZIP</li>
+    </ul>
+  </li>
+</ul>
+
+<h4 id="sec4-1-4">4.4.1.4 WebSocket 实时同步</h4>
+<p><span class="badge badge-purple">同步</span> 系统基于 <code>flask-socketio</code> 实现跨窗口实时同步：</p>
+<ul>
+  <li><strong>架构</strong>：采用 Socket.IO 协议，支持房间（Room）机制的广播通信</li>
+  <li><strong>房间结构</strong>：
+    <ul>
+      <li><code>tab:{tab_name}</code> — 用于同步菜单结构变更、知识库重命名/删除等</li>
+      <li><code>tab:{tab_name}:notify</code> — 用于同步生命周期事件（如加密知识库解锁/密码变更）</li>
+      <li><code>doc:{tab}:{item_id}</code> — 针对单个文档的编辑房间，用于实时内容同步和锁定</li>
+    </ul>
+  </li>
+  <li><strong>核心事件</strong>：
+    <ul>
+      <li><strong>客户端 → 服务端</strong>：<code>join_tab</code>, <code>leave_tab</code>, <code>join_document</code>, <code>leave_document</code>, <code>content_change</code>, <code>lock_document</code>, <code>unlock_document</code></li>
+      <li><strong>服务端 → 客户端</strong>：<code>content_update</code>, <code>menu_changed</code>, <code>content_saved</code>, <code>sync_denied</code>, <code>lock_acquired</code>, <code>lock_denied</code>, <code>tab_added</code>, <code>tab_renamed</code>, <code>tab_deleted</code>, <code>encrypted_tab_password_changed</code>, <code>encrypted_tab_decrypted</code></li>
+    </ul>
+  </li>
+  <li><strong>文档锁定机制</strong>：防止多人（或多窗口）同时编辑冲突。当用户开始输入时自动申请锁定，锁定状态与 Socket 会话绑定，断开连接自动释放</li>
+  <li><strong>安全性</strong>：<strong>加密知识库禁止通过 WebSocket 同步内容</strong>。所有同步请求会验证知识库是否加密，若已加密则拒绝同步内容变更，仅允许同步解锁状态</li>
+</ul>
+
+<h4 id="sec4-1-5">4.4.1.5 Cython 编译与打包</h4>
+<p><span class="badge badge-orange">构建</span> 为了提高性能和保护源代码，系统支持 Cython 编译：</p>
+<ul>
+  <li><strong>setup.py</strong>：使用 Cython 将 <code>server.py</code> 编译为二进制扩展模块（Linux/macOS 为 <code>.so</code>，Windows 为 <code>.pyd</code>）</li>
+  <li><strong>main.py</strong>：一个轻量级的加载器，负责导入编译后的模块并启动服务器</li>
+  <li><strong>Makefile 目标</strong>：
+    <ul>
+      <li><code>all</code> — 默认构建</li>
+      <li><code>build</code> — 执行 Cython 编译</li>
+      <li><code>clean</code> — 清理编译产物和临时文件</li>
+      <li><code>package</code> — 打包为适用于 Linux/macOS 的发布包</li>
+      <li><code>package-win</code> — 打包为适用于 Windows 的发布包</li>
+    </ul>
+  </li>
+  <li><strong>发布包内容</strong>：包含编译后的扩展模块、<code>web/</code> 目录、<code>doc/</code> 目录、<code>models/</code> 目录、<code>pdf_fonts/</code> 目录、<code>requirements.txt</code>、<code>main.py</code> 以及 <code>README.md</code></li>
+</ul>
+
+<h4>4.4.1.6 关键功能时序图</h4>
+
+<h4>时序图 1：内容保存与索引更新</h4>
+<div class="diagram">
+用户            前端(app.js)            后端(server.py)         SQLite索引         OCR进程池
+ │                  │                        │                    │                  │
+ │  点击保存/Ctrl+S  │                        │                    │                  │
+ │─────────────────►│                        │                    │                  │
+ │                  │  PUT /api/&lt;tab&gt;/content │                    │                  │
+ │                  │────────────────────────►│                    │                  │
+ │                  │                        │  保存content/*.html│                  │
+ │                  │                        │────────────────────►│                  │
+ │                  │                        │  启动后台线程        │                  │
+ │                  │                        │  _run_in_background │                  │
+ │                  │                        │────────────────────►│                  │
+ │                  │                        │  update_item_in_index│                  │
+ │                  │                        │  (删除旧条目+重新插入)│                  │
+ │                  │                        │────────────────────►│                  │
+ │                  │                        │  extract_text_from  │                  │
+ │                  │                        │  _html_images        │                  │
+ │                  │                        │──────────────────────────────────────►│
+ │                  │                        │  predict_batch()     │                  │
+ │                  │                        │◄──────────────────────────────────────│
+ │                  │                        │  合并OCR文字到索引   │                  │
+ │                  │                        │────────────────────►│                  │
+ │                  │  返回 {success:true}    │                    │                  │
+ │                  │◄────────────────────────│                    │                  │
+ │  更新界面状态     │                        │                    │                  │
+ │◄─────────────────│                        │                    │                  │
+</div>
+
+<h4>时序图 2：全文搜索流程</h4>
+<div class="diagram">
+用户            前端(app.js)             后端(server.py)          SQLite索引库(每个Tab一个.db)
+ │                  │                        │                        │
+ │  输入关键词+搜索  │                        │                        │
+ │─────────────────►│                        │                        │
+ │                  │  GET /api/search?q=xxx  │                        │
+ │                  │  (&amp;tab=xxx|&amp;regex=true)  │                        │
+ │                  │────────────────────────►│                        │
+ │                  │                        │  解析参数q, tab, regex │
+ │                  │                        │                        │
+ │                  │                        │  if tab 指定:          │
+ │                  │                        │    search_index(tab,q)  │
+ │                  │                        │  else:                 │
+ │                  │                        │    search_all_tabs(q)   │
+ │                  │                        │   遍历index_db/*.db   │
+ │                  │                        │────────────────────────►│
+ │                  │                        │  SQL: SELECT ... FROM  │
+ │                  │                        │  item_index WHERE ...  │
+ │                  │                        │◄────────────────────────│
+ │                  │                        │                        │
+ │                  │  返回 result[]          │                        │
+ │                  │◄────────────────────────│                        │
+ │                  │                        │                        │
+ │  渲染结果面板     │                        │                        │
+ │  用户点击结果项   │                        │                        │
+ │─────────────────►│                        │                        │
+ │                  │  switchTab(targetTab)   │                        │
+ │                  │  selectItem(targetId)   │                        │
+ │                  │  loadContent(targetId)  │                        │
+ │                  │────────────────────────►│                        │
+ │                  │◄────────────────────────│                        │
+ │◄─────────────────│                        │                        │
+</div>
+
+<h4>时序图 3：启动初始化流程</h4>
+<div class="diagram">
+server.py 启动
+    │
+    ├─ init_config()
+    │    ├─ 解析命令行参数 (--port, --data, --force-index, --disable-ocr, --mobile-ocr...)
+    │    ├─ 创建目录结构 (data/, data/db/, data/mybase/)
+    │    └─ 初始化 mybase.log 日志
+    │
+    ├─ OCRProcessPool(workers_ocr)  ← 若 OCR 未禁用
+    │    ├─ 创建 mp.Queue × 2（task_queue, result_queue）
+    │    ├─ 启动 N 个 mp.Process (_ocr_worker)
+    │    │    └─ 每个进程初始化 1 个 PaddleOCR 实例
+    │    └─ 启动 background collector 线程
+    │
+    ├─ ensure_indexes()
+    │    ├─ 删除孤立索引（已删除 Tab 对应的 .db）
+    │    ├─ 自动索引新知识库（无 .db 的 Tab）
+    │    └─ 若 --force-index 则强制重建
+    │
+    ├─ init_common_db()
+    │    ├─ 创建 common.db
+    │    └─ 创建表：tab_order, tab_kb_visibility, tab_current_item, font_config, system_config
+    │
+    └─ app.run(host='0.0.0.0', port=server_port, threaded=True)
+         └─ Flask 进入事件循环，等待 HTTP 请求
+</div>
+
+
+<!-- ============================================================ -->
+<h3 id="sec4-2">4.4.2 UI 界面设计</h3>
+
+<h4>4.4.2.1 整体布局</h4>
+<p>采用经典的三栏式布局结构（IDE 风格），从上到下依次为：</p>
+<ul>
+  <li><strong>Tab 栏</strong>（顶部深色条）— 显示所有知识库标签，支持拖拽排序、滚动、右键菜单</li>
+  <li><strong>主内容区</strong>（剩余空间）— 左右分割：
+    <ul>
+      <li><strong>左侧侧边栏</strong> — 树形菜单 + 工具栏（固定宽度 280px，可拖拽调整）</li>
+      <li><strong>右侧编辑区</strong> — 富文本编辑工具栏 + 编辑区 + 状态栏</li>
+    </ul>
+  </li>
+  <li><strong>搜索结果面板</strong>（底部，可折叠）— 搜索结果显示区域，带可拖拽分割条</li>
+</ul>
+
+<h4>4.4.2.2 Tab 栏界面</h4>
+<ul>
+  <li>背景色：<code>#2c3e50</code>（深蓝灰）</li>
+  <li>Tab 标签：圆角矩形，悬停高亮，激活状态为白色背景</li>
+  <li>拖拽时显示蓝色边框指示放置位置</li>
+  <li>溢出时左右出现 ‹ › 滚动按钮</li>
+  <li>支持鼠标滚轮水平滚动</li>
+  <li>右侧蓝色圆形 ? 按钮打开帮助页面</li>
+</ul>
+
+<h4>4.4.2.3 侧边栏界面</h4>
+<ul>
+  <li>顶部 ☰ Menu 下拉按钮：全部收起 / 全部展开 / 新增根菜单项</li>
+  <li>树形菜单：缩进式多级嵌套，每级缩进 20px</li>
+  <li>节点左侧 ▸/▾ 切换展开/折叠</li>
+  <li>点击节点选中并加载内容到编辑区</li>
+  <li>右键菜单：新增子菜单项/新增菜单项/上移/下移/移动到.../编辑/定制样式/删除</li>
+  <li>双击已选中的节点触发内联重命名（inline input）</li>
+  <li>支持自定义样式（图标 Emoji、字体、字号、颜色、背景色、加粗等）</li>
+</ul>
+
+<h4>4.4.2.4 编辑器界面</h4>
+<ul>
+  <li>工具栏：字体下拉、字号下拉、B/I/U/S（粗/斜/下划/删除线）、颜色选择、插入链接</li>
+  <li>保存按钮（💾 Save）、新增知识库按钮、备份按钮（📦 备份知识库）</li>
+  <li>搜索框 + 全局搜索复选框 + 正则复选框 + 搜索按钮</li>
+  <li>知识库可见性选择器（全部知识库下拉菜单）</li>
+  <li>富文本编辑区：<code>contenteditable=true</code> 的 div，点击链接在新标签页打开</li>
+  <li>底部状态栏：显示当前编辑的条目名称和保存状态</li>
+</ul>
+
+<h4>4.4.2.5 搜索结果面板</h4>
+<ul>
+  <li>三列表格：知识库 | 路径 | 内容简述</li>
+  <li>列宽可通过分隔线拖拽调整</li>
+  <li>点击结果项自动跳转到对应知识库和条目</li>
+  <li>面板高度可通过顶部拖拽分割条调整</li>
+  <li>右上角 ✕ 关闭</li>
+</ul>
+
+<h4>4.4.2.6 对话框系统</h4>
+<ul>
+  <li>模态对话框：半透明遮罩 + 居中白色卡片</li>
+  <li>用于：新增/重命名条目、插入链接、定制样式、删除确认等</li>
+  <li>OK / Cancel 按钮</li>
+</ul>
+
+<!-- ============================================================ -->
+<h3 id="sec4-3">4.4.3 架构设计</h3>
+
+<h4>4.4.3.1 整体架构</h4>
+<div class="diagram">
+┌────────────────────────────────────────────────────────────────────┐
+│                      浏览器 (Browser)                              │
+│  ┌──────────────────────────────────────────────────────────┐     │
+│  │  SPA 单页应用                                              │     │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │     │
+│  │  │ Tab管理   │  │ 树形菜单  │  │ 富文本    │  │ 搜索   │ │     │
+│  │  │ (app.js)  │  │ (app.js)  │  │ 编辑器    │  │ 面板   │ │     │
+│  │  └──────────┘  └──────────┘  └──────────┘  └────────┘ │     │
+│  └──────────────────────────────────────────────────────────┘     │
+└──────────────────────┬─────────────────────────────────────────────┘
+                       │ REST API (JSON)
+                       ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                  Flask Web 服务器 (server.py)                       │
+│                                                                     │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐  │
+│  │ 路由层 (Route)   │  │ 业务逻辑层       │  │ 数据访问层        │  │
+│  │                 │  │                 │  │                  │  │
+│  │ /api/tabs       │  │ Tab管理          │  │ 文件系统读写      │  │
+│  │ /api/&lt;tab&gt;/menu  │  │ 菜单管理          │  │  (content/*.html) │  │
+│  │ /api/&lt;tab&gt;/cntnt│  │ 索引引擎          │  │ SQLite 数据库     │  │
+│  │ /api/search     │  │ OCR调度           │  │  (common.db,      │  │
+│  │ /api/backup     │  │ 备份系统          │  │   index_db/*.db)   │  │
+│  │ WebSocket/SIO   │  │ 实时同步          │  │                  │  │
+│  └─────────────────┘  └─────────────────┘  └──────────────────┘  │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │  线程/进程模型                                              │      │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │      │
+│  │  │ Flask 主线程  │  │ 后台线程池    │  │ OCR 进程池    │  │      │
+│  │  │ (HTTP请求处理) │  │ (索引/备份)   │  │ (PaddleOCR)   │  │      │
+│  │  │ threaded=True │  │ Daemon=True   │  │ mp.Process   │  │      │
+│  │  │ SocketIO 线程  │  │               │  │              │  │      │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │      │
+│  └─────────────────────────────────────────────────────────┘      │
+└────────────────────────────────────────────────────────────────────┘
+</div>
+
+<h4>4.4.3.2 前端架构（HTML + JS + CSS）</h4>
+<p><span class="badge">前端</span> 采用 <strong>纯原生 JavaScript 单页应用（SPA）</strong> 架构，无任何前端框架依赖：</p>
+<ul>
+  <li><strong>HTML</strong>（index.html）：单页面模板，包含所有界面元素和弹出对话框的 DOM 结构</li>
+  <li><strong>CSS</strong>（style.css）：层叠样式表，约 1607 行，采用 Flexbox 布局，响应式设计</li>
+  <li><strong>JavaScript</strong>（app.js）：约 3847 行，IIFE 模式封装，模块化组织：
+    <ul>
+      <li>API 层：<code>api()</code> 和 <code>apiUpload()</code> 统一封装 fetch 请求</li>
+      <li>Tab 管理：加载、切换、拖拽排序、右键菜单、增删改</li>
+      <li>树形菜单：渲染、展开/折叠、节点选中、右键菜单</li>
+      <li>编辑器：富文本操作（execCommand）、粘贴处理（图片自动上传）、链接点击</li>
+      <li>搜索：参数构建、结果渲染、导航跳转</li>
+      <li>其他：备份进度轮询、索引状态轮询、字体配置保存、列宽拖拽调整</li>
+    </ul>
+  </li>
+</ul>
+
+<h4>4.4.3.3 后端架构（Python / Flask）</h4>
+<p><span class="badge">后端</span> 采用 <strong>Flask 轻量级 Web 框架</strong>：</p>
+<ul>
+  <li><strong>路由层</strong>：@app.route 装饰器定义 RESTful API 端点，返回 JSON 或 HTML 模板</li>
+  <li><strong>业务逻辑层</strong>：纯函数实现（无类封装），包括菜单操作、索引构建、OCR 调度等</li>
+  <li><strong>数据访问层</strong>：
+    <ul>
+      <li>文件系统：HTML 内容文件（<code>content/*.html</code>）、图片文件（<code>images/</code>）、菜单 JSON 文件（<code>menu.json</code>）</li>
+      <li>SQLite 数据库：<code>common.db</code>（配置）/ <code>index_db/*.db</code>（搜索索引）</li>
+    </ul>
+  </li>
+  <li><strong>设计模式</strong>：函数式编程风格 + 模块化组织，少量辅助类（<code>OCRProcessPool</code>）</li>
+</ul>
+
+<h4>4.4.3.4 进程线程模型</h4>
+
+<div class="arch-box">
+  <div>
+    <h4>🔹 Flask 主线程</h4>
+    <p>单进程 + <code>threaded=True</code> 模式，每个 HTTP 请求由线程池处理。负责所有 REST API 的同步处理和响应返回。同时运行 SocketIO 事件循环，处理实时同步请求。</p>
+  </div>
+  <div>
+    <h4>🔸 后台线程池</h4>
+    <p>通过 <code>_run_in_background()</code> 创建的 daemon 线程，用于索引构建、索引更新、备份打包等耗时操作，不阻塞主线程。</p>
+  </div>
+  <div>
+    <h4>🔹 OCR 进程池</h4>
+    <p>通过 <code>multiprocessing.Process</code> 创建，每个进程持有 1 个独立的 PaddleOCR 实例，避免 GIL 限制和 fork 安全问题。</p>
+  </div>
+  <div>
+    <h4>🔸 ThreadPoolExecutor</h4>
+    <p>菜单项索引时使用 <code>concurrent.futures.ThreadPoolExecutor</code> 并行处理（<code>--workers-menu</code> 控制并行度），OCR 调用共享进程池。</p>
+  </div>
+</div>
+
+<h4>4.4.3.5 进程间通信机制</h4>
+<table>
+  <tr><th>通信对</th><th>机制</th><th>说明</th></tr>
+  <tr>
+    <td>Flask 主线程 → OCR 进程池</td>
+    <td><code>multiprocessing.Queue</code></td>
+    <td>主线程通过 <code>task_queue.put((task_id, image_path))</code> 提交 OCR 任务</td>
+  </tr>
+  <tr>
+    <td>OCR 进程池 → Flask 主线程</td>
+    <td><code>multiprocessing.Queue</code></td>
+    <td>OCR 进程通过 <code>result_queue.put((task_id, text))</code> 返回识别结果</td>
+  </tr>
+  <tr>
+    <td>队列收集 → 结果分发</td>
+    <td><code>threading.Condition</code></td>
+    <td>后台 collector 线程持续 drain result_queue，通过 Condition 通知等待的调用方</td>
+  </tr>
+  <tr>
+    <td>后台索引线程 → 主线程</td>
+    <td><code>threading.Lock</code> + <code>int_counter</code></td>
+    <td>索引状态通过加锁的全局计数器 <code>_indexing_counter</code> 暴露给 /api/indexing-status 查询</td>
+  </tr>
+  <tr>
+    <td>备份线程 → 主线程</td>
+    <td><code>threading.Lock</code> + <code>dict</code></td>
+    <td>备份进度存储在 <code>_backup_tasks</code> 字典中，通过锁保护，前端通过轮询获取</td>
+  </tr>
+</table>
+
+<h4>4.4.3.6 异常处理策略</h4>
+<table>
+  <tr><th>场景</th><th>处理方式</th></tr>
+  <tr>
+    <td>OCR 模型加载失败</td>
+    <td>日志记录错误，进程退出，不影响主服务器运行</td>
+  </tr>
+  <tr>
+    <td>OCR 单张图片识别超时</td>
+    <td><code>batch_timeout</code>（默认 300s）后跳过，返回空字符串，不影响其他图片</td>
+  </tr>
+  <tr>
+    <td>OCR 进程挂起</td>
+    <td>主线程超时后标记跳过，不等待。shutdown 时 join 超时则 terminate()</td>
+  </tr>
+  <tr>
+    <td>SQLite 操作异常</td>
+    <td>try/finally 保证连接关闭；调用方捕获异常后记录日志</td>
+  </tr>
+  <tr>
+    <td>文件读写异常</td>
+    <td>log_error() 记录到文件和控制台，不中断主流程</td>
+  </tr>
+  <tr>
+    <td>Ctrl+C 中断</td>
+    <td>设置 <code>_shutdown_requested</code> 事件 → 工作线程自行退出 → OCR 进程池 shutdown → 进程 terminate</td>
+  </tr>
+  <tr>
+    <td>无效的正则表达式</td>
+    <td>返回 HTTP 400 + 错误信息，前端显示错误对话框</td>
+  </tr>
+  <tr>
+    <td>PaddleX/PaddleOCR C++ 日志</td>
+    <td>环境变量（GLOG_*, FLAGS_*）抑制框架层日志；<code>suppress_stdout_stderr</code> 上下文管理器在 FD 级别重定向输出</td>
+  </tr>
+</table>
+
+<h4>4.4.3.7 关键设计决策</h4>
+<table>
+  <tr><th>决策</th><th>选择</th><th>理由</th></tr>
+  <tr>
+    <td>OCR 并行方式</td>
+    <td>多进程（非多线程）</td>
+    <td>PaddleOCR 推理计算密集，多线程受 GIL 限制；多进程每个进程独立实例，充分利用多核 CPU</td>
+  </tr>
+  <tr>
+    <td>搜索索引存储</td>
+    <td>SQLite 每 Tab 独立 .db 文件</td>
+    <td>避免单文件锁竞争；WAL 模式支持读写并发；无需额外部署数据库服务</td>
+  </tr>
+  <tr>
+    <td>内容存储</td>
+    <td>文件系统（HTML 文件）</td>
+    <td>直接以 HTML 格式存储，无需序列化/反序列化；便于独立导出和调试查看</td>
+  </tr>
+  <tr>
+    <td>前端框架</td>
+    <td>原生 JS（无框架）</td>
+    <td>轻量、零依赖、快速加载；项目复杂度可控，原生 JS 即可满足需求</td>
+  </tr>
+  <tr>
+    <td>索引构建策略</td>
+    <td>批量插入（非逐条）</td>
+    <td>避免 SQLite 写竞争：收集所有结果后在单线程中 batch INSERT</td>
+  </tr>
+    <tr>
+      <td>Windows 兼容</td>
+      <td>限制 workers=1</td>
+      <td>Windows 无 os.fork()，multiprocessing 行为不同，限制为单进程避免异常</td>
+    </tr>
+    <tr>
+      <td>OCR 模型选择</td>
+      <td><code>--mobile-ocr</code> 参数 / 平台自动检测</td>
+      <td>Windows 默认使用 Mobile 模型避免兼容性问题；Linux 使用 Server 模型获取更高精度。通过 <code>ocr_version="PP-OCRv5"</code> 统一指定版本，用 <code>text_detection_model_name</code> / <code>text_recognition_model_name</code> 区分 mobile/server 模型</td>
+    </tr>
+</table>
+
+<!-- ============================================================ -->
+<h3 id="sec4-4">4.4.4 关键技术设计</h3>
+
+<h4>4.4.4.1 OCR 图片文字识别</h4>
+<p><span class="badge badge-green">技术</span> 基于 <strong>PaddleOCR</strong> 开源 OCR 引擎：</p>
+<ul>
+  <li><strong>模型</strong>：使用 <code>ocr_version="PP-OCRv5"</code> 统一框架。通过 <code>--mobile-ocr</code> 参数选择变体：
+    <ul>
+      <li><strong>Mobile 模型</strong>（<code>--mobile-ocr true</code>，Windows 默认）：<code>PP-OCRv5_mobile_det</code>（文字检测）+ <code>PP-OCRv5_mobile_rec</code>（文字识别）+ PP-LCNet_x1_0_doc_ori（方向分类）+ UVDoc（文档矫正）。内存占用低，适合资源受限环境</li>
+      <li><strong>Server 模型</strong>（<code>--mobile-ocr false</code>，Linux 默认）：<code>PP-OCRv5_server_det</code>（文字检测）+ <code>PP-OCRv5_server_rec</code>（文字识别）+ PP-LCNet_x1_0_doc_ori（方向分类）+ UVDoc（文档矫正）。精度更高，内存占用更多</li>
+    </ul>
+  </li>
+  <li><strong>初始化</strong>：每个 OCR 工作进程在 <code>_ocr_worker_init()</code> 中创建独立的 <code>PaddleOCR</code> 实例，设置 <code>lang='ch'</code>（中文），<code>device='cpu'</code>。启动时根据 <code>os.environ['OCR_MOBILE']</code> 选择 mobile/server 模型参数</li>
+  <li><strong>调用流程</strong>：
+    <ol>
+      <li><code>extract_text_from_html_images()</code> 扫描 HTML 中的 <code>&lt;img&gt;</code> 标签</li>
+      <li>支持三种图片源：URL 引用（<code>/uploads/&lt;tab&gt;/images/</code>）、相对路径、Base64 内嵌图片</li>
+      <li>Base64 图片解码为临时 PNG 文件</li>
+      <li>所有图片路径提交到 OCRProcessPool.predict_batch()</li>
+      <li>每个图片进入任务队列 → OCR 进程处理 → 结果队列返回</li>
+      <li>收集所有识别文本，合并为字符串返回</li>
+    </ol>
+  </li>
+  <li><strong>超时机制</strong>：每张图片从开始处理计时，超过 <code>batch_timeout</code>（默认 300s）则跳过</li>
+  <li><strong>模型缓存</strong>：存储在 <code>models/ocr/official_models/</code> 目录，使用环境变量 <code>PADDLE_PDX_CACHE_HOME</code> 指定</li>
+</ul>
+
+<h4>4.4.4.2 全文索引引擎</h4>
+<p><span class="badge badge-green">技术</span> 基于 <strong>SQLite</strong> 内置的全文索引能力：</p>
+
+<h4>索引数据库表结构（每 Tab 一个 .db）：</h4>
+<table>
+  <tr><th>列名</th><th>类型</th><th>说明</th></tr>
+  <tr><td>menu_item_id</td><td>TEXT PK</td><td>菜单项 UUID</td></tr>
+  <tr><td>label</td><td>TEXT NOT NULL</td><td>菜单项名称</td></tr>
+  <tr><td>content_text</td><td>TEXT DEFAULT ''</td><td>去 HTML 标签后的纯文本 + OCR 识别文本</td></tr>
+  <tr><td>menu_path</td><td>TEXT NOT NULL</td><td>完整路径（Tab名/父项/子项）</td></tr>
+</table>
+
+<h4>索引构建流程：</h4>
+<ol>
+  <li><strong>全量索引</strong> <code>index_tab()</code>：
+    <ul>
+      <li>遍历菜单树，展开为扁平列表</li>
+      <li>并行处理每个菜单项（ThreadPoolExecutor）</li>
+      <li>每个项：读取 HTML 内容 → 去标签 → OCR 图片文字提取 → 收集结果</li>
+      <li>单线程 batch INSERT 到 SQLite（避免写竞争）</li>
+    </ul>
+  </li>
+  <li><strong>增量索引</strong> <code>update_item_in_index()</code>：
+    <ul>
+      <li>保存内容后后台线程执行</li>
+      <li>单条目：DELETE + INSERT OR REPLACE</li>
+    </ul>
+  </li>
+  <li><strong>路径更新</strong> <code>update_item_path_in_index()</code> / <code>update_item_meta_in_index()</code>：
+    <ul>
+      <li>菜单项移动或重命名时仅更新路径/标签，不重做 OCR</li>
+    </ul>
+  </li>
+</ol>
+
+<h4>搜索实现：</h4>
+<ul>
+  <li><strong>普通搜索（简单模式）</strong>：SQL <code>LIKE '%query%'</code> 匹配 label 和 content_text，限制返回 50 条</li>
+  <li><strong>普通搜索（OR/AND/排除模式）</strong>：全表扫描，Python 逐行过滤：
+    <ul>
+      <li><code>aaa | bbb | ccc</code> — OR 模式，匹配任一关键词（<code>|</code> 分隔）</li>
+      <li><code>aaa bbb ccc</code> 或 <code>aaa && bbb && ccc</code> — AND 模式，所有关键词必须同时存在（空格或 <code>&&</code> 分隔）</li>
+      <li><code>aaa ^ bbb</code> — 排除模式，<code>^</code> 前的词必须存在，<code>^</code> 后的词必须不存在</li>
+    </ul>
+  </li>
+  <li><strong>正则搜索</strong>：全表扫描，Python <code>re.compile().search()</code> 逐行匹配，支持 <code>|</code> 语法</li>
+  <li><strong>片段生成</strong>：<code>make_snippet()</code> 在匹配位置前后截取 40 字符上下文</li>
+  <li><strong>搜索范围</strong>：当前 Tab 或全部 Tab（遍历 index_db/*.db）</li>
+</ul>
+
+<h4>4.4.4.3 通用数据库（common.db）表结构</h4>
+
+<h4>表名：tab_order</h4>
+<table>
+  <tr><th>列名</th><th>类型</th><th>说明</th></tr>
+  <tr><td>tab_name</td><td>TEXT PK</td><td>知识库名称</td></tr>
+  <tr><td>sort_order</td><td>INTEGER NOT NULL</td><td>排序序号</td></tr>
+</table>
+
+<h4>表名：tab_kb_visibility</h4>
+<table>
+  <tr><th>列名</th><th>类型</th><th>说明</th></tr>
+  <tr><td>tab_name</td><td>TEXT PK</td><td>知识库名称</td></tr>
+  <tr><td>visible</td><td>INTEGER NOT NULL DEFAULT 1</td><td>是否可见（1=可见，0=隐藏）</td></tr>
+  <tr><td>is_active</td><td>INTEGER NOT NULL DEFAULT 0</td><td>当前选中的 Tab（1=选中）</td></tr>
+</table>
+
+<h4>表名：tab_current_item</h4>
+<table>
+  <tr><th>列名</th><th>类型</th><th>说明</th></tr>
+  <tr><td>tab_name</td><td>TEXT PK</td><td>知识库名称</td></tr>
+  <tr><td>current_item_id</td><td>TEXT NOT NULL</td><td>当前编辑的菜单项 ID</td></tr>
+  <tr><td>scroll_top</td><td>INTEGER NOT NULL DEFAULT 0</td><td>滚动位置</td></tr>
+</table>
+
+<h4>表名：font_config</h4>
+<table>
+  <tr><th>列名</th><th>类型</th><th>说明</th></tr>
+  <tr><td>id</td><td>INTEGER PK</td><td>固定为 1（单行配置）</td></tr>
+  <tr><td>font_family</td><td>TEXT NOT NULL</td><td>字体名称</td></tr>
+  <tr><td>font_size</td><td>TEXT NOT NULL</td><td>字号（1-7）</td></tr>
+  <tr><td>updated_at</td><td>TEXT</td><td>更新时间</td></tr>
+</table>
+
+<h4>表名：system_config</h4>
+<table>
+  <tr><th>列名</th><th>类型</th><th>说明</th></tr>
+  <tr><td>id</td><td>INTEGER PK AUTO</td><td>自增 ID</td></tr>
+  <tr><td>name</td><td>TEXT UNIQUE</td><td>配置键名（如 'version'）</td></tr>
+  <tr><td>value</td><td>TEXT</td><td>配置值</td></tr>
+</table>
+
+<h4>4.4.4.4 文件系统存储结构</h4>
+<table>
+  <tr><th>路径模式</th><th>用途</th><th>格式</th></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/menu.json</code></td><td>树形菜单结构</td><td>JSON 嵌套数组</td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/menu.js</code></td><td>前端菜单数据</td><td>JS 变量 <code>var MENU_DATA = ...</code></td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/content/&lt;uuid&gt;.html</code></td><td>条目内容</td><td>HTML 片段</td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/images/&lt;filename&gt;</code></td><td>上传图片</td><td>PNG/JPG</td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/index.html</code></td><td>独立导出页面</td><td>完整 HTML</td></tr>
+  <tr><td><code>data/db/common.db</code></td><td>通用配置数据库</td><td>SQLite</td></tr>
+  <tr><td><code>data/db/index_db/&lt;tab&gt;.db</code></td><td>搜索索引数据库</td><td>SQLite (WAL)</td></tr>
+</table>
+
+<h4>4.4.4.5 菜单数据结构（menu.json）</h4>
+<pre><code>[
+  {
+    "id": "uuid-string",
+    "label": "条目名称",
+    "children": [                  // 子菜单数组
+      {
+        "id": "uuid-string",
+        "label": "子条目",
+        "style": {                 // 可选定制样式
+          "icon": "📁",
+          "fontFamily": "Arial",
+          "fontSize": "14px",
+          "color": "#e74c3c",
+          "bgColor": "#f9f9f9",
+          "bold": true
+        },
+        "children": []
+      }
+    ]
+  }
+]</code></pre>
+
+<h4>4.4.4.6 数据流：内容保存 → 索引 → 独立导出</h4>
+<div class="diagram">
+  保存内容(editor.innerHTML)
+       │
+       ▼
+  save_content(tab, item_id, html)
+       ├── 写入 content/{item_id}.html
+       │
+       ├── _run_in_background(update_item_in_index)
+       │    ├── strip_html_tags(html) → 纯文本
+       │    ├── extract_text_from_html_images(html)
+       │    │    ├── 扫描 &lt;img&gt; 标签
+       │    │    ├── OCR 识别 (进程池)
+       │    │    └── 返回识别的文字
+       │    ├── 合并文本
+       │    └── DELETE + INSERT INTO item_index
+       │
+       └── generate_standalone_html(tab)
+            ├── 读取所有 content/*.html
+            ├── 序列化为 JSON
+            └── 写入 index.html
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec5">4.5 TODO：后续增加功能</h2>
+
+<table>
+  <tr><th>序号</th><th>功能</th><th>说明</th><th>优先级</th></tr>
+  <tr><td>1</td><td>用户登录与访问控制</td><td>支持多用户登录、密码保护、读写权限分离</td><td>高</td></tr>
+  <tr><td>2</td><td>Markdown 编辑模式</td><td>在富文本之外提供 Markdown 编辑/预览双模式</td><td>中</td></tr>
+  <tr><td>3</td><td>在线 PDF/Office 预览</td><td>支持附件上传和在线预览（PDF、Word、Excel）</td><td>中</td></tr>
+  <tr><td>4</td><td>知识库导入</td><td>支持导入 Markdown 文件、ZIP 存档、Evernote 导出等</td><td>中</td></tr>
+  <tr><td>5</td><td>标签系统</td><td>为条目添加标签，实现多维度分类和筛选</td><td>中</td></tr>
+  <tr><td>6</td><td>版本历史</td><td>记录条目编辑历史，支持回滚到历史版本</td><td>低</td></tr>
+  <tr><td>7</td><td>全文搜索高亮</td><td>在搜索结果和编辑器中高亮匹配关键词</td><td>低</td></tr>
+  <tr><td>8</td><td>国际化 (i18n)</td><td>支持多语言界面（英文/中文切换）</td><td>低</td></tr>
+  <tr><td>9</td><td>移动端适配</td><td>优化触屏操作，提供移动端浏览器友好界面</td><td>低</td></tr>
+  <tr><td>10</td><td>网页剪藏</td><td>浏览器扩展或书签工具，一键保存网页内容到知识库</td><td>低</td></tr>
+  <tr><td>11</td><td>图床集成</td><td>支持对接外部图床（如阿里云 OSS、MinIO）</td><td>低</td></tr>
+  <tr><td>12</td><td>更多 AI 能力</td><td>集成大语言模型，实现智能摘要、问答、内容推荐等</td><td>低</td></tr>
+  <tr><td>13</td><td>WebSocket 实时同步</td><td><span class="badge badge-green">已实现</span> 多端同时编辑时实时同步内容</td><td>-</td></tr>
+  <tr><td>14</td><td>Docker 部署</td><td>提供 Dockerfile 和 docker-compose 配置，简化部署</td><td>低</td></tr>
+</table>
+
+<div class="signature">
+  <p>Design Document &mdash; 知识库 KBase</p>
+  <p>Jimmy Lang by Opencode AI</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px">2026-06-09 &nbsp;|&nbsp; Email: jimmylang1974@126.com</p>
+</div>
+
+</div>
+</body>
+</html>

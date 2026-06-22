@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KBase — Design Document</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: #f5f7fa;
+    color: #333;
+    line-height: 1.8;
+    font-size: 14px;
+  }
+  .doc-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 40px 32px 100px;
+  }
+  h1 {
+    font-size: 28px;
+    color: #2c3e50;
+    margin-bottom: 4px;
+    padding-bottom: 16px;
+    border-bottom: 3px solid #3498db;
+  }
+  h1 small { font-size:14px; font-weight:normal; color:#888; }
+  h2 {
+    font-size: 22px;
+    color: #2c3e50;
+    margin: 40px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #3498db;
+  }
+  h3 {
+    font-size: 17px;
+    color: #2980b9;
+    margin: 28px 0 10px;
+  }
+  h4 {
+    font-size: 15px;
+    color: #555;
+    margin: 20px 0 8px;
+  }
+  p { margin: 10px 0; }
+  ul, ol { margin: 8px 0 8px 22px; }
+  li { margin: 4px 0; }
+  code {
+    background: #eef4f8;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    color: #c0392b;
+  }
+  pre {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 14px 18px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 12px 0;
+  }
+  pre code { background:transparent; color:#ecf0f1; padding:0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    font-size: 13px;
+  }
+  th { background: #f5f7fa; font-weight: 600; color: #555; }
+  tr:nth-child(even) { background: #fafbfc; }
+  .tip {
+    background: #eaf7ea;
+    border-left: 4px solid #27ae60;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .note {
+    background: #fef9e7;
+    border-left: 4px solid #f39c12;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .signature {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 2px solid #ddd;
+    text-align: center;
+    color: #888;
+    font-size: 13px;
+  }
+  .toc { background:#fff; border:1px solid #ddd; border-radius:6px; padding:16px 24px; margin:20px 0; }
+  .toc a { display:block; padding:3px 0; color:#2980b9; text-decoration:none; font-size:14px; }
+  .toc a:hover { text-decoration:underline; }
+  .toc .l2 { padding-left:20px; font-size:13px; }
+  .toc .l3 { padding-left:40px; font-size:13px; }
+  .diagram {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 20px;
+    margin: 16px 0;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .arch-box {
+    display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0;
+  }
+  .arch-box > div {
+    flex: 1; min-width: 200px;
+    background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 16px;
+  }
+  .arch-box h4 { margin:0 0 8px; color:#2c3e50; }
+  .badge {
+    display:inline-block; background:#3498db; color:#fff; padding:0 8px; border-radius:3px; font-size:12px; font-weight:600;
+  }
+  .badge-green { background:#27ae60; }
+  .badge-orange { background:#e67e22; }
+  .badge-purple { background:#8e44ad; }
+  @media (max-width:768px) {
+    .doc-container { padding:20px 16px 60px; }
+    h1 { font-size:22px; }
+  }
+</style>
+</head>
+<body>
+<div class="doc-container">
+
+<h1>KBase <small>Design Document</small></h1>
+<p style="color:#888;margin-bottom:24px">
+  Project: Web of Mybase Knowledge Server &nbsp;|&nbsp; Version: v5.4.6 &nbsp;|&nbsp; Last Updated: 2026-06-12
+</p>
+
+<div class="toc">
+  <strong style="color:#2c3e50;font-size:15px">Table of Contents</strong>
+  <a href="#sec1">4.1 Project Requirements</a>
+  <a href="#sec2">4.2 Project Directory Structure</a>
+  <a href="#sec3">4.3 Dependencies</a>
+  <a href="#sec4">4.4 Detailed Design</a>
+  <a href="#sec4-1" class="l2">4.4.1 Feature Design</a>
+  <a href="#sec4-1-3" class="l3">4.4.1.3 Export System</a>
+  <a href="#sec4-1-4" class="l3">4.4.1.4 WebSocket Real-time Sync</a>
+  <a href="#sec4-1-5" class="l3">4.4.1.5 Cython Build & Packaging</a>
+  <a href="#sec4-2" class="l2">4.4.2 UI Design</a>
+  <a href="#sec4-3" class="l2">4.4.3 Architecture Design</a>
+  <a href="#sec4-4" class="l2">4.4.4 Key Technical Design</a>
+  <a href="#sec5">4.5 TODO: Future Features</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec1">4.1 Project Requirements</h2>
+
+<h3>4.1.1 Project Positioning</h3>
+<p>
+  KBase is a knowledge base management system designed for individuals (or small teams),
+  providing a lightweight, locally-deployable knowledge management solution. Users access the system
+  through a browser, create multiple independent knowledge bases (Tabs), organize entries in a tree
+  directory structure, write and save content via a rich text editor, and quickly retrieve
+  knowledge through full-text search and OCR text recognition.
+</p>
+
+<h3>4.1.2 Core User Scenarios</h3>
+<ul>
+  <li><strong>Knowledge Organization</strong>: Collect and organize technical documentation, study notes, project materials, etc.</li>
+  <li><strong>Local Search</strong>: Full-text keyword search across large amounts of knowledge, including text within images</li>
+  <li><strong>Data Export</strong>: Package the knowledge base as a ZIP backup or export as standalone HTML pages</li>
+</ul>
+
+<h3>4.1.3 Version Notes</h3>
+<ul>
+  <li>Personal edition, no login/password protection — all features accessible directly on the local network</li>
+  <li>Supports Windows / Linux / macOS platforms</li>
+  <li>Requires Python &gt;= 3.8</li>
+</ul>
+
+<h3>4.1.4 Feature List</h3>
+<table>
+  <tr><th>Module</th><th>Description</th><th>Priority</th></tr>
+  <tr><td>Multi-KB Management (Tab)</td><td>Create, rename, delete, drag-to-reorder, visibility control</td><td>Core</td></tr>
+  <tr><td>Tree Menu</td><td>Multi-level nesting, CRUD, drag-to-move, ordering, custom styles</td><td>Core</td></tr>
+  <tr><td>Rich Text Editor</td><td>WYSIWYG editor with font/color/size/bold/italic/link support</td><td>Core</td></tr>
+  <tr><td>Full-Text Search</td><td>SQLite-based index, single-KB/global search, regex search</td><td>Core</td></tr>
+  <tr><td>OCR Image Text Recognition</td><td>PaddleOCR-based, auto-extract text from images and index it</td><td>Core</td></tr>
+  <tr><td>One-Click Backup</td><td>ZIP package of all KB data for download</td><td>Important</td></tr>
+  <tr><td>Standalone Export</td><td>Generate self-contained single-page HTML for each KB</td><td>Important</td></tr>
+  <tr><td>KB Encryption</td><td>BCrypt password hashing + AES-256-GCM file encryption, session-based unlock</td><td>Important</td></tr>
+  <tr><td>Export (PDF/ZIP)</td><td>Tab-level and menu-item-level PDF and ZIP export</td><td>Important</td></tr>
+  <tr><td>Help Documentation</td><td>Built-in HTML help page</td><td>Supplementary</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sec2">4.2 Project Directory Structure</h2>
+
+<pre>
+├── server.py                        # Main server (Flask backend, ~4139 lines)
+├── main.py                          # Cython loader
+├── setup.py                         # Cython build script
+├── Makefile                         # Build/clean/package script
+├── requirements.txt                 # Python dependency list
+├── read_version.py                  # Version read utility
+├── set_version.py                   # Version update utility
+├── mybase.log                       # Runtime log file
+├── test.png                         # Test image
+│
+├── web/                             # Frontend resources
+│   ├── templates/                   # HTML templates (Flask Jinja2)
+│   │   ├── index.html               # Main SPA page
+│   │   └── help.html                # Help documentation page
+│   └── static/                      # Static assets
+│       ├── app.js                   # Frontend JavaScript (~3847 lines)
+│       └── style.css                # Stylesheet (~1607 lines)
+│
+├── data/                            # Data storage root
+│   ├── mybase/                      # KB data (one subdirectory per KB)
+│   │   └── &lt;kb_name&gt;/              # Example: Knowledge Base Name/
+│   │       ├── menu.json            # Tree menu structure (JSON)
+│   │       ├── menu.js              # Frontend menu data (JS variable)
+│   │       ├── index.html           # Standalone export HTML
+│   │       ├── nav.html             # (Optional) legacy nav file
+│   │       ├── content/             # Entry content files (UUID.html, .html.enc when encrypted)
+│   │       ├── images/              # Uploaded images (.enc suffix when encrypted)
+│   │       └── *.qrich.html         # (Legacy) old rich text files
+│   └── db/                          # Database directory
+│       ├── common.db                # Common config database (SQLite)
+│       └── index_db/                # Full-text search index database
+│           └── &lt;kb_name&gt;.db        # Independent index per KB
+│
+├── models/                          # AI model directory
+│   └── ocr/                         # PaddleOCR / PaddleX model cache
+│       ├── official_models/         # Official pretrained models
+│       │   ├── PP-OCRv5_server_det/ # Text detection model
+│       │   ├── UVDoc/               # Document correction model
+│       │   └── PP-LCNet_x1_0_doc_ori/ # Document orientation model
+│       └── ...
+│
+├── pdf_fonts/                       # PDF export fonts directory
+│
+└── .sisyphus/                       # Dev tool config (ignorable)
+</pre>
+
+<!-- ============================================================ -->
+<h2 id="sec3">4.3 Dependencies</h2>
+
+<h3>4.3.1 Environment Requirements</h3>
+<ul>
+  <li>Python &gt;= 3.8</li>
+  <li>OS: Windows / Linux / macOS</li>
+  <li>Recommended RAM &gt;= 4GB (for OCR model loading)</li>
+</ul>
+
+<h3>4.3.2 Core Dependencies (requirements.txt)</h3>
+<table>
+  <tr><th>Package</th><th>Version</th><th>Purpose</th></tr>
+  <tr><td>flask</td><td>&gt;=3.0.0</td><td>Web framework, HTTP routing and REST API</td></tr>
+  <tr><td>werkzeug</td><td>&gt;=3.0.0</td><td>WSGI toolkit, secure file upload handling</td></tr>
+  <tr><td>paddlepaddle</td><td>&gt;=3.0.0</td><td>Deep learning framework, OCR inference engine</td></tr>
+  <tr><td>paddleocr</td><td>&gt;=3.0.0</td><td>OCR optical character recognition library</td></tr>
+  <tr><td>paddlex</td><td>&gt;=3.0.0</td><td>Paddle model management tool</td></tr>
+  <tr><td>bcrypt</td><td>&gt;=4.0.0</td><td>Password hashing, KB password verification</td></tr>
+  <tr><td>pycryptodome</td><td>&gt;=3.20.0</td><td>AES-256-GCM file encryption/decryption</td></tr>
+  <tr><td>flask-socketio</td><td>&gt;=5.3.0</td><td>WebSocket real-time sync</td></tr>
+  <tr><td>fpdf2</td><td>&gt;=2.8.0</td><td>PDF export</td></tr>
+  <tr><td>click</td><td>&gt;=8.0.0</td><td>Windows platform compatibility (optional)</td></tr>
+</table>
+
+<h3>4.3.3 GPU Acceleration (Optional)</h3>
+<p>For NVIDIA GPU-accelerated OCR, replace paddlepaddle with paddlepaddle-gpu:</p>
+<pre><code>pip uninstall paddlepaddle -y
+pip install paddlepaddle-gpu</code></pre>
+
+<h3>4.3.4 Installation</h3>
+<pre><code># Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate    # Linux / macOS
+venv\Scripts\activate       # Windows
+
+# Install dependencies
+pip install -r requirements.txt</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="sec4">4.4 Detailed Design</h2>
+
+<!-- ============================================================ -->
+<h3 id="sec4-1">4.4.1 Feature Design</h3>
+
+<h4>4.4.1.1 Module Breakdown</h4>
+
+<table>
+  <tr><th>Module</th><th>Backend</th><th>Frontend</th><th>Description</th></tr>
+  <tr>
+    <td>Tab Management</td>
+    <td><code>server.py</code> (list_tabs, create_tab, rename_tab, delete_tab)</td>
+    <td><code>app.js</code> (loadTabs, switchTab, renameTab)</td>
+    <td>CRUD for multi-KB, sorting, visibility control, reading position memory</td>
+  </tr>
+  <tr>
+    <td>Menu Management</td>
+    <td><code>server.py</code> (get_menu, create_menu_item, update_menu_item, delete_menu_item, move_menu_item)</td>
+    <td><code>app.js</code> (renderTree, addMenuItem, deleteMenuItem, moveMenuItem, startInlineEdit)</td>
+    <td>Tree menu CRUD, drag-to-sort, move, inline rename, custom styles</td>
+  </tr>
+  <tr>
+    <td>Content Editor</td>
+    <td><code>server.py</code> (get_content, save_content_route, upload_image)</td>
+    <td><code>app.js</code> (loadContent, saveContent, handlePaste, uploadAndInsertImage)</td>
+    <td>Rich text content loading, saving, image paste-and-upload</td>
+  </tr>
+  <tr>
+    <td>Search Engine</td>
+    <td><code>server.py</code> (search_index, search_all_tabs, search)</td>
+    <td><code>app.js</code> (performSearch, navigateToSearchResult)</td>
+    <td>SQLite full-text search, plain and regex matching</td>
+  </tr>
+  <tr>
+    <td>Index Engine</td>
+    <td><code>server.py</code> (index_tab, index_all_tabs, update_item_in_index, ensure_indexes)</td>
+    <td><code>app.js</code> (checkIndexingStatus)</td>
+    <td>Auto/incremental/forced rebuild of indexes, status polling</td>
+  </tr>
+  <tr>
+    <td>OCR Engine</td>
+    <td><code>server.py</code> (OCRProcessPool, extract_text_from_html_images)</td>
+    <td>—</td>
+    <td>Multi-process PaddleOCR text recognition, image text extraction and indexing</td>
+  </tr>
+  <tr>
+    <td>Backup System</td>
+    <td><code>server.py</code> (start_backup, get_backup_status, download_backup)</td>
+    <td><code>app.js</code> (btn-backup click handler)</td>
+    <td>Async ZIP packaging, progress polling, auto download</td>
+  </tr>
+  <tr>
+    <td>Encryption</td>
+    <td><code>server.py</code> (AES-256-GCM encrypt/decrypt, PBKDF2 key derivation, BCrypt password hash, WebSocket sync blocking)</td>
+    <td><code>app.js</code> (password dialog, session unlock tracking, context menu handlers)</td>
+    <td>User password → BCrypt verify → PBKDF2 derive AES key → AES-256-GCM file encryption</td>
+  </tr>
+  <tr>
+    <td>WebSocket Sync</td>
+    <td><code>server.py</code> (ws_* handlers, SocketIO events)</td>
+    <td><code>app.js</code> (WebSocket connection, room management, lock handling)</td>
+    <td>Real-time content sync across browser windows via flask-socketio, document locking, encrypted KB sync denial</td>
+  </tr>
+  <tr>
+    <td>Export System</td>
+    <td><code>server.py</code> (export_tab_pdf, export_tab_zip, export_tree_item_pdf, export_tree_item_zip)</td>
+    <td><code>app.js</code> (handleTabExport, handleTreeExport, triggerDownload)</td>
+    <td>Tab-level and item-level PDF/ZIP export, subtree recursive collection, image copying</td>
+  </tr>
+  <tr>
+    <td>Standalone Export</td>
+    <td><code>server.py</code> (generate_standalone_html)</td>
+    <td>—</td>
+    <td>Generate self-contained single-page HTML per KB</td>
+  </tr>
+</table>
+
+<h4>4.4.1.2 REST API</h4>
+
+<table>
+  <tr><th>Method</th><th>Route</th><th>Frontend Call</th><th>Description</th></tr>
+  <tr><td>GET</td><td><code>/api/tabs</code></td><td><code>loadTabs()</code></td><td>List all KBs (ordered)</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs</code></td><td><code>btn-new-tab</code></td><td>Create a new KB</td></tr>
+  <tr><td>PUT</td><td><code>/api/tabs/&lt;old_name&gt;</code></td><td><code>renameTab()</code></td><td>Rename a KB</td></tr>
+  <tr><td>DELETE</td><td><code>/api/tabs/&lt;tab&gt;</code></td><td><code>deleteTab()</code></td><td>Delete a KB</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/menu</code></td><td><code>loadMenu()</code></td><td>Get tree menu</td></tr>
+  <tr><td>POST</td><td><code>/api/&lt;tab&gt;/menu</code></td><td><code>addMenuItem()</code></td><td>Add menu item</td></tr>
+  <tr><td>PUT</td><td><code>/api/&lt;tab&gt;/menu/&lt;id&gt;</code></td><td><code>updateMenuItem()</code></td><td>Update menu item (rename/style)</td></tr>
+  <tr><td>DELETE</td><td><code>/api/&lt;tab&gt;/menu/&lt;id&gt;</code></td><td><code>deleteMenuItem()</code></td><td>Delete menu item</td></tr>
+  <tr><td>PUT</td><td><code>/api/&lt;tab&gt;/menu/&lt;id&gt;/move</code></td><td><code>moveMenuItem()</code></td><td>Move menu item</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/content/&lt;id&gt;</code></td><td><code>loadContent()</code></td><td>Load entry content</td></tr>
+  <tr><td>PUT</td><td><code>/api/&lt;tab&gt;/content/&lt;id&gt;</code></td><td><code>saveContent()</code></td><td>Save entry content</td></tr>
+  <tr><td>POST</td><td><code>/api/&lt;tab&gt;/upload</code></td><td><code>uploadAndInsertImage()</code></td><td>Upload image</td></tr>
+  <tr><td>GET</td><td><code>/api/search</code></td><td><code>performSearch()</code></td><td>Full-text search</td></tr>
+  <tr><td>GET</td><td><code>/api/tab-visibility</code></td><td><code>loadTabs()</code></td><td>Get KB visibility</td></tr>
+  <tr><td>PUT</td><td><code>/api/tab-visibility</code></td><td><code>onKbItemToggle()</code></td><td>Set KB visibility</td></tr>
+  <tr><td>GET</td><td><code>/api/font-config</code></td><td><code>loadFontConfig()</code></td><td>Get font config</td></tr>
+  <tr><td>PUT</td><td><code>/api/font-config</code></td><td><code>saveFontConfig()</code></td><td>Save font config</td></tr>
+  <tr><td>POST</td><td><code>/api/backup</code></td><td>btn-backup</td><td>Start KB backup</td></tr>
+  <tr><td>GET</td><td><code>/api/backup/status/&lt;id&gt;</code></td><td>(polling)</td><td>Query backup progress</td></tr>
+  <tr><td>GET</td><td><code>/api/backup/download/&lt;id&gt;</code></td><td>(download)</td><td>Download backup ZIP</td></tr>
+  <tr><td>GET</td><td><code>/api/indexing-status</code></td><td><code>checkIndexingStatus()</code></td><td>Query indexing status</td></tr>
+  <tr><td>PUT</td><td><code>/api/tab-order</code></td><td><code>doTabReorder()</code></td><td>Save tab order</td></tr>
+  <tr><td>PUT</td><td><code>/api/tab-current-item</code></td><td><code>selectItem()</code></td><td>Save reading position</td></tr>
+  <tr><td>GET</td><td><code>/api/tab-current-items</code></td><td><code>loadTabs()</code></td><td>Get current items for all tabs</td></tr>
+  <tr><td>GET</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>Get system config</td></tr>
+  <tr><td>PUT</td><td><code>/api/system-config/&lt;name&gt;</code></td><td>—</td><td>Set system config</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>Password dialog</td><td>Set/change KB password</td></tr>
+  <tr><td>POST</td><td><code>/api/tabs/&lt;tab&gt;/verify-password</code></td><td>Unlock dialog</td><td>Verify KB password (unlock)</td></tr>
+  <tr><td>DELETE</td><td><code>/api/tabs/&lt;tab&gt;/password</code></td><td>Context menu</td><td>Remove KB password</td></tr>
+  <tr><td>GET</td><td><code>/api/encrypted-tabs</code></td><td><code>loadTabs()</code></td><td>List encrypted tabs</td></tr>
+  <tr><td>POST</td><td><code>/api/clear-encryption-cache</code></td><td>—</td><td>Clear encryption cache</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/tree</code></td><td>—</td><td>Get flattened tree data</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf</code></td><td>Tab right-click → Export → PDF</td><td>Export entire KB as PDF</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/zip</code></td><td>Tab right-click → Export → ZIP</td><td>Export entire KB folder as ZIP</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/pdf/&lt;id&gt;</code></td><td>Menu item right-click → Export → PDF</td><td>Export menu item + subtree as PDF</td></tr>
+  <tr><td>GET</td><td><code>/api/&lt;tab&gt;/export/zip/&lt;id&gt;</code></td><td>Menu item right-click → Export → ZIP</td><td>Export menu item + subtree as standalone HTML ZIP</td></tr>
+</table>
+
+<h4 id="sec4-1-3">4.4.1.3 Export System Details</h4>
+<p><span class="badge badge-green">Export</span> The export system supports two granularity levels, each with PDF and ZIP formats:</p>
+<ul>
+  <li><strong>Tab-level Export</strong>: Access via Tab right-click menu → "Export" → "PDF/ZIP", exports all content in the KB
+    <ul>
+      <li>PDF: Recursively collects all menu items under the tab, generates a single PDF document using NotoSansSC font (CJK support)</li>
+      <li>ZIP: Directly packages the Tab's data folder (<code>data/mybase/&lt;tab&gt;/</code>) as a ZIP</li>
+    </ul>
+  </li>
+  <li><strong>Menu Item-level Export</strong>: Access via tree item right-click menu → "Export" → "PDF/ZIP", exports the item and its entire subtree
+    <ul>
+      <li>PDF: Recursively collects all subtree menu items, merges into one PDF with depth-indented hierarchy</li>
+      <li>ZIP: Generates a standalone HTML page (interactive page with all subtree content serialized as JSON), copies referenced images to <code>images/</code>, and packages as ZIP</li>
+    </ul>
+  </li>
+</ul>
+
+<h4 id="sec4-1-4">4.4.1.4 WebSocket Real-time Sync</h4>
+<p><span class="badge badge-purple">Sync</span> The system implements cross-window real-time synchronization based on <code>flask-socketio</code>:</p>
+<ul>
+  <li><strong>Architecture</strong>: Uses the Socket.IO protocol, supporting broadcast communication via a Room mechanism</li>
+  <li><strong>Room Structure</strong>:
+    <ul>
+      <li><code>tab:{tab_name}</code> — For syncing menu structure changes, KB renaming/deletion, etc.</li>
+      <li><code>tab:{tab_name}:notify</code> — For syncing lifecycle events (e.g., encrypted KB unlock/password change)</li>
+      <li><code>doc:{tab}:{item_id}</code> — Per-document rooms for real-time content sync and locking</li>
+    </ul>
+  </li>
+  <li><strong>Core Events</strong>:
+    <ul>
+      <li><strong>Client → Server</strong>: <code>join_tab</code>, <code>leave_tab</code>, <code>join_document</code>, <code>leave_document</code>, <code>content_change</code>, <code>lock_document</code>, <code>unlock_document</code></li>
+      <li><strong>Server → Client</strong>: <code>content_update</code>, <code>menu_changed</code>, <code>content_saved</code>, <code>sync_denied</code>, <code>lock_acquired</code>, <code>lock_denied</code>, <code>tab_added</code>, <code>tab_renamed</code>, <code>tab_deleted</code>, <code>encrypted_tab_password_changed</code>, <code>encrypted_tab_decrypted</code></li>
+    </ul>
+  </li>
+  <li><strong>Document Locking</strong>: Prevents concurrent editing conflicts. A lock is automatically requested when a user starts typing; the lock is bound to the Socket session and released upon disconnection</li>
+  <li><strong>Security</strong>: <strong>Encrypted KBs are forbidden from syncing content via WebSocket</strong>. All sync requests verify if the KB is encrypted; if so, content sync is denied, and only lifecycle events (like unlock status) are permitted</li>
+</ul>
+
+<h4 id="sec4-1-5">4.4.1.5 Cython Build & Packaging</h4>
+<p><span class="badge badge-orange">Build</span> For performance and source protection, the system supports Cython compilation:</p>
+<ul>
+  <li><strong>setup.py</strong>: Uses Cython to compile <code>server.py</code> into a binary extension module (<code>.so</code> for Linux/macOS, <code>.pyd</code> for Windows)</li>
+  <li><strong>main.py</strong>: A thin loader that imports the compiled module and starts the server</li>
+  <li><strong>Makefile Targets</strong>:
+    <ul>
+      <li><code>all</code> — Default build</li>
+      <li><code>build</code> — Execute Cython compilation</li>
+      <li><code>clean</code> — Clean up build artifacts and temporary files</li>
+      <li><code>package</code> — Package for Linux/macOS distribution</li>
+      <li><code>package-win</code> — Package for Windows distribution</li>
+    </ul>
+  </li>
+  <li><strong>Package Contents</strong>: Includes the compiled extension, <code>web/</code>, <code>doc/</code>, <code>models/</code>, <code>pdf_fonts/</code>, <code>requirements.txt</code>, <code>main.py</code>, and <code>README.md</code></li>
+</ul>
+
+<h4>4.4.1.6 Key Sequence Diagrams</h4>
+
+<h4>Sequence 1: Content Save & Index Update</h4>
+<div class="diagram">
+User            Frontend(app.js)        Backend(server.py)      SQLite Index        OCR Pool
+ │                    │                        │                    │                  │
+ │  Click Save/Ctrl+S │                        │                    │                  │
+ │───────────────────►│                        │                    │                  │
+ │                    │  PUT /api/&lt;tab&gt;/content │                    │                  │
+ │                    │────────────────────────►│                    │                  │
+ │                    │                        │  Save content/*.html│                  │
+ │                    │                        │────────────────────►│                  │
+ │                    │                        │  Spawn background    │                  │
+ │                    │                        │  _run_in_background  │                  │
+ │                    │                        │────────────────────►│                  │
+ │                    │                        │  update_item_in_index│                  │
+ │                    │                        │  (delete old+reinsert)│                  │
+ │                    │                        │────────────────────►│                  │
+ │                    │                        │  extract_text_from   │                  │
+ │                    │                        │  _html_images        │                  │
+ │                    │                        │──────────────────────────────────────►│
+ │                    │                        │  predict_batch()    │                  │
+ │                    │                        │◄──────────────────────────────────────│
+ │                    │                        │  Merge OCR text to   │                  │
+ │                    │                        │  index               │                  │
+ │                    │                        │────────────────────►│                  │
+ │                    │  Return {success:true}  │                    │                  │
+ │                    │◄────────────────────────│                    │                  │
+ │  Update UI         │                        │                    │                  │
+ │◄───────────────────│                        │                    │                  │
+</div>
+
+<h4>Sequence 2: Full-Text Search</h4>
+<div class="diagram">
+User            Frontend(app.js)        Backend(server.py)      SQLite Index (per Tab .db)
+ │                    │                        │                        │
+ │  Enter keyword     │                        │                        │
+ │  + click search    │                        │                        │
+ │───────────────────►│                        │                        │
+ │                    │  GET /api/search?q=xxx  │                        │
+ │                    │  (&amp;tab=xxx|&amp;regex=true) │                        │
+ │                    │────────────────────────►│                        │
+ │                    │                        │  Parse q, tab, regex   │
+ │                    │                        │                        │
+ │                    │                        │  if tab specified:     │
+ │                    │                        │    search_index(tab,q)  │
+ │                    │                        │  else:                 │
+ │                    │                        │    search_all_tabs(q)   │
+ │                    │                        │    iterate index_db/*.db│
+ │                    │                        │────────────────────────►│
+ │                    │                        │  SQL: SELECT ... FROM   │
+ │                    │                        │  item_index WHERE ...   │
+ │                    │                        │◄────────────────────────│
+ │                    │                        │                        │
+ │                    │  Return result[]        │                        │
+ │                    │◄────────────────────────│                        │
+ │                    │                        │                        │
+ │  Render results    │                        │                        │
+ │  panel             │                        │                        │
+ │  User clicks item  │                        │                        │
+ │───────────────────►│                        │                        │
+ │                    │  switchTab(targetTab)   │                        │
+ │                    │  selectItem(targetId)   │                        │
+ │                    │  loadContent(targetId)  │                        │
+ │                    │────────────────────────►│                        │
+ │                    │◄────────────────────────│                        │
+ │◄───────────────────│                        │                        │
+</div>
+
+<h4>Sequence 3: Server Startup</h4>
+<div class="diagram">
+server.py startup
+    │
+    ├─ init_config()
+    │    ├─ Parse CLI args (--port, --data, --force-index, --disable-ocr, --mobile-ocr...)
+    │    ├─ Create directories (data/, data/db/, data/mybase/)
+    │    └─ Initialize mybase.log
+    │
+    ├─ OCRProcessPool(workers_ocr)  ← if OCR not disabled
+    │    ├─ Create mp.Queue × 2 (task_queue, result_queue)
+    │    ├─ Start N mp.Process (_ocr_worker)
+    │    │    └─ Each process initializes 1 PaddleOCR instance
+    │    └─ Start background collector thread
+    │
+    ├─ ensure_indexes()
+    │    ├─ Remove orphaned indexes (deleted Tab's .db)
+    │    ├─ Auto-index new KBs (Tab without .db)
+    │    └─ If --force-index, force rebuild
+    │
+    ├─ init_common_db()
+    │    ├─ Create common.db
+    │    └─ Create tables: tab_order, tab_kb_visibility, tab_current_item, font_config, system_config
+    │
+    └─ app.run(host='0.0.0.0', port=server_port, threaded=True)
+         └─ Flask enters event loop, waits for HTTP requests
+</div>
+
+
+<!-- ============================================================ -->
+<h3 id="sec4-2">4.4.2 UI Design</h3>
+
+<h4>4.4.2.1 Overall Layout</h4>
+<p>Classic three-column IDE-style layout, top to bottom:</p>
+<ul>
+  <li><strong>Tab Bar</strong> (dark top bar) — Displays all KB tabs, supports drag-to-reorder, scrolling, right-click menu</li>
+  <li><strong>Main Content Area</strong> — Split left/right:
+    <ul>
+      <li><strong>Left Sidebar</strong> — Tree menu + toolbar (fixed width 280px, draggable resize)</li>
+      <li><strong>Right Editing Area</strong> — Rich text toolbar + editor + status bar</li>
+    </ul>
+  </li>
+  <li><strong>Search Results Panel</strong> (bottom, collapsible) — Search result display area with draggable splitter</li>
+</ul>
+
+<h4>4.4.2.2 Tab Bar UI</h4>
+<ul>
+  <li>Background: <code>#2c3e50</code> (dark blue-gray)</li>
+  <li>Tab labels: rounded rectangles, hover highlight, active state = white background</li>
+  <li>Blue border indicator during drag</li>
+  <li>‹ › scroll buttons appear when tabs overflow</li>
+  <li>Mouse wheel horizontal scrolling</li>
+  <li>Blue circular ? button on the right opens help page</li>
+</ul>
+
+<h4>4.4.2.3 Sidebar UI</h4>
+<ul>
+  <li>Top ☰ Menu dropdown: Collapse All / Expand All / Add Root Menu</li>
+  <li>Tree menu: indented multi-level nesting, 20px per level</li>
+  <li>▸/▾ toggle expand/collapse</li>
+  <li>Click to select and load content into editor</li>
+  <li>Right-click menu: Add Child/Add Sibling/Move Up/Move Down/Move To.../Edit/Custom Style/Delete</li>
+  <li>Double-click selected node triggers inline rename</li>
+  <li>Custom style support (icon Emoji, font, size, color, background, bold, etc.)</li>
+</ul>
+
+<h4>4.4.2.4 Editor UI</h4>
+<ul>
+  <li>Toolbar: Font dropdown, Size dropdown, B/I/U/S (bold/italic/underline/strikethrough), Color picker, Insert link</li>
+  <li>Save button (💾 Save), New KB button, Backup button (📦 Backup KB)</li>
+  <li>Search box + Global Search checkbox + Regex checkbox + Search button</li>
+  <li>KB visibility selector (All KBs dropdown)</li>
+  <li>Rich text editing area: <code>contenteditable=true</code> div, links open in new tab</li>
+  <li>Bottom status bar: shows current editing entry name and save status</li>
+</ul>
+
+<h4>4.4.2.5 Search Results Panel</h4>
+<ul>
+  <li>Three-column table: KB | Path | Content Snippet</li>
+  <li>Column widths adjustable via draggable dividers</li>
+  <li>Click result auto-navigates to the corresponding KB and entry</li>
+  <li>Panel height adjustable via draggable splitter on top</li>
+  <li>✕ close button on top-right</li>
+</ul>
+
+<h4>4.4.2.6 Dialog System</h4>
+<ul>
+  <li>Modal dialogs: semi-transparent overlay + centered white card</li>
+  <li>Used for: Add/Rename entry, Insert link, Custom style, Delete confirmation, etc.</li>
+  <li>OK / Cancel buttons</li>
+</ul>
+
+<!-- ============================================================ -->
+<h3 id="sec4-3">4.4.3 Architecture Design</h3>
+
+<h4>4.4.3.1 Overall Architecture</h4>
+<div class="diagram">
+┌────────────────────────────────────────────────────────────────────┐
+│                      Browser                                        │
+│  ┌──────────────────────────────────────────────────────────┐     │
+│  │  SPA Application                                          │     │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │     │
+│  │  │ Tab Mgr  │  │ Tree Menu│  │ Rich Text│  │ Search │ │     │
+│  │  │ (app.js) │  │ (app.js) │  │ Editor   │  │ Panel  │ │     │
+│  │  └──────────┘  └──────────┘  └──────────┘  └────────┘ │     │
+│  └──────────────────────────────────────────────────────────┘     │
+└──────────────────────┬─────────────────────────────────────────────┘
+                       │ REST API (JSON)
+                       ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                  Flask Web Server (server.py)                       │
+│                                                                     │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐  │
+│  │ Route Layer      │  │ Business Logic   │  │ Data Access Layer │  │
+│  │                  │  │                  │  │                   │  │
+│  │ /api/tabs        │  │ Tab Management   │  │ File I/O          │  │
+│  │ /api/&lt;tab&gt;/menu │  │ Menu Management   │  │ (content/*.html)  │  │
+│  │ /api/&lt;tab&gt;/cntnt│  │ Index Engine      │  │ SQLite Database   │  │
+│  │ /api/search      │  │ OCR Scheduler    │  │ (common.db,       │  │
+│  │ /api/backup      │  │ Backup System    │  │  index_db/*.db)   │  │
+│  │ WebSocket/SIO    │  │ Real-time Sync   │  │                   │  │
+│  └─────────────────┘  └─────────────────┘  └──────────────────┘  │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────┐      │
+│  │  Thread/Process Model                                       │      │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │      │
+│  │  │ Flask Main    │  │ Background   │  │ OCR Process   │  │      │
+│  │  │ Thread        │  │ Thread Pool  │  │ Pool          │  │      │
+│  │  │ (HTTP Req)    │  │ (Index/Backup)│  │ (PaddleOCR)   │  │      │
+│  │  │ threaded=True │  │ Daemon=True  │  │ mp.Process   │  │      │
+│  │  │ SocketIO Thrd │  │              │  │              │  │      │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘  │      │
+│  └─────────────────────────────────────────────────────────┘      │
+└────────────────────────────────────────────────────────────────────┘
+</div>
+
+<h4>4.4.3.2 Frontend Architecture (HTML + JS + CSS)</h4>
+<p><span class="badge">Frontend</span> Built as a <strong>pure vanilla JavaScript SPA</strong> with no framework dependencies:</p>
+<ul>
+  <li><strong>HTML</strong> (index.html): Single-page template with all UI elements and dialog DOM structures</li>
+  <li><strong>CSS</strong> (style.css): ~1607 lines, Flexbox layout, responsive design</li>
+  <li><strong>JavaScript</strong> (app.js): ~3847 lines, IIFE module pattern:
+    <ul>
+      <li>API layer: <code>api()</code> and <code>apiUpload()</code> wrapping fetch</li>
+      <li>Tab management: load, switch, drag-to-reorder, right-click menu, CRUD</li>
+      <li>Tree menu: render, expand/collapse, node selection, right-click menu</li>
+      <li>Editor: execCommand operations, paste handling (auto image upload), link clicking</li>
+      <li>Search: parameter construction, result rendering, navigation</li>
+      <li>Other: backup progress polling, index status polling, font config, column width drag</li>
+    </ul>
+  </li>
+</ul>
+
+<h4>4.4.3.3 Backend Architecture (Python / Flask)</h4>
+<p><span class="badge">Backend</span> Built on the <strong>Flask lightweight web framework</strong>:</p>
+<ul>
+  <li><strong>Route Layer</strong>: @app.route decorators defining RESTful API endpoints, returning JSON or HTML templates</li>
+  <li><strong>Business Logic</strong>: Pure functions (no class encapsulation), including menu operations, index building, OCR scheduling</li>
+  <li><strong>Data Access</strong>:
+    <ul>
+      <li>File system: HTML content files (<code>content/*.html</code>), images (<code>images/</code>), menu JSON (<code>menu.json</code>)</li>
+      <li>SQLite: <code>common.db</code> (config) / <code>index_db/*.db</code> (search index)</li>
+    </ul>
+  </li>
+  <li><strong>Design Pattern</strong>: Functional programming style + modular organization, minimal helper classes (<code>OCRProcessPool</code>)</li>
+</ul>
+
+<h4>4.4.3.4 Thread/Process Model</h4>
+
+<div class="arch-box">
+  <div>
+    <h4>🔹 Flask Main Thread</h4>
+    <p>Single process + <code>threaded=True</code> mode, each HTTP request handled by a thread pool thread. Handles all synchronous REST API responses. Also runs the SocketIO event loop for real-time sync.</p>
+  </div>
+  <div>
+    <h4>🔸 Background Thread Pool</h4>
+    <p>Daemon threads created via <code>_run_in_background()</code> for index building, index updates, backup packaging, etc. Non-blocking to main thread.</p>
+  </div>
+  <div>
+    <h4>🔹 OCR Process Pool</h4>
+    <p>Created via <code>multiprocessing.Process</code>, each process holds one independent PaddleOCR instance, avoiding GIL limitations and fork safety issues.</p>
+  </div>
+  <div>
+    <h4>🔸 ThreadPoolExecutor</h4>
+    <p>Used for parallel menu item indexing (<code>--workers-menu</code> controls concurrency). Shared OCR process pool integration.</p>
+  </div>
+</div>
+
+<h4>4.4.3.5 Inter-Process Communication</h4>
+<table>
+  <tr><th>Communication Pair</th><th>Mechanism</th><th>Description</th></tr>
+  <tr>
+    <td>Flask Main → OCR Pool</td>
+    <td><code>multiprocessing.Queue</code></td>
+    <td>Main thread submits OCR tasks via <code>task_queue.put((task_id, image_path))</code></td>
+  </tr>
+    <tr>
+      <td>Windows Compatibility</td>
+      <td>Limit workers=1</td>
+      <td>Windows lacks os.fork(); multiprocessing behaves differently; limiting to single process avoids issues.</td>
+    </tr>
+    <tr>
+      <td>OCR Model Selection</td>
+      <td><code>--mobile-ocr</code> flag / platform auto-detect</td>
+      <td>Windows defaults to Mobile model for compatibility; Linux uses Server model for higher accuracy. Both specify <code>ocr_version="PP-OCRv5"</code>; the mobile/server variant is selected via <code>text_detection_model_name</code> / <code>text_recognition_model_name</code></td>
+    </tr>
+</table>
+
+<h4>4.4.3.6 Error Handling</h4>
+<table>
+  <tr><th>Scenario</th><th>Handling</th></tr>
+  <tr><td>OCR model load failure</td><td>Log error, process exits, main server unaffected</td></tr>
+  <tr><td>OCR single image timeout</td><td>Skipped after <code>batch_timeout</code> (default 300s), returns empty string</td></tr>
+  <tr><td>OCR process hang</td><td>Main thread marks skip after timeout, terminate() on shutdown join timeout</td></tr>
+  <tr><td>SQLite operation error</td><td>try/finally ensures connection close; caller logs error</td></tr>
+  <tr><td>File I/O error</td><td>log_error() writes to file and console, does not interrupt main flow</td></tr>
+  <tr><td>Ctrl+C interrupt</td><td>Set <code>_shutdown_requested</code> event → worker threads exit → OCR pool shutdown → process terminate</td></tr>
+  <tr><td>Invalid regex</td><td>Returns HTTP 400 + error message, frontend shows error dialog</td></tr>
+  <tr><td>PaddleX/PaddleOCR C++ logging</td><td>Env vars (GLOG_*, FLAGS_*) suppress framework logs; <code>suppress_stdout_stderr</code> context manager redirects at FD level</td></tr>
+</table>
+
+<h4>4.4.3.7 Key Design Decisions</h4>
+<table>
+  <tr><th>Decision</th><th>Choice</th><th>Rationale</th></tr>
+  <tr><td>OCR Parallelism</td><td>Multi-process (not multi-thread)</td><td>PaddleOCR inference is compute-intensive; threading is GIL-limited. Multi-process leverages all CPU cores.</td></tr>
+  <tr><td>Search Index Storage</td><td>SQLite, one .db per Tab</td><td>Avoids single-file lock contention; WAL mode supports read/write concurrency; no additional DB service needed.</td></tr>
+  <tr><td>Content Storage</td><td>File system (HTML files)</td><td>Stored directly as HTML — no serialization/deserialization needed; easy to debug and export.</td></tr>
+  <tr><td>Frontend Framework</td><td>Vanilla JS (no framework)</td><td>Lightweight, zero dependencies, fast loading; project complexity manageable with native JS.</td></tr>
+  <tr><td>Index Build Strategy</td><td>Batch INSERT (not per-item)</td><td>Avoids SQLite write contention: collect all results first, then batch INSERT in single thread.</td></tr>
+  <tr><td>Windows Compatibility</td><td>Limit workers=1</td><td>Windows lacks os.fork(); multiprocessing behaves differently; limiting to single process avoids issues.</td></tr>
+  <tr><td>OCR Model Selection</td><td><code>--mobile-ocr</code> flag / platform auto-detect</td><td>Windows defaults to Mobile model for compatibility; Linux uses Server model for higher accuracy. Both specify <code>ocr_version="PP-OCRv5"</code>; the mobile/server variant is selected via <code>text_detection_model_name</code> / <code>text_recognition_model_name</code></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h3 id="sec4-4">4.4.4 Key Technical Design</h3>
+
+<h4>4.4.4.1 OCR Image Text Recognition</h4>
+<p><span class="badge badge-green">Technology</span> Based on <strong>PaddleOCR</strong> open-source OCR engine:</p>
+<ul>
+  <li><strong>Models</strong>: Based on the unified <code>ocr_version="PP-OCRv5"</code> framework. The <code>--mobile-ocr</code> flag selects the variant:
+    <ul>
+      <li><strong>Mobile model</strong> (<code>--mobile-ocr true</code>, Windows default): <code>PP-OCRv5_mobile_det</code> (text detection) + <code>PP-OCRv5_mobile_rec</code> (text recognition) + PP-LCNet_x1_0_doc_ori (orientation) + UVDoc (document correction). Lower memory footprint, suitable for resource-constrained environments</li>
+      <li><strong>Server model</strong> (<code>--mobile-ocr false</code>, Linux default): <code>PP-OCRv5_server_det</code> (text detection) + <code>PP-OCRv5_server_rec</code> (text recognition) + PP-LCNet_x1_0_doc_ori (orientation) + UVDoc (document correction). Higher accuracy with greater memory usage</li>
+    </ul>
+  </li>
+  <li><strong>Initialization</strong>: Each OCR worker creates an independent <code>PaddleOCR</code> instance in <code>_ocr_worker_init()</code>, configured with <code>lang='ch'</code>, <code>device='cpu'</code>. At startup, it reads <code>os.environ['OCR_MOBILE']</code> to select mobile or server model parameters</li>
+  <li><strong>Flow</strong>:
+    <ol>
+      <li><code>extract_text_from_html_images()</code> scans <code>&lt;img&gt;</code> tags in HTML</li>
+      <li>Supports three image sources: URL reference (<code>/uploads/&lt;tab&gt;/images/</code>), relative path, Base64 inline</li>
+      <li>Base64 images decoded to temporary PNG files</li>
+      <li>All image paths submitted to OCRProcessPool.predict_batch()</li>
+      <li>Each image enters task queue → OCR processes → result queue returns</li>
+      <li>All recognized text collected and merged into a string</li>
+    </ol>
+  </li>
+  <li><strong>Timeout</strong>: Per-image timer from start of processing; skipped if exceeds <code>batch_timeout</code> (default 300s)</li>
+  <li><strong>Model Cache</strong>: Stored in <code>models/ocr/official_models/</code>, configured via <code>PADDLE_PDX_CACHE_HOME</code> env var</li>
+</ul>
+
+<h4>4.4.4.2 Full-Text Index Engine</h4>
+<p><span class="badge badge-green">Technology</span> Based on <strong>SQLite</strong> built-in FTS capabilities:</p>
+
+<h4>Index DB Schema (one .db per Tab):</h4>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>menu_item_id</td><td>TEXT PK</td><td>Menu item UUID</td></tr>
+  <tr><td>label</td><td>TEXT NOT NULL</td><td>Menu item name</td></tr>
+  <tr><td>content_text</td><td>TEXT DEFAULT ''</td><td>Plain text (HTML stripped) + OCR recognized text</td></tr>
+  <tr><td>menu_path</td><td>TEXT NOT NULL</td><td>Full path (Tab/Parent/Child)</td></tr>
+</table>
+
+<h4>Index Build Flow:</h4>
+<ol>
+  <li><strong>Full Index</strong> <code>index_tab()</code>:
+    <ul>
+      <li>Traverse menu tree, flatten to list</li>
+      <li>Parallel processing per item (ThreadPoolExecutor)</li>
+      <li>Each item: read HTML → strip tags → OCR image text → collect results</li>
+      <li>Single-thread batch INSERT to SQLite (avoids write contention)</li>
+    </ul>
+  </li>
+  <li><strong>Incremental Index</strong> <code>update_item_in_index()</code>:
+    <ul>
+      <li>Executed in background thread after content save</li>
+      <li>Single item: DELETE + INSERT OR REPLACE</li>
+    </ul>
+  </li>
+  <li><strong>Path Update</strong> <code>update_item_path_in_index()</code> / <code>update_item_meta_in_index()</code>:
+    <ul>
+      <li>Only updates path/label on move or rename, no re-OCR</li>
+    </ul>
+  </li>
+</ol>
+
+<h4>Search Implementation:</h4>
+<ul>
+  <li><strong>Plain Search (simple mode)</strong>: SQL <code>LIKE '%query%'</code> matching label and content_text, max 50 results</li>
+  <li><strong>Plain Search (OR/AND/Exclude modes)</strong>: Full table scan, Python row-by-row filtering:
+    <ul>
+      <li><code>aaa | bbb | ccc</code> — OR mode, match any keyword (<code>|</code> separator)</li>
+      <li><code>aaa bbb ccc</code> or <code>aaa && bbb && ccc</code> — AND mode, all keywords must match (space or <code>&&</code> separator)</li>
+      <li><code>aaa ^ bbb</code> — Exclude mode, term before <code>^</code> must exist, term after must not exist</li>
+    </ul>
+  </li>
+  <li><strong>Regex Search</strong>: Full table scan, Python <code>re.compile().search()</code> row by row, supports <code>|</code> syntax</li>
+  <li><strong>Snippet</strong>: <code>make_snippet()</code> extracts 40-character context around match position</li>
+  <li><strong>Scope</strong>: Current Tab or all Tabs (iterates index_db/*.db)</li>
+</ul>
+
+<h4>4.4.4.3 Common Database (common.db) Schema</h4>
+
+<h4>Table: tab_order</h4>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>tab_name</td><td>TEXT PK</td><td>KB name</td></tr>
+  <tr><td>sort_order</td><td>INTEGER NOT NULL</td><td>Sort order</td></tr>
+</table>
+
+<h4>Table: tab_kb_visibility</h4>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>tab_name</td><td>TEXT PK</td><td>KB name</td></tr>
+  <tr><td>visible</td><td>INTEGER NOT NULL DEFAULT 1</td><td>Visibility (1=visible, 0=hidden)</td></tr>
+  <tr><td>is_active</td><td>INTEGER NOT NULL DEFAULT 0</td><td>Currently selected Tab (1=active)</td></tr>
+</table>
+
+<h4>Table: tab_current_item</h4>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>tab_name</td><td>TEXT PK</td><td>KB name</td></tr>
+  <tr><td>current_item_id</td><td>TEXT NOT NULL</td><td>Currently editing menu item ID</td></tr>
+  <tr><td>scroll_top</td><td>INTEGER NOT NULL DEFAULT 0</td><td>Scroll position</td></tr>
+</table>
+
+<h4>Table: font_config</h4>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>id</td><td>INTEGER PK</td><td>Fixed to 1 (single row config)</td></tr>
+  <tr><td>font_family</td><td>TEXT NOT NULL</td><td>Font name</td></tr>
+  <tr><td>font_size</td><td>TEXT NOT NULL</td><td>Font size (1-7)</td></tr>
+  <tr><td>updated_at</td><td>TEXT</td><td>Update timestamp</td></tr>
+</table>
+
+<h4>Table: system_config</h4>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>id</td><td>INTEGER PK AUTO</td><td>Auto-increment ID</td></tr>
+  <tr><td>name</td><td>TEXT UNIQUE</td><td>Config key (e.g. 'version')</td></tr>
+  <tr><td>value</td><td>TEXT</td><td>Config value</td></tr>
+</table>
+
+<h4>4.4.4.4 File System Storage</h4>
+<table>
+  <tr><th>Path Pattern</th><th>Purpose</th><th>Format</th></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/menu.json</code></td><td>Tree menu structure</td><td>JSON nested array</td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/menu.js</code></td><td>Frontend menu data</td><td>JS variable <code>var MENU_DATA = ...</code></td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/content/&lt;uuid&gt;.html</code></td><td>Entry content</td><td>HTML fragment</td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/images/&lt;filename&gt;</code></td><td>Uploaded images</td><td>PNG/JPG</td></tr>
+  <tr><td><code>data/mybase/&lt;tab&gt;/index.html</code></td><td>Standalone export page</td><td>Complete HTML</td></tr>
+  <tr><td><code>data/db/common.db</code></td><td>Common config database</td><td>SQLite</td></tr>
+  <tr><td><code>data/db/index_db/&lt;tab&gt;.db</code></td><td>Search index database</td><td>SQLite (WAL)</td></tr>
+</table>
+
+<h4>4.4.4.5 Menu Data Structure (menu.json)</h4>
+<pre><code>[
+  {
+    "id": "uuid-string",
+    "label": "Entry Name",
+    "children": [                  // child menu array
+      {
+        "id": "uuid-string",
+        "label": "Sub Entry",
+        "style": {                 // optional custom style
+          "icon": "📁",
+          "fontFamily": "Arial",
+          "fontSize": "14px",
+          "color": "#e74c3c",
+          "bgColor": "#f9f9f9",
+          "bold": true
+        },
+        "children": []
+      }
+    ]
+  }
+]</code></pre>
+
+<h4>4.4.4.6 Data Flow: Content Save → Index → Standalone Export</h4>
+<div class="diagram">
+  Save content (editor.innerHTML)
+       │
+       ▼
+  save_content(tab, item_id, html)
+       ├── Write content/{item_id}.html
+       │
+       ├── _run_in_background(update_item_in_index)
+       │    ├── strip_html_tags(html) → plain text
+       │    ├── extract_text_from_html_images(html)
+       │    │    ├── Scan &lt;img&gt; tags
+       │    │    ├── OCR recognition (process pool)
+       │    │    └── Return recognized text
+       │    ├── Merge text
+       │    └── DELETE + INSERT INTO item_index
+       │
+       └── generate_standalone_html(tab)
+            ├── Read all content/*.html
+            ├── Serialize to JSON
+            └── Write index.html
+</div>
+
+<!-- ============================================================ -->
+<h2 id="sec5">4.5 TODO: Future Features</h2>
+
+<table>
+  <tr><th>#</th><th>Feature</th><th>Description</th><th>Priority</th></tr>
+  <tr><td>1</td><td>User Login & Access Control</td><td>Multi-user login, password protection, read/write permissions</td><td>High</td></tr>
+  <tr><td>2</td><td>Markdown Editing Mode</td><td>Add Markdown edit/preview dual mode alongside rich text</td><td>Medium</td></tr>
+  <tr><td>3</td><td>Online PDF/Office Preview</td><td>Attachment upload and online preview (PDF, Word, Excel)</td><td>Medium</td></tr>
+  <tr><td>4</td><td>KB Import</td><td>Import from Markdown files, ZIP archives, Evernote exports, etc.</td><td>Medium</td></tr>
+  <tr><td>5</td><td>Tag System</td><td>Add tags to entries for multi-dimensional categorization</td><td>Medium</td></tr>
+  <tr><td>6</td><td>Version History</td><td>Entry edit history with rollback support</td><td>Low</td></tr>
+  <tr><td>7</td><td>Search Highlight</td><td>Highlight matched keywords in search results and editor</td><td>Low</td></tr>
+  <tr><td>8</td><td>Internationalization (i18n)</td><td>Multi-language UI (English/Chinese switching)</td><td>Low</td></tr>
+  <tr><td>9</td><td>Mobile Adaptation</td><td>Touch-friendly interface for mobile browsers</td><td>Low</td></tr>
+  <tr><td>10</td><td>Web Clipper</td><td>Browser extension to save web pages into KB with one click</td><td>Low</td></tr>
+  <tr><td>11</td><td>Image Hosting Integration</td><td>Support external image hosting (OSS, MinIO, etc.)</td><td>Low</td></tr>
+  <tr><td>12</td><td>More AI Capabilities</td><td>Integrate LLMs for smart summarization, Q&A, content recommendation</td><td>Low</td></tr>
+  <tr><td>13</td><td>WebSocket Real-Time Sync</td><td><span class="badge badge-green">IMPLEMENTED</span> Real-time content sync across multiple clients</td><td>-</td></tr>
+  <tr><td>14</td><td>Docker Deployment</td><td>Provide Dockerfile and docker-compose for easy deployment</td><td>Low</td></tr>
+</table>
+
+<div class="signature">
+  <p>Design Document &mdash; KBase</p>
+  <p>Jimmy Lang by Opencode AI</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px">2026-06-09 &nbsp;|&nbsp; Email: jimmylang1974@126.com</p>
+</div>
+
+</div>
+</body>
+</html>

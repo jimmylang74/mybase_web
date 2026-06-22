@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n-title-template="page_title" data-version="{{ version }}">知识库KBase {{ version }}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+    <div id="tab-bar">
+      <span id="btn-sidebar-toggle" title="Toggle sidebar">☰</span>
+      <span id="tab-scroll-left" class="tab-scroll-btn">&#x2039;</span>
+      <div id="tabs"></div>
+      <span id="tab-scroll-right" class="tab-scroll-btn">&#x203A;</span>
+      <span id="user-indicator" style="display:none;font-size:13px;cursor:default;padding:0 8px;"></span>
+      <div id="btn-login" title="Login">🔑</div>
+      <div id="tab-settings" title="Settings">⚙</div>
+      <div id="tab-help" title="Help">?</div>
+    </div>
+  <div id="main-content">
+    <div id="sidebar-backdrop" style="display:none"></div>
+    <div id="sidebar">
+      <div id="tree-toolbar">
+        <div id="toolbar-dropdown-wrap">
+          <button id="btn-toolbar-menu" title="Menu"><span>☰ Menu</span><span id="btn-toolbar-version">{{ version }}</span></button>
+          <div id="toolbar-dropdown" style="display:none">
+            <div class="dropdown-item" id="dd-collapse-all" data-i18n="collapse_all">全部收起</div>
+            <div class="dropdown-item" id="dd-expand-all" data-i18n="expand_all">全部展开</div>
+            <div class="dropdown-sep"></div>
+            <div class="dropdown-item" id="dd-add-root" data-i18n="add_root_menu">新增根菜单项</div>
+          </div>
+        </div>
+      </div>
+      <div id="tree-container"></div>
+    </div>
+    <div id="splitter"></div>
+    <div id="editor-area">
+      <div id="editor-toolbar">
+        <div class="toolbar-row toolbar-row-1">
+          <select id="font-family" title="Font Family">
+            <option value="Arial">Arial</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Courier New">Courier New</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Verdana">Verdana</option>
+            <option value="SimSun">SimSun (宋体)</option>
+            <option value="Microsoft YaHei">Microsoft YaHei</option>
+          </select>
+          <select id="font-size" title="Font Size">
+            <option value="1">Small</option>
+            <option value="3">Normal</option>
+            <option value="5" selected>Large</option>
+            <option value="7">X-Large</option>
+          </select>
+          <button class="tool-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+          <button class="tool-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+          <button class="tool-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+          <button class="tool-btn" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+          <span class="color-btn-wrap">
+            <button class="tool-btn" id="btn-apply-color" title="Text Color">
+              <span class="color-swatch" id="color-swatch" style="background:#ff0000;display:inline-block;width:16px;height:16px;border-radius:2px;vertical-align:middle"></span>
+            </button>
+            <button class="color-arrow" id="btn-color-arrow" title="Choose Color">▾</button>
+            <input type="color" id="text-color" value="#ff0000" class="color-input-hidden">
+          </span>
+          <span class="color-btn-wrap">
+            <button class="tool-btn" id="btn-apply-bgcolor" title="Text Background Color">
+              <span class="color-swatch" id="bgcolor-swatch" style="background:#ffff00;display:inline-block;width:16px;height:16px;border-radius:2px;vertical-align:middle"></span>
+            </button>
+            <button class="color-arrow" id="btn-bgcolor-arrow" title="Choose Background Color">▾</button>
+            <input type="color" id="text-bgcolor" value="#ffff00" class="color-input-hidden">
+          </span>
+          <button class="tool-btn" id="btn-insert-link" title="Insert Link">🔗</button>
+          <button class="tool-btn" id="btn-insert-table" title="Insert Table">⊞ Table</button>
+          <button class="tool-btn" id="btn-insert-mermaid" title="Insert Mermaid Diagram">📊 Mermaid</button>
+          <span class="separator"></span>
+        </div>
+        <div class="toolbar-row toolbar-row-2">
+          <label class="search-checkbox-label" title="Search all knowledge bases">
+            <input type="checkbox" id="search-global"> <span data-i18n="global_search">全局搜索</span>
+          </label>
+          <label class="search-checkbox-label" title="Use regular expression">
+            <input type="checkbox" id="search-regex"> <span data-i18n="regex">正则</span>
+          </label>
+          <input type="text" id="search-input" class="search-input" data-i18n-placeholder="search_placeholder" placeholder="输入搜索关键词..." title="Search">
+          <button class="tool-btn" id="btn-search" title="Search">🔍 <span data-i18n="search">搜索</span></button>
+          <button class="tool-btn" id="btn-save" title="Save Content">💾 Save</button>
+          <button class="tool-btn" id="btn-new-tab" title="New Tab" data-i18n="new_kb">新增知识库</button>
+          <button class="tool-btn" id="btn-backup" data-i18n-title="backup_kb" title="备份知识库"{% if single_user %} style="display:inline-flex"{% endif %}>📦 <span data-i18n="backup_kb">备份知识库</span></button>
+          <div class="kb-selector-wrap">
+            <label class="kb-all-checkbox-label" id="kb-all-label" data-i18n-title="all_kb" title="全部知识库">
+              <input type="checkbox" id="kb-all-checkbox">
+              <span class="kb-all-text" data-i18n="all_kb">全部知识库</span>
+            </label>
+            <span class="kb-dropdown-arrow" id="kb-dropdown-arrow">▾</span>
+            <div id="kb-dropdown" style="display:none"></div>
+          </div>
+          <span id="indexing-status" style="display:none"></span>
+        </div>
+      </div>
+      <!-- Formula Bar for Excel-like calculations -->
+      <div id="formula-bar" style="display:none">
+        <div id="formula-bar-cell-ref">A1</div>
+        <div id="formula-bar-formula" contenteditable="true" data-placeholder="Enter formula (e.g. =SUM(A2:A10) or use header names)"></div>
+        <div id="formula-bar-status" title="HyperFormula engine status">✓</div>
+        <div id="formula-dropdown" style="display:none"></div>
+      </div>
+      <div id="mobile-sidebar-hint">☰ 点击此处打开菜单</div>
+      <div id="editor" contenteditable="true">
+        <p>Select a menu item to edit its content...</p>
+      </div>
+      <div id="editor-status">No item selected</div>
+    </div>
+  </div>
+  <div id="search-splitter" style="display:none"></div>
+  <div id="search-results-panel" style="display:none">
+    <div id="search-results-header">
+      <span id="search-results-title" data-i18n="search_results">搜索结果</span>
+      <span id="search-results-close" data-i18n-title="close" title="关闭">✕</span>
+    </div>
+    <div id="search-results-column-headers" style="display:none">
+      <span class="col-tab"><span data-i18n="kb">知识库</span><span class="col-resize-handle"></span></span>
+      <span class="col-path" data-i18n="path">路径</span>
+      <span class="col-snippet"><span data-i18n="content_summary">内容简述</span><span class="col-resize-handle"></span></span>
+    </div>
+    <div id="search-results-body"></div>
+  </div>
+</div>
+
+<!-- Editor Context Menu -->
+<div id="context-menu">
+  <div class="ctx-item" id="ctx-insert-table" data-i18n="insert_table">Insert Table</div>
+  <div class="ctx-item" id="ctx-insert-mermaid" data-i18n="insert_mermaid">Insert Mermaid Chart</div>
+  <div class="ctx-item" id="ctx-insert-link" data-i18n="insert_link">Insert Link</div>
+  <div class="ctx-separator ctx-mermaid-sep" style="display:none"></div>
+  <div class="ctx-item ctx-mermaid-item" id="ctx-mermaid-save-png" data-i18n="save_as_png" style="display:none">Save As PNG...</div>
+  <div class="ctx-separator ctx-table-sep" style="display:none"></div>
+  <div class="ctx-item ctx-table-item" data-table-action="insert-col" data-i18n="insert_column" style="display:none">插入列</div>
+  <div class="ctx-item ctx-table-item" data-table-action="insert-row" data-i18n="insert_row" style="display:none">插入行</div>
+  <div class="ctx-separator ctx-table-sep" style="display:none"></div>
+  <div class="ctx-item ctx-table-item" data-table-action="delete-col" data-i18n="delete_column" style="display:none">删除列</div>
+  <div class="ctx-item ctx-table-item" data-table-action="delete-row" data-i18n="delete_row" style="display:none">删除行</div>
+  <div class="ctx-separator ctx-table-sep" style="display:none"></div>
+  <div class="ctx-item ctx-table-item" id="ctx-cell-format" data-i18n="cell_format" style="display:none">设置单元格格式</div>
+</div>
+
+<!-- Copy Progress Indicator -->
+<div id="copy-progress" style="display:none; position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:9999; background:#2c3e50; color:#fff; padding:8px 20px; border-radius:6px; font-size:13px; box-shadow:0 2px 10px rgba(0,0,0,0.3);"></div>
+
+<!-- Tree Right-Click Context Menu -->
+<div id="tree-context-menu" style="display:none">
+  <div class="tree-ctx-item" data-action="add-child" data-i18n="add_child_menu">新增子菜单项</div>
+  <div class="tree-ctx-item" data-action="add-sibling" data-i18n="add_menu_item">新增菜单项</div>
+  <div class="tree-ctx-sep"></div>
+  <div class="tree-ctx-item" data-action="move-up" data-i18n="move_up">上移</div>
+  <div class="tree-ctx-item" data-action="move-down" data-i18n="move_down">下移</div>
+  <div class="tree-ctx-item" data-action="move-to" data-i18n="move_to">移动到...</div>
+  <div class="tree-ctx-sep"></div>
+  <div class="tree-ctx-item" data-action="copy" data-i18n="copy">拷贝</div>
+  <div class="tree-ctx-item" data-action="paste" data-i18n="paste">粘贴</div>
+  <div class="tree-ctx-sep"></div>
+  <div class="tree-ctx-item" data-action="edit" data-i18n="edit">编辑</div>
+  <div class="tree-ctx-item" data-action="custom-style" data-i18n="custom_style">定制样式</div>
+  <div class="tree-ctx-item tree-ctx-export" data-action="export"><span data-i18n="export">导出</span>
+    <div class="ctx-submenu">
+      <div class="ctx-submenu-item" data-action="export-tree-pdf">PDF</div>
+      <div class="ctx-submenu-item" data-action="export-tree-zip">zip</div>
+    </div>
+  </div>
+  <div class="tree-ctx-sep"></div>
+  <div class="tree-ctx-item" data-action="delete" data-i18n="delete">删除</div>
+</div>
+
+<!-- Tab Right-Click Context Menu -->
+<div id="tab-context-menu" style="display:none">
+  <div class="tab-ctx-item" data-action="edit-tab" data-i18n="edit">编辑</div>
+  <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item tab-ctx-export" data-action="export"><span data-i18n="export">导出</span>
+    <div class="ctx-submenu">
+      <div class="ctx-submenu-item" data-action="export-tab-pdf">PDF</div>
+      <div class="ctx-submenu-item" data-action="export-tab-zip">zip</div>
+    </div>
+  </div>
+  <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item" id="tab-ctx-set-owner" data-action="set-owner" data-i18n="set_owner" style="display:none">设置Owner</div>
+  <div class="tab-ctx-sep" id="tab-ctx-owner-sep" style="display:none"></div>
+  <div class="tab-ctx-item" data-action="set-password" data-i18n="set_password">加密</div>
+  <div class="tab-ctx-item" data-action="change-password" data-i18n="change_password" style="display:none">修改密码</div>
+  <div class="tab-ctx-item" data-action="remove-password" data-i18n="remove_password" style="display:none">解密</div>
+  <div class="tab-ctx-sep" id="tab-ctx-pw-sep" style="display:none"></div>
+  <div class="tab-ctx-item" id="tab-ctx-toggle-public-edit" data-action="toggle-public-edit">解锁可编辑</div>
+  <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item" data-action="close-tab" data-i18n="close">隐藏</div>
+  <div class="tab-ctx-sep"></div>
+  <div class="tab-ctx-item" data-action="delete-tab" data-i18n="delete">删除</div>
+</div>
+
+<!-- Owner Select Dialog -->
+<div id="owner-dialog" style="display:none">
+  <div id="owner-dialog-content">
+    <div id="owner-dialog-header" data-i18n="set_owner">设置Owner</div>
+    <div id="owner-dialog-body">
+      <div class="owner-row">
+        <label data-i18n="owner">Owner:</label>
+        <select id="owner-select" class="owner-select"></select>
+      </div>
+    </div>
+    <div id="owner-dialog-footer">
+      <button id="owner-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="owner-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dialog Overlay -->
+<div id="dialog-overlay" style="display:none">
+  <div id="dialog-box">
+    <div id="dialog-title"></div>
+    <div id="dialog-content"></div>
+    <div id="dialog-buttons">
+      <button id="dialog-ok">OK</button>
+      <button id="dialog-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Style Dialog -->
+<div id="style-dialog" style="display:none">
+  <div id="style-dialog-content">
+    <div id="style-dialog-header" data-i18n="custom_style">定制样式</div>
+    <div id="style-dialog-body">
+      <div class="style-row">
+        <label data-i18n="icon_emoji">图标 (Emoji):</label>
+        <div class="style-icon-wrapper">
+          <input type="text" id="style-icon" class="style-input-short" data-i18n-placeholder="icon_placeholder" placeholder="如: 📁 🔖">
+          <button type="button" id="style-icon-btn" class="style-icon-btn" title="选择图标">📁</button>
+          <label class="style-check-label icon-after-label"><input type="checkbox" id="style-icon-after"> <span>图标在后</span></label>
+        </div>
+      </div>
+      <div class="style-row">
+        <label data-i18n="font">字体:</label>
+        <select id="style-font-family">
+          <option value="" data-i18n="default">默认</option>
+          <option value="Arial">Arial</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Verdana">Verdana</option>
+          <option value="SimSun">SimSun (宋体)</option>
+          <option value="Microsoft YaHei">Microsoft YaHei (微软雅黑)</option>
+          <option value="KaiTi">KaiTi (楷体)</option>
+        </select>
+      </div>
+      <div class="style-row">
+        <label data-i18n="font_size">字号:</label>
+        <select id="style-font-size">
+          <option value="" data-i18n="default">默认</option>
+          <option value="12px">12px</option>
+          <option value="13px">13px</option>
+          <option value="14px">14px</option>
+          <option value="15px">15px</option>
+          <option value="16px">16px</option>
+          <option value="18px">18px</option>
+          <option value="20px">20px</option>
+          <option value="24px">24px</option>
+        </select>
+      </div>
+      <div class="style-row">
+        <label data-i18n="text_color">文字颜色:</label>
+        <input type="color" id="style-color" value="#000000">
+        <button class="style-reset-btn" data-target="color" data-i18n="reset">重置</button>
+      </div>
+      <div class="style-row">
+        <label data-i18n="bg_color">背景颜色:</label>
+        <input type="color" id="style-bg-color" value="#ffffff">
+        <button class="style-reset-btn" data-target="bg-color" data-i18n="reset">重置</button>
+      </div>
+      <div class="style-row style-row-checkboxes">
+        <label data-i18n="font_style">字体样式:</label>
+        <label class="style-check-label"><input type="checkbox" id="style-bold"> <span data-i18n="bold">加粗</span></label>
+        <label class="style-check-label"><input type="checkbox" id="style-underline"> <span data-i18n="underline">下划线</span></label>
+        <label class="style-check-label"><input type="checkbox" id="style-strikethrough"> <span data-i18n="strikethrough">删除线</span></label>
+      </div>
+    </div>
+    <div id="style-dialog-footer">
+      <button id="style-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="style-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+      <button id="style-btn-reset" class="style-btn style-btn-danger" style="margin-left:auto" data-i18n="reset_style">重置样式</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cell Format Dialog -->
+<div id="cell-format-dialog" style="display:none">
+  <div id="cell-format-dialog-content">
+    <div id="cell-format-dialog-header" data-i18n="cell_format_title">设置单元格格式</div>
+    <div id="cell-format-dialog-body">
+      <div id="cell-format-count" style="font-size:12px;color:#666;margin-bottom:8px;display:none"></div>
+      <div class="style-row">
+        <label data-i18n="bg_color">背景颜色:</label>
+        <input type="color" id="cell-format-bgcolor" value="#ffffff">
+        <button class="style-reset-btn" id="cell-format-bgcolor-reset" data-i18n="reset">重置</button>
+      </div>
+      <div class="style-row">
+        <label data-i18n="vertical_align">垂直对齐:</label>
+        <select id="cell-format-valign">
+          <option value="middle" selected data-i18n="align_middle">居中</option>
+          <option value="top" data-i18n="align_top">顶部</option>
+          <option value="bottom" data-i18n="align_bottom">底部</option>
+        </select>
+      </div>
+      <div class="style-row">
+        <label data-i18n="horizontal_align">水平对齐:</label>
+        <select id="cell-format-halign">
+          <option value="" data-i18n="default">默认</option>
+          <option value="left" data-i18n="align_left">左对齐</option>
+          <option value="center" data-i18n="align_center">居中</option>
+          <option value="right" data-i18n="align_right">右对齐</option>
+        </select>
+      </div>
+    </div>
+    <div id="cell-format-dialog-footer">
+      <button id="cell-format-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="cell-format-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Emoji Picker Dialog -->
+<div id="emoji-dialog" style="display:none">
+  <div id="emoji-dialog-content">
+    <div id="emoji-dialog-header">选择图标</div>
+    <div id="emoji-dialog-search">
+      <input type="text" id="emoji-search" placeholder="搜索 Emoji...">
+    </div>
+    <div id="emoji-dialog-body">
+    </div>
+    <div id="emoji-dialog-footer">
+      <button id="emoji-btn-close" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mermaid Sequence Diagram Insert Dialog -->
+<div id="mermaid-dialog">
+  <div id="mermaid-dialog-content">
+    <div id="mermaid-dialog-header">Insert Sequence/Class/Mindmap/Flow/Timeline/State chart:</div>
+    <div id="mermaid-dialog-body">
+      <div class="mermaid-dialog-hint">Enter Mermaid source code:</div>
+      <textarea id="mermaid-dialog-source" placeholder="sequenceDiagram&#10;    Alice->>John: Hello John, how are you?&#10;    John-->>Alice: Great!"></textarea>
+      <div id="mermaid-dialog-preview"></div>
+    </div>
+    <div id="mermaid-dialog-footer">
+      <button id="mermaid-btn-ok" class="style-btn style-btn-primary">Insert</button>
+      <span style="flex:1"></span>
+      <a id="mermaid-btn-help" href="https://mermaid.js.org/" target="_blank" title="Mermaid.js Documentation" style="font-size:12px;color:#888;text-decoration:none;padding:4px 10px;border:1px solid #ccc;border-radius:4px;cursor:pointer">Help</a>
+      <button id="mermaid-btn-cancel" class="style-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Color Picker Popup -->
+<div id="color-picker-popup" style="display:none">
+  <div id="color-picker-popup-content">
+    <div id="color-picker-popup-header" data-i18n="choose_color">选择颜色</div>
+    <div id="color-picker-popup-body">
+      <div class="cp-preset-label" data-i18n="quick_colors">常用颜色</div>
+      <div class="cp-preset-colors">
+        <div class="cp-color-swatch" data-color="#ffffff" title="White (白色)" style="background:#ffffff;border:1px solid #ccc;"></div>
+        <div class="cp-color-swatch" data-color="#000000" title="Black (黑色)" style="background:#000000;"></div>
+        <div class="cp-color-swatch" data-color="#ff0000" title="Red (红色)" style="background:#ff0000;"></div>
+        <div class="cp-color-swatch" data-color="#00ff00" title="Green (绿色)" style="background:#00ff00;"></div>
+        <div class="cp-color-swatch" data-color="#0000ff" title="Blue (蓝色)" style="background:#0000ff;"></div>
+        <div class="cp-color-swatch cp-color-transparent" data-color="transparent" title="Transparent (透明)">
+          <span class="cp-transparent-icon"></span>
+        </div>
+      </div>
+      <div class="cp-custom-row">
+        <input type="color" id="cp-custom-input" value="#ff0000">
+        <button type="button" id="cp-custom-btn" data-i18n="custom_color">自定义颜色...</button>
+      </div>
+    </div>
+    <div id="color-picker-popup-footer">
+      <button id="cp-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="cp-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Login Dialog -->
+<div id="login-dialog" style="display:none">
+  <div id="login-dialog-content">
+    <div id="login-dialog-header" data-i18n="login">用户登录</div>
+    <div id="login-dialog-body">
+      <div class="login-row">
+        <label data-i18n="username">用户名:</label>
+        <input type="text" id="login-username" class="login-input">
+      </div>
+      <div class="login-row">
+        <label data-i18n="password">密码:</label>
+        <input type="password" id="login-password" class="login-input">
+      </div>
+      <div id="login-error" class="login-error" style="display:none"></div>
+    </div>
+    <div id="login-dialog-footer">
+      <button id="login-btn-ok" class="style-btn style-btn-primary" data-i18n="login">登录</button>
+      <button id="login-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password Dialog -->
+<div id="change-password-dialog" style="display:none">
+  <div id="change-password-dialog-content">
+    <div id="change-password-dialog-header" data-i18n="change_password">修改密码</div>
+    <div id="change-password-dialog-body">
+      <div class="password-row">
+        <label data-i18n="new_password">新密码:</label>
+        <input type="password" id="change-pw-input" class="password-input">
+      </div>
+      <div class="password-row">
+        <label data-i18n="confirm_password">确认密码:</label>
+        <input type="password" id="change-pw-confirm" class="password-input">
+      </div>
+      <div id="change-pw-error" class="password-error" style="display:none"></div>
+    </div>
+    <div id="change-password-dialog-footer">
+      <button id="change-pw-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="change-pw-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Dialog -->
+<div id="settings-dialog" style="display:none">
+  <div id="settings-dialog-content">
+    <div id="settings-dialog-header" data-i18n="settings">设置</div>
+    <div id="settings-dialog-body">
+      <div class="settings-row">
+        <label data-i18n="version">版本:</label>
+        <span id="settings-version">{{ version }}</span>
+      </div>
+      <div class="settings-row">
+        <label data-i18n="language">语言 / Language:</label>
+        <select id="settings-language">
+          <option value="zh-CN">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <div class="settings-sep"></div>
+      <div id="settings-user-section" style="display:none">
+        <div class="settings-row">
+          <label><span data-i18n="current_user">当前用户:</span></label>
+          <span id="settings-current-user"></span>
+        </div>
+        <div class="settings-row">
+          <button id="settings-btn-change-pw" class="style-btn" data-i18n="change_password">修改密码</button>
+          <button id="settings-btn-logout" class="style-btn" data-i18n="logout">退出登录</button>
+        </div>
+      </div>
+      <div id="settings-admin-section" style="display:none">
+        <div class="settings-sep"></div>
+        <div class="settings-section-title" data-i18n="admin_settings">管理员设置</div>
+        <div class="settings-sep"></div>
+        <div class="settings-section-title" data-i18n="user_management">用户管理</div>
+        <div id="settings-user-list"></div>
+        <div class="settings-row" id="settings-add-user-row">
+          <input type="text" id="settings-new-username" class="settings-input" placeholder="用户名" data-i18n-placeholder="username">
+          <input type="password" id="settings-new-password" class="settings-input" placeholder="密码" data-i18n-placeholder="password">
+          <button id="settings-btn-add-user" class="style-btn style-btn-primary" data-i18n="add_user">增加用户</button>
+        </div>
+        <div id="settings-user-msg" class="settings-msg" style="display:none"></div>
+      </div>
+    </div>
+    <div id="settings-dialog-footer">
+      <button id="settings-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="settings-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password Dialog -->
+<div id="password-dialog" style="display:none">
+  <div id="password-dialog-content">
+    <div id="password-dialog-header" data-i18n="set_password">设定密码</div>
+    <div id="password-dialog-body">
+      <div class="password-row">
+        <label data-i18n="password_label">密码:</label>
+        <input type="password" id="password-input" class="password-input">
+      </div>
+      <div id="password-confirm-row" class="password-row">
+        <label data-i18n="confirm_password_label">确认密码:</label>
+        <input type="password" id="password-confirm-input" class="password-input">
+      </div>
+      <div class="password-row" id="password-old-row" style="display:none">
+        <label data-i18n="old_password_label">原密码:</label>
+        <input type="password" id="password-old-input" class="password-input">
+      </div>
+      <div id="password-error" class="password-error" style="display:none"></div>
+    </div>
+    <div id="password-dialog-footer">
+      <button id="password-btn-ok" class="style-btn style-btn-primary" data-i18n="ok">确定</button>
+      <button id="password-btn-cancel" class="style-btn" data-i18n="cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Formula Bar for Excel-like calculations -->
+<div id="formula-bar" style="display:none">
+  <div id="formula-bar-cell-ref">A1</div>
+  <div id="formula-bar-formula" contenteditable="true" data-placeholder="Enter formula (e.g. =SUM(A2:A10) or use header names)"></div>
+  <div id="formula-bar-status" title="HyperFormula engine status">✓</div>
+  <div id="formula-dropdown" style="display:none"></div>
+</div>
+
+<script>var singleUserMode = {{ 'true' if single_user else 'false' }};</script>
+<script src="/static/socket.io.min.js"></script>
+<script src="/static/hyperformula.full.min.js"></script>
+<script src="/static/tesseract.js"></script>
+<script src="/static/mermaid.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+mybase.log
+data/
+__pycache__/
+nohup.out
+start_server.sh
+stop_server.sh
+python-3.10.11-amd64.exe
+
