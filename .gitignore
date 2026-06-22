@@ -3,4 +3,7 @@ __pycache__/
 data/
 mybase.log
 test.png
+.codegraph/
+.omo/
+
 

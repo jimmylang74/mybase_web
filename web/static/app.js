@@ -2019,7 +2019,9 @@
         const url = $('#dialog-link-url').value.trim();
         const text = $('#dialog-link-text').value.trim();
         if (!url) return true;
+        const scrollPos = editor.scrollTop;
         editor.focus();
+        editor.scrollTop = scrollPos;
 
         // Restore saved selection
         if (savedRange) {
@@ -2075,7 +2077,9 @@
       () => {
         const cols = parseInt($('#dialog-table-cols').value) || 3;
         const rows = parseInt($('#dialog-table-rows').value) || 3;
+        const scrollPos = editor.scrollTop;
         editor.focus();
+        editor.scrollTop = scrollPos;
 
         if (savedRange) {
           const sel = window.getSelection();
@@ -4337,7 +4341,9 @@
     const sel = window.getSelection();
     let range = savedRange;
     if (!range) {
+      const scrollPos = editor.scrollTop;
       editor.focus();
+      editor.scrollTop = scrollPos;
       if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
         range = sel.getRangeAt(0);
       } else {
