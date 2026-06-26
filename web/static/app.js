@@ -3387,6 +3387,7 @@
           })();
           break;
         }
+        case 'move-to':
           showMoveToDialog(id);
           break;
         case 'edit': {
