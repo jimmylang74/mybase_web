@@ -1245,6 +1245,12 @@
 
     header.appendChild(toggle);
     header.appendChild(label);
+    if (item.mtime) {
+      const mtimeSpan = document.createElement('span');
+      mtimeSpan.className = 'mtime';
+      mtimeSpan.textContent = item.mtime;
+      header.appendChild(mtimeSpan);
+    }
     if (style.fontFamily) label.style.fontFamily = style.fontFamily;
     if (style.fontSize) label.style.fontSize = style.fontSize;
     if (style.color) label.style.color = style.color;
