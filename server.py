@@ -3286,19 +3286,22 @@ def _auth_check_admin():
 def _get_item_mtime(tab_path, item):
     """Get the last-modified time of a menu item's content file.
 
-    Checks content/<id>.html first, then the item's href (legacy .qrich.html).
+    Checks content/<id>.html and content/<id>.html.enc first,
+    then the item's href (legacy .qrich.html) and href.enc.
     Returns a formatted time string or None.
     """
-    content_file = tab_path / 'content' / f"{item['id']}.html"
-    if content_file.exists():
-        mt = os.path.getmtime(content_file)
-        return datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M')
+    for suffix in ('.html', '.html.enc'):
+        content_file = tab_path / 'content' / f"{item['id']}{suffix}"
+        if content_file.exists():
+            mt = os.path.getmtime(content_file)
+            return datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M')
     href = item.get('href')
     if href:
-        href_path = tab_path / href
-        if href_path.exists():
-            mt = os.path.getmtime(href_path)
-            return datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M')
+        for suffix in ('', '.enc'):
+            href_path = tab_path / f"{href}{suffix}"
+            if href_path.exists():
+                mt = os.path.getmtime(href_path)
+                return datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M')
     return None
 
 
