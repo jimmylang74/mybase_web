@@ -298,6 +298,14 @@ body {
   white-space: nowrap;
 }
 
+.tree-node-header .mtime {
+  font-size: 10px;
+  color: #aaa;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
 .tree-children {
   padding-left: 20px;
 }

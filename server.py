@@ -3283,12 +3283,42 @@ def _auth_check_admin():
     return require_admin()
 
 
+def _get_item_mtime(tab_path, item):
+    """Get the last-modified time of a menu item's content file.
+
+    Checks content/<id>.html first, then the item's href (legacy .qrich.html).
+    Returns a formatted time string or None.
+    """
+    content_file = tab_path / 'content' / f"{item['id']}.html"
+    if content_file.exists():
+        mt = os.path.getmtime(content_file)
+        return datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M')
+    href = item.get('href')
+    if href:
+        href_path = tab_path / href
+        if href_path.exists():
+            mt = os.path.getmtime(href_path)
+            return datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M')
+    return None
+
+
+def _attach_mtime(tab_path, items):
+    """Recursively attach mtime to every menu item in the tree."""
+    for item in items:
+        item['mtime'] = _get_item_mtime(tab_path, item)
+        if 'children' in item and item['children']:
+            _attach_mtime(tab_path, item['children'])
+
+
 @app.route('/api/<tab>/menu')
 def get_menu(tab):
     _auth_check_read(tab)
     if not get_tab_path(tab):
         return jsonify({'error': 'Tab not found'}), 404
     menu = load_menu(tab)
+    tab_path = get_tab_path(tab)
+    if tab_path:
+        _attach_mtime(tab_path, menu)
     return jsonify(menu)
 
 
