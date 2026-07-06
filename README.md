@@ -96,7 +96,7 @@ pip install -r requirements.txt
 
 ```bash
 # 默认启动（端口 9999）
-python server.py
+python mybase.py
 ```
 
 启动后打开浏览器访问：http://localhost:9999
@@ -119,25 +119,25 @@ python server.py
 
 ```bash
 # 指定端口和数据目录
-python server.py --port 8080 --data /path/to/data
+python mybase.py --port 8080 --data /path/to/data
 
 # 启动时强制重建所有索引
-python server.py --force-index
+python mybase.py --force-index
 
 # 重建指定知识库索引 + 禁用 OCR
-python server.py --force-index my_kb --disable-ocr
+python mybase.py --force-index my_kb --disable-ocr
 
 # 单用户模式（免登录，默认以 admin 身份使用）
-python server.py --single-user
+python mybase.py --single-user
 
 # 低资源环境（减少并行数）
-python server.py --workers-ocr 2 --workers-menu 2
+python mybase.py --workers-ocr 2 --workers-menu 2
 ```
 
 ## 目录结构
 
 ```
-├── server.py              # 主服务器程序
+├── mybase.py              # 主服务器程序
 ├── main.py                # Cython 加载器
 ├── setup.py               # Cython 构建脚本
 ├── Makefile               # 构建/清理/打包脚本
@@ -220,7 +220,7 @@ A: 请确保已安装 paddlepaddle：`pip install paddlepaddle`
 A: CPU 模式下首次加载模型较慢是正常的。可调整 `--workers-ocr` 增加/减少进程数。
 
 **Q: 如何修改端口？**  
-A: 使用 `--port` 参数：`python server.py --port 8080`
+A: 使用 `--port` 参数：`python mybase.py --port 8080`
 
 **Q: 如何迁移数据？**  
 A: 拷贝整个 `data/` 目录，启动时用 `--data` 指定新路径即可。

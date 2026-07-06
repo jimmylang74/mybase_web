@@ -96,7 +96,7 @@ pip install -r requirements.txt
 
 ```bash
 # Default startup (port 9999)
-python server.py
+python mybase.py
 ```
 
 Open http://localhost:9999 in your browser.
@@ -118,22 +118,22 @@ Open http://localhost:9999 in your browser.
 
 ```bash
 # Custom port and data directory
-python server.py --port 8080 --data /path/to/data
+python mybase.py --port 8080 --data /path/to/data
 
 # Force rebuild all indexes on startup
-python server.py --force-index
+python mybase.py --force-index
 
 # Rebuild specific KB index + disable OCR
-python server.py --force-index my_kb --disable-ocr
+python mybase.py --force-index my_kb --disable-ocr
 
 # Low-resource environment
-python server.py --workers-ocr 2 --workers-menu 2
+python mybase.py --workers-ocr 2 --workers-menu 2
 ```
 
 ## Directory Structure
 
 ```
-├── server.py              # Main server program
+├── mybase.py              # Main server program
 ├── main.py                # Cython loader
 ├── setup.py               # Cython build script
 ├── Makefile               # Build / clean / package scripts
@@ -215,7 +215,7 @@ A: Install paddlepaddle: `pip install paddlepaddle`
 A: The first model load under CPU mode is normal. Adjust `--workers-ocr` to tune concurrency.
 
 **Q: How do I change the port?**  
-A: Use `--port`: `python server.py --port 8080`
+A: Use `--port`: `python mybase.py --port 8080`
 
 **Q: How do I migrate data?**  
 A: Copy the entire `data/` directory and use `--data` to point to the new path.
