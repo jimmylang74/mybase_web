@@ -185,6 +185,9 @@
       choose_color: '选择颜色',
       quick_colors: '常用颜色',
       custom_color: '自定义颜色...',
+      saved_colors: '已保存颜色',
+      save_color: '保存颜色',
+      save_color_title: '将当前颜色保存为常用色块, 点击色块右上角 ✕ 可删除',
       cell_format: '设置单元格格式',
       cell_format_title: '设置单元格格式',
       enable_public_edit: '解锁可编辑',
@@ -329,6 +332,9 @@
       choose_color: 'Choose Color',
       quick_colors: 'Quick Colors',
       custom_color: 'Custom Color...',
+      saved_colors: 'Saved Colors',
+      save_color: 'Save Color',
+      save_color_title: 'Save current color as a quick swatch. Click ✕ on a swatch to remove it.',
       cell_format: 'Cell Format',
       cell_format_title: 'Set Cell Format',
       enable_public_edit: 'Unlock Editable',
@@ -3926,6 +3932,7 @@
     colorPickerColor = mode === 'foreColor' ? $('#text-color').value : $('#text-bgcolor').value;
     header.textContent = mode === 'foreColor' ? '选择文字颜色' : '选择背景颜色';
     customInput.value = colorPickerColor;
+    renderSavedColorSwatches(popup);
 
     popup.querySelectorAll('.cp-color-swatch').forEach((s) => s.classList.remove('selected'));
     popup.querySelectorAll('.cp-color-swatch').forEach((s) => {
@@ -3968,6 +3975,82 @@
     popup.querySelectorAll('.cp-color-swatch').forEach((s) => {
       if (s.dataset.color === this.value) s.classList.add('selected');
     });
+  });
+
+  // ─── Saved Custom Colors ────────────────────────────────────────────────
+
+  const CP_STORAGE_KEY = 'kbase_cp_saved_colors';
+  const CP_MAX_SAVED = 12;
+  const CP_HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+  function getSavedColors() {
+    try {
+      const raw = localStorage.getItem(CP_STORAGE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      return arr.filter((c) => typeof c === 'string' && CP_HEX_RE.test(c)).slice(0, CP_MAX_SAVED);
+    } catch (err) {
+      console.warn('Cannot read saved colors:', err);
+      return [];
+    }
+  }
+
+  function setSavedColors(arr) {
+    try {
+      localStorage.setItem(CP_STORAGE_KEY, JSON.stringify(arr.slice(0, CP_MAX_SAVED)));
+    } catch (err) {
+      console.warn('Cannot save colors:', err);
+    }
+  }
+
+  function renderSavedColorSwatches(popup) {
+    const label = $('#cp-saved-label');
+    const container = $('#cp-saved-colors');
+    if (!container || !label) return;
+    container.innerHTML = '';
+    const saved = getSavedColors();
+    if (saved.length === 0) {
+      label.style.display = 'none';
+      container.style.display = 'none';
+      return;
+    }
+    label.style.display = 'block';
+    container.style.display = 'flex';
+    saved.forEach((color, index) => {
+      const sw = document.createElement('div');
+      sw.className = 'cp-color-swatch';
+      if (color.toLowerCase() === colorPickerColor.toLowerCase()) sw.classList.add('selected');
+      sw.dataset.color = color;
+      sw.dataset.saved = '1';
+      sw.style.background = color;
+      sw.title = color;
+      const rm = document.createElement('span');
+      rm.className = 'cp-swatch-remove';
+      rm.textContent = '✕';
+      rm.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const arr = getSavedColors();
+        arr.splice(index, 1);
+        setSavedColors(arr);
+        renderSavedColorSwatches(popup);
+      });
+      sw.appendChild(rm);
+      container.appendChild(sw);
+    });
+  }
+
+  $('#cp-btn-save').addEventListener('click', () => {
+    const color = (colorPickerColor || '').toLowerCase();
+    if (color === 'transparent' || !CP_HEX_RE.test(color)) return;
+    const popup = $('#color-picker-popup');
+    const exists = Array.from(popup.querySelectorAll('.cp-color-swatch')).some(
+      (s) => s.dataset.color && s.dataset.color.toLowerCase() === color
+    );
+    if (exists) return;
+    const arr = getSavedColors().filter((c) => c.toLowerCase() !== color);
+    arr.unshift(color);
+    setSavedColors(arr);
+    renderSavedColorSwatches(popup);
   });
 
   $('#cp-btn-ok').addEventListener('click', () => {
