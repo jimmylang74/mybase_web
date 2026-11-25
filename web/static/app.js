@@ -206,6 +206,11 @@
       remove_format: '清除格式',
       insert_table: '插入表格',
       insert_mermaid: '插入Mermaid图表',
+      insert_attachment: '插入附件',
+      upload_attachment_failed: '附件上传失败',
+      attachment_preview: '附件预览',
+      attachment_preview_failed: '附件打开失败',
+      attachment_download: '下载附件',
       save_as_png: '保存为PNG...',
       edit_link: '编辑Link',
       insert_link: '插入链接',
@@ -353,6 +358,11 @@
       remove_format: 'Remove Format',
       insert_table: 'Insert Table',
       insert_mermaid: 'Insert Mermaid Chart',
+      insert_attachment: 'Insert Attachment',
+      upload_attachment_failed: 'Failed to upload attachment',
+      attachment_preview: 'Attachment Preview',
+      attachment_preview_failed: 'Failed to open attachment',
+      attachment_download: 'Download',
       save_as_png: 'Save As PNG...',
       edit_link: 'Edit Link',
       insert_link: 'Insert Link',
@@ -4127,6 +4137,36 @@
     promptInsertTable();
   });
 
+  // ─── Insert Attachment ────────────────────────────────────────────────
+
+  let attachmentSavedRange = null;
+
+  // Capture the caret on mousedown — clicking the button itself can collapse
+  // the editor selection before the click handler runs.
+  $('#btn-insert-attachment').addEventListener('mousedown', () => {
+    attachmentSavedRange = saveEditorSelection();
+  });
+
+  $('#btn-insert-attachment').addEventListener('click', () => {
+    if (!currentTab) return;
+    if (!attachmentSavedRange) attachmentSavedRange = saveEditorSelection();
+    const input = $('#attachment-file-input');
+    input.value = '';
+    input.click();
+  });
+
+  $('#attachment-file-input').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    let range = attachmentSavedRange;
+    attachmentSavedRange = null;
+    e.target.value = '';
+    for (const file of files) {
+      // Each upload restores the caret left by the previous insertion so
+      // multiple attachments keep the order in which they were selected.
+      range = await uploadAndInsertFile(file, range);
+    }
+  });
+
   // ─── Mermaid Sequence Diagram ─────────────────────────────────────────
 
   let mermaidInitialized = false;
@@ -5022,9 +5062,14 @@
       if (node.nodeName === 'A' && node.href) {
         e.preventDefault();
         e.stopPropagation();
-        // If the link has a download attribute (file embed), trigger download
+        // File embeds: readable text files open in a preview, others download
         if (node.getAttribute('download')) {
-          triggerDownload(node.href, node.getAttribute('download'));
+          const filename = node.getAttribute('download') || '';
+          if (PREVIEWABLE_ATTACHMENT.test(filename)) {
+            previewAttachment(node.href, filename);
+          } else {
+            triggerDownload(node.href, filename);
+          }
         } else {
           window.open(node.href, '_blank');
         }
@@ -5484,11 +5529,41 @@
     }
   }
 
+  /** Remember the caret position in the editor before a dialog/file picker
+   *  takes focus away, so inserted content still lands where the user put it. */
+  function saveEditorSelection() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode) && editor.contains(sel.focusNode)) {
+      return sel.getRangeAt(0).cloneRange();
+    }
+    return null;
+  }
+
+  function restoreEditorSelection(range) {
+    editor.focus();
+    if (range) {
+      try {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {
+        // Stale range (e.g. editor replaced while uploading) — use caret.
+      }
+    }
+  }
+
+  function formatFileSize(size) {
+    if (size < 1024) return size + ' B';
+    if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+    return (size / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
   async function uploadAndInsertImage(file) {
     if (!currentTab) return;
+    const savedRange = saveEditorSelection();
     try {
       const result = await apiUpload(`/api/${encodeURIComponent(currentTab)}/upload`, file);
-      editor.focus();
+      restoreEditorSelection(savedRange);
       document.execCommand('insertImage', false, result.url);
       constrainEditorImages();
       markModified();
@@ -5497,31 +5572,30 @@
     }
   }
 
-  async function uploadAndInsertFile(file) {
-    if (!currentTab) return;
+  /** Upload a file and insert a non-editable attachment chip at the caret.
+   *  Returns the caret position after insertion (used for multiple files). */
+  async function uploadAndInsertFile(file, savedRange) {
+    if (!currentTab) return null;
+    if (savedRange === undefined) savedRange = saveEditorSelection();
     try {
       const result = await apiUploadFile(`/api/${encodeURIComponent(currentTab)}/upload/file`, file, file.name || 'file');
-      editor.focus();
+      restoreEditorSelection(savedRange);
       // Build a human-readable size string
       const size = result.size || 0;
-      let sizeStr = '';
-      if (size < 1024) {
-        sizeStr = size + ' B';
-      } else if (size < 1024 * 1024) {
-        sizeStr = (size / 1024).toFixed(1) + ' KB';
-      } else {
-        sizeStr = (size / (1024 * 1024)).toFixed(1) + ' MB';
-      }
+      const sizeStr = formatFileSize(size);
       const displayName = result.filename || file.name || 'file';
       const fileHtml = '<div class="file-embed" contenteditable="false" data-filename="' + escapeHtml(displayName) + '" data-filesize="' + size + '">' +
-        '<a href="' + result.url + '" download="' + escapeHtml(displayName).replace(/"/g, '&quot;') + '">' +
+        '<a href="' + escapeHtml(result.url).replace(/"/g, '&quot;') + '" download="' + escapeHtml(displayName).replace(/"/g, '&quot;') + '">' +
         '📎 ' + escapeHtml(displayName) + ' (' + sizeStr + ')' +
         '</a>' +
         '</div>';
       document.execCommand('insertHTML', false, fileHtml);
       markModified();
+      return saveEditorSelection();
     } catch (e) {
-      console.error('File paste upload failed:', e);
+      console.error('File upload failed:', e);
+      showDialog(t('error_dialog_title'), `<p>${escapeHtml(t('upload_attachment_failed'))}: ${escapeHtml(file.name || '')}</p>`);
+      return savedRange;
     }
   }
 
@@ -5590,7 +5664,7 @@
     ctxMenu._mermaidBlock = inMermaid ? mermaidBlock : null;
 
     // Toggle context menu items based on context
-    const mainItems = [].slice.call(ctxMenu.querySelectorAll('#ctx-insert-table, #ctx-insert-mermaid, #ctx-insert-link'));
+    const mainItems = [].slice.call(ctxMenu.querySelectorAll('#ctx-insert-table, #ctx-insert-mermaid, #ctx-insert-link, #ctx-insert-attachment'));
     const tableItems = [].slice.call(ctxMenu.querySelectorAll('.ctx-table-item, .ctx-table-sep'));
     const mermaidItems = [].slice.call(ctxMenu.querySelectorAll('.ctx-mermaid-item, .ctx-mermaid-sep'));
 
@@ -5664,6 +5738,15 @@
       restoreContextMenuRange();
       promptInsertLink(null);
     }
+  });
+
+  $('#ctx-insert-attachment').addEventListener('click', () => {
+    ctxMenu.style.display = 'none';
+    restoreContextMenuRange();
+    attachmentSavedRange = saveEditorSelection();
+    const input = $('#attachment-file-input');
+    input.value = '';
+    input.click();
   });
 
   function getTableContext() {
@@ -6273,6 +6356,43 @@
       exportItems.forEach(function(item) { item.classList.add('ctx-menu-disabled'); });
     }
     positionMenuAtEvent(tabCtxMenu, e);
+  }
+
+  // Text formats that can be read directly in the preview dialog.
+  const PREVIEWABLE_ATTACHMENT = /\.(md|markdown|txt|text|csv|json|jsonl|yaml|yml|log|ini|conf|cfg|xml|sql)$/i;
+
+  async function previewAttachment(url, filename) {
+    try {
+      const headers = {};
+      if (mySocketId) headers['X-Socket-ID'] = mySocketId;
+      if (authToken) headers['X-Auth-Token'] = authToken;
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const contentLength = parseInt(res.headers.get('Content-Length') || '0', 10);
+      if (contentLength > 2 * 1024 * 1024) {
+        // Avoid loading a huge file into the dialog.
+        triggerDownload(url, filename);
+        return;
+      }
+      const text = await res.text();
+
+      const box = $('#dialog-box');
+      const oldMaxWidth = box.style.maxWidth;
+      box.style.maxWidth = '820px';
+      showDialog(
+        `${t('attachment_preview')} - ${filename}`,
+        '<div class="attachment-preview">' +
+          '<div class="attachment-preview-bar"><span>' + escapeHtml(filename) + '</span>' +
+          '<button type="button" id="attachment-preview-download" class="tool-btn">' +
+          escapeHtml(t('attachment_download')) + '</button></div>' +
+          '<pre class="attachment-preview-text">' + escapeHtml(text) + '</pre>' +
+        '</div>'
+      ).finally(() => { box.style.maxWidth = oldMaxWidth; });
+      $('#attachment-preview-download').addEventListener('click', () => triggerDownload(url, filename));
+    } catch (e) {
+      console.error('Attachment preview failed:', e);
+      showDialog(t('error_dialog_title'), `<p>${escapeHtml(t('attachment_preview_failed'))}: ${escapeHtml(filename)}</p>`);
+    }
   }
 
   function triggerDownload(url, filename) {

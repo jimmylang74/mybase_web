@@ -233,6 +233,7 @@
     <tr><td><s>S</s> (Strikethrough)</td><td>Toggle strikethrough</td></tr>
     <tr><td>Color (swatch▾)</td><td>Set text color — click swatch to apply, ▾ to pick</td></tr>
     <tr><td>🔗 (Link)</td><td>Insert hyperlink (URL + display text)</td></tr>
+    <tr><td>📎 (Insert Attachment)</td><td>Upload one or more files and insert them as downloadable attachment chips at the caret</td></tr>
     <tr><td>💾 Save</td><td>Save current content manually</td></tr>
   </table>
 
@@ -249,6 +250,7 @@
     <li><strong>Font Family</strong> — Set font</li>
     <li><strong>Font Color</strong> — Set text color</li>
     <li><strong>Remove Format</strong> — Clear formatting from selection</li>
+    <li><strong>Insert Attachment</strong> — Upload a file at the right-click position</li>
     <li><strong>Copy / Paste</strong> — Copy and paste (browser native)</li>
   </ul>
 
@@ -257,6 +259,7 @@
   <ul>
     <li><strong>Paste text</strong> — Plain text inserted automatically (no external formatting)</li>
     <li><strong>Paste images</strong> — Paste images directly from clipboard (Ctrl+V), auto-uploaded</li>
+    <li><strong>Paste files</strong> — Any non-image file is uploaded and inserted as an attachment chip</li>
     <li><strong>Paste rich text</strong> — HTML formatted content preserved</li>
   </ul>
   <div class="tip">
@@ -272,9 +275,11 @@
     <li>Index is automatically updated after saving</li>
   </ul>
 
-  <h3>2.6 Image Operations</h3>
+  <h3>2.6 Image &amp; Attachment Operations</h3>
   <ul>
     <li><strong>Paste images</strong> — Directly from clipboard (PNG, JPG, etc.)</li>
+    <li><strong>Insert attachment</strong> — Click 📎 on the toolbar (or paste any non-image file) to upload a file and insert a downloadable chip</li>
+    <li><strong>Reading attachments</strong> — Clicking a text-based attachment (md, txt, csv, json, yaml, log, etc.) opens it in a read-only preview; other files are downloaded. Use <strong>Download</strong> in the preview to save the file.</li>
     <li><strong>Link clicking</strong> — Links open in a new tab automatically</li>
   </ul>
 
@@ -554,15 +559,15 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <p><strong>Right-click</strong> a tab and choose <strong>"Export"</strong> → select format:</p>
   <ul>
     <li><strong>PDF</strong> — Recursively collects all menu items' content under the current KB and merges them into a single PDF document. Items are indented by depth. Uses NotoSansSC font for CJK character support.</li>
-    <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code>, and all other files. Unzip and browse as a standalone HTML page.</li>
-    <li><strong>MD</strong> — Converts all menu items' content into a single Markdown document. Tables are converted to pipe-table syntax, Mermaid diagrams to <code>```mermaid</code> fenced code blocks, and images are copied to an <code>images/</code> folder. If images are present, the output is a ZIP (<code>index.md</code> + <code>images/</code>); otherwise a plain <code>.md</code> file is returned.</li>
+    <li><strong>ZIP</strong> — Directly packages the KB's data folder, including <code>menu.json</code>, <code>content/</code>, <code>images/</code> (also holds uploaded attachments), and all other files. Unzip and browse as a standalone HTML page; attachment links work offline.</li>
+    <li><strong>MD</strong> — Converts all menu items' content into a single Markdown document. Tables are converted to pipe-table syntax, Mermaid diagrams to <code>```mermaid</code> fenced code blocks, images are copied to <code>images/</code>, and attachments to <code>files/</code>. If images or attachments are present, the output is a ZIP (<code>index.md</code> + <code>images/</code> + <code>files/</code>); otherwise a plain <code>.md</code> file is returned.</li>
   </ul>
 
   <h3>8.2 Menu Item-Level Export</h3>
   <p><strong>Right-click</strong> a tree menu item and choose <strong>"Export"</strong> → select format:</p>
   <ul>
     <li><strong>PDF</strong> — Exports the selected item and all its children into one PDF, arranged by hierarchy depth.</li>
-    <li><strong>ZIP</strong> — Generates a standalone HTML page containing the entire subtree content (with inline JSON data), copies referenced images to <code>images/</code>, and packages as a ZIP. Unzip and open <code>index.html</code> to browse offline.</li>
+    <li><strong>ZIP</strong> — Generates a standalone HTML page containing the entire subtree content (with inline JSON data), copies referenced images to <code>images/</code> and attachments to <code>files/</code>, and packages as a ZIP. Unzip and open <code>index.html</code> to browse offline.</li>
     <li><strong>MD</strong> — Exports the selected item and all its children into a Markdown document. Menu hierarchy is represented by heading levels (depth 0 → <code>##</code>, depth 1 → <code>###</code>, etc.). Tables, Mermaid diagrams, and images are handled the same as tab-level MD export.</li>
   </ul>
 
@@ -603,7 +608,8 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <li><strong>Passwords cannot be recovered</strong> — If you forget the password, you will lose access to the knowledge base content</li>
     <li><strong>Encryption does not affect search indexing</strong> — Content can be searched normally once unlocked</li>
     <li><strong>Encrypted KBs do not support real-time sync</strong> — WebSocket synchronization is blocked for security</li>
-    <li><strong>Standalone export is unavailable</strong> — Encrypted KBs cannot generate public standalone HTML pages</li>
+    <li><strong>Standalone export is unavailable</strong> — Encrypted KBs cannot generate public standalone HTML pages; after unlocking, PDF/ZIP/MD exports work as usual and attachments are decrypted into the export</li>
+    <li><strong>Attachments are encrypted too</strong> — Uploaded files are encrypted with the same key and can be downloaded from the editor once unlocked</li>
     <li><strong>Backups include encrypted files</strong> — Encrypted files in the backup ZIP remain encrypted</li>
   </ul>
 
@@ -758,6 +764,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <tr><td><s>S</s> (删除线)</td><td>切换删除线</td></tr>
     <tr><td>颜色（色块▾）</td><td>设置文字颜色 — 点击色块应用，点击 ▾ 选择颜色</td></tr>
     <tr><td>🔗 (链接)</td><td>插入超链接（URL + 显示文字）</td></tr>
+    <tr><td>📎 (插入附件)</td><td>上传一个或多个文件，并在光标位置插入可下载的附件块</td></tr>
     <tr><td>💾 Save</td><td>手动保存当前内容</td></tr>
   </table>
 
@@ -774,6 +781,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <li><strong>Font Family</strong> — 设置字体</li>
     <li><strong>Font Color</strong> — 设置文字颜色</li>
     <li><strong>Remove Format</strong> — 清除选中内容的格式</li>
+    <li><strong>Insert Attachment</strong> — 在右键位置上传并插入附件</li>
     <li><strong>Copy / Paste</strong> — 复制和粘贴（使用浏览器原生命令）</li>
   </ul>
 
@@ -782,6 +790,7 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
   <ul>
     <li><strong>粘贴文本</strong> — 纯文本自动插入（不会带入外部格式）</li>
     <li><strong>粘贴图片</strong> — 从剪贴板直接粘贴图片（Ctrl+V），图片会自动上传到服务器并插入到光标位置</li>
+    <li><strong>粘贴文件</strong> — 任意非图片文件会自动上传并插入为可下载的附件块</li>
     <li><strong>粘贴富文本</strong> — 保留 HTML 格式内容</li>
   </ul>
   <div class="tip">
@@ -797,9 +806,11 @@ python server.py --workers-ocr 2 --workers-menu 2</code></pre>
     <li>保存成功后索引会自动增量更新</li>
   </ul>
 
-  <h3>2.6 图片操作</h3>
+  <h3>2.6 图片与附件操作</h3>
   <ul>
     <li><strong>粘贴图片</strong> — 从剪贴板直接粘贴（支持 PNG、JPG 等常见格式）</li>
+    <li><strong>插入附件</strong> — 点击工具栏的 📎 按钮（或直接粘贴任意非图片文件），上传文件后在光标位置插入可下载的附件块</li>
+    <li><strong>直接阅读附件</strong> — 点击 md、txt、csv、json、yaml、log 等文本类附件会在只读预览窗口中打开；其他类型文件则直接下载。预览窗口中的「下载附件」按钮可保存文件。</li>
     <li><strong>链接点击</strong> — 编辑器中的链接点击后自动在新标签页打开</li>
   </ul>
 
@@ -1188,15 +1199,15 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
   <p>在 Tab 标签上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
   <ul>
     <li><strong>PDF</strong> — 将当前知识库下所有菜单项的内容递归收集，合并生成一个 PDF 文档。菜单项按深度缩进，使用 NotoSansSC 字体支持中文显示。</li>
-    <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code> 等所有文件。解压后可作为独立 HTML 页面浏览。</li>
-    <li><strong>MD</strong> — 将当前知识库下所有菜单项的内容转换为 Markdown 文档。表格转换为管道表格语法，Mermaid 图表转换为 <code>```mermaid</code> 代码块，图片复制到 <code>images/</code> 目录。如果包含图片，输出为 ZIP 包（<code>index.md</code> + <code>images/</code>）；否则直接返回 <code>.md</code> 文件。</li>
+    <li><strong>ZIP</strong> — 直接将当前知识库的数据文件夹打包，包含 <code>menu.json</code>、<code>content/</code>、<code>images/</code>（上传的附件也存放于此）等所有文件。解压后可作为独立 HTML 页面浏览，附件链接可离线下载。</li>
+    <li><strong>MD</strong> — 将当前知识库下所有菜单项的内容转换为 Markdown 文档。表格转换为管道表格语法，Mermaid 图表转换为 <code>```mermaid</code> 代码块，图片复制到 <code>images/</code> 目录，附件复制到 <code>files/</code> 目录。如果包含图片或附件，输出为 ZIP 包（<code>index.md</code> + <code>images/</code> + <code>files/</code>）；否则直接返回 <code>.md</code> 文件。</li>
   </ul>
 
   <h3>8.2 菜单项级导出</h3>
   <p>在树形菜单项上 <strong>右键点击</strong>，选择「Export」→ 选择格式：</p>
   <ul>
     <li><strong>PDF</strong> — 导出该菜单项及其所有子项的内容，合并为一个 PDF，按层级深度缩进排列。</li>
-    <li><strong>ZIP</strong> — 生成一个独立的 HTML 页面，包含该子树所有内容（内嵌 JSON 数据），并复制引用的图片到 <code>images/</code> 目录，打包为 ZIP 文件。解压后可直接打开 <code>index.html</code> 浏览。</li>
+    <li><strong>ZIP</strong> — 生成一个独立的 HTML 页面，包含该子树所有内容（内嵌 JSON 数据），并复制引用的图片到 <code>images/</code> 目录、附件到 <code>files/</code> 目录，打包为 ZIP 文件。解压后可直接打开 <code>index.html</code> 浏览。</li>
     <li><strong>MD</strong> — 导出该菜单项及其所有子项为 Markdown 文档。菜单层级通过标题级别表示（depth 0 → <code>##</code>，depth 1 → <code>###</code>，依此类推）。表格、Mermaid 图表和图片的处理方式与 Tab 级 MD 导出相同。</li>
   </ul>
 
@@ -1237,7 +1248,8 @@ python server.py --data /var/kbdata --workers-ocr 2</code></pre>
     <li><strong>密码无法找回</strong> — 忘记密码后将无法访问该知识库内容</li>
     <li><strong>加密不影响搜索索引</strong> — 解锁后可正常搜索</li>
     <li><strong>加密知识库不支持实时同步</strong> — WebSocket 同步被阻止，保证数据安全</li>
-    <li><strong>独立导出不可用</strong> — 加密知识库无法生成公开的独立 HTML 页面</li>
+    <li><strong>独立导出不可用</strong> — 加密知识库无法生成公开的独立 HTML 页面；解锁后可正常导出 PDF/ZIP/MD，附件随导出一起解密打包</li>
+    <li><strong>附件同样加密</strong> — 上传的附件按同一密钥加密存储，解锁后可在编辑器中下载</li>
     <li><strong>备份包含加密文件</strong> — 备份 ZIP 中的加密文件保持加密状态</li>
   </ul>
 

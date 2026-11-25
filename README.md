@@ -1,4 +1,4 @@
-# 知识库 KBase v8.0.0
+# 知识库 KBase v8.1.0
 
 **Web of Mybase Knowledge Server**，中文知识库管理系统，基于 Flask + PaddleOCR 构建。
 
@@ -9,7 +9,8 @@
 ## 功能特性
 
 V6.x ( In progress )
-- **菜单项导出为Markdown**，支持将菜单项或整个知识库导出为MD文件，表格转为管道语法，Mermaid图表保留源代码块，图片打包到images目录
+- **插入附件**，编辑器工具栏一键上传任意类型文件（也可直接粘贴非图片文件），生成附件块：md/txt 等文本文件可直接点击阅读，其他文件点击下载；兼容 PDF/ZIP/Markdown 导出及加密知识库
+- **菜单项导出为Markdown**，支持将菜单项或整个知识库导出为MD文件，表格转为管道语法，Mermaid图表保留源代码块，图片打包到images目录，附件打包到files目录
 - **菜单项导出为PPT**，支持配置后端LLM，菜单项直接导出到LLM，由LLM总结后生成PPT (in progress)
 - **Excel表格拷贝**，支持直接从Excel表格拷贝到网页内容区，保留字体，颜色，背景，对齐方式
 - **图片内文字拷贝**,支持内容区域图片内的文字拷贝 (使用tesseract.js实现)

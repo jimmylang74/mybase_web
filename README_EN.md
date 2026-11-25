@@ -1,4 +1,4 @@
-# KBase v8.0.0
+# KBase v8.1.0
 
 **Web of Mybase Knowledge Server** — A Chinese knowledge base management system built with Flask + PaddleOCR.
 
@@ -9,7 +9,8 @@ Supports multi-KB tabs, tree menu organization, rich text editing, image OCR tex
 ## Features
 
 ### v6.x (In Progress)
-- **Export menu items as Markdown** — Export a menu item or entire KB as MD; tables become pipe-table syntax, Mermaid diagrams preserved as fenced code blocks, images bundled into an `images/` folder
+- **Insert attachments** — Upload any file type from the editor toolbar (or paste non-image files) to insert an attachment chip: md/txt and other text files open in a preview, other files are downloaded; compatible with PDF/ZIP/Markdown exports and encrypted KBs
+- **Export menu items as Markdown** — Export a menu item or entire KB as MD; tables become pipe-table syntax, Mermaid diagrams preserved as fenced code blocks, images bundled into an `images/` folder, attachments into `files/`
 - **Export menu items as PPT** — Configure a backend AI PPT agent; menu items are sent to the agent which summarizes them into a PPT (In progress)
 - **Excel tables Copy to HTML** — Copy from excel and paste into HTML
 - **In picture words copy** — Copy words from in a picture (by using tesseract.js)

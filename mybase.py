@@ -31,6 +31,7 @@ from datetime import datetime
 
 
 from pathlib import Path
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, request, render_template, send_from_directory, send_file, abort
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -3659,6 +3660,9 @@ def generate_standalone_html(tab_name):
         return None
     content_data = {}
     img_pattern = re.compile(r'/uploads/' + re.escape(tab_name) + r'/images/')
+    # Attachments are served from /uploads/<tab>/files/ but stored in the
+    # tab's images/ folder, which is included in the exported ZIP.
+    file_pattern = re.compile(r'/uploads/' + re.escape(tab_name) + r'/files/')
     tab_path = get_tab_path(tab_name)
 
     # Read content/ files (new-style web editor)
@@ -3668,6 +3672,7 @@ def generate_standalone_html(tab_name):
             html = read_tab_text(tab_name, f"content/{f.name}")
             if html is not None:
                 html = img_pattern.sub('images/', html)
+                html = file_pattern.sub('images/', html)
                 content_data[f.stem] = html
 
     # Read .qrich.html files (legacy frameset tabs)
@@ -3680,6 +3685,7 @@ def generate_standalone_html(tab_name):
                 html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
                 html = re.sub(r'<nav[^>]*>.*?</nav>', '', html, flags=re.DOTALL)
             html = img_pattern.sub('images/', html)
+            html = file_pattern.sub('images/', html)
             content_data[f.name] = html.strip()
 
     content_json = json.dumps(content_data, ensure_ascii=False)
@@ -3707,6 +3713,9 @@ def generate_standalone_html(tab_name):
   .toggle.empty {{ visibility:hidden; }}
   .label {{ flex:1; font-size:13px; padding:2px 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
   .children {{ padding-left:20px; }}
+  img {{ max-width:100%; height:auto !important; }}
+  .file-embed {{ display:inline-block; background:#f0f7ff; border:1px solid #d0e3f7; border-radius:6px; padding:6px 10px; margin:4px 0; }}
+  .file-embed a {{ text-decoration:none; color:#2c6fb0; font-size:14px; }}
 </style>
 </head>
 <body>
@@ -3767,6 +3776,25 @@ var CONTENT_DATA = {content_json};
   }}
 
   render(MENU_DATA, treeEl);
+
+  // Attachment chips are inserted as HTML; intercept their download links
+  // so they work the same way as in the editor.
+  contentArea.addEventListener('click', function(e) {{
+    var node = e.target;
+    while (node && node !== contentArea) {{
+      if (node.nodeName === 'A' && node.getAttribute('download')) {{
+        e.preventDefault();
+        var a = document.createElement('a');
+        a.href = node.href;
+        a.download = node.getAttribute('download');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }}
+      node = node.parentNode;
+    }}
+  }});
 }})();
 </script>
 </body>
@@ -4802,13 +4830,14 @@ def _html_to_pdf_text(html):
 def _iter_dom_elements(html):
     """Yield (type, content) tuples preserving DOM order.
 
-    Types: 'text', 'img', 'svg', 'table' — yielded in the exact order
-    they appear in the HTML so PDF rendering respects the document order.
+    Types: 'text', 'img', 'svg', 'table', 'file' — yielded in the exact order
+    they appear in the HTML so PDF/Markdown exports respect document order.
     """
     pat = re.compile(
         r'(<table\b[^>]*>.*?</table>)'
         r'|(<img\b[^>]*/?>)'
-        r'|(<svg\b[^>]*>.*?</svg>)',
+        r'|(<svg\b[^>]*>.*?</svg>)'
+        r'|(<div\b[^>]*class=["\'][^"\']*\bfile-embed\b[^"\']*["\'][^>]*>.*?</div>)',
         re.DOTALL | re.IGNORECASE,
     )
     pos = 0
@@ -4821,9 +4850,43 @@ def _iter_dom_elements(html):
             yield ('img', m.group(2))
         elif m.group(3):
             yield ('svg', m.group(3))
+        elif m.group(4):
+            yield ('file', m.group(4))
         pos = m.end()
     if pos < len(html):
         yield ('text', html[pos:])
+
+
+def _html_attr(fragment, attr):
+    """Read an attribute value from an HTML fragment (entities unescaped)."""
+    m = re.search(r'\b' + re.escape(attr) + r'\s*=\s*(["\'])(.*?)\1', fragment, re.DOTALL | re.IGNORECASE)
+    return html_module.unescape(m.group(2)) if m else None
+
+
+def _parse_file_embed(fragment):
+    """Return (display_name, size_bytes, href) for a file-embed div."""
+    name = _html_attr(fragment, 'data-filename')
+    size_raw = _html_attr(fragment, 'data-filesize')
+    href_m = re.search(r'<a\b[^>]*href\s*=\s*(["\'])(.*?)\1', fragment, re.DOTALL | re.IGNORECASE)
+    href = html_module.unescape(href_m.group(2)) if href_m else None
+    if not name:
+        name = _html_attr(fragment, 'download')
+    if not name and href:
+        name = os.path.basename(urlparse(href).path)
+    try:
+        size = int(size_raw) if size_raw is not None else 0
+    except (TypeError, ValueError):
+        size = 0
+    return name or 'attachment', size, href
+
+
+def _format_file_size(size):
+    """Human-readable size matching the editor's attachment chip."""
+    if size < 1024:
+        return f'{size} B'
+    if size < 1024 * 1024:
+        return f'{size / 1024:.1f} KB'
+    return f'{size / (1024 * 1024):.1f} MB'
 
 
 def _generate_pdf(items, title, tab_name=None):
@@ -4963,6 +5026,15 @@ def _generate_pdf(items, title, tab_name=None):
                                     pdf.ln(3)
                                 except Exception:
                                     pass
+                elif elem_type == 'file':
+                    # Attachments cannot be downloaded from a PDF, so show
+                    # their metadata in document order instead of losing them.
+                    name, size, _href = _parse_file_embed(elem_content)
+                    label = f'附件: {name}' + (f' ({_format_file_size(size)})' if size else '')
+                    pdf.set_x(pdf.l_margin + indent + 4)
+                    pdf.set_font('CJK', '', 9)
+                    pdf.multi_cell(pdf.epw - indent - 4, 5, label)
+                    pdf.ln(1)
                 elif elem_type == 'svg':
                     png_src = re.search(
                         r'data-png="(data:image/png;base64,[^"]*)"', elem_content
@@ -5056,10 +5128,11 @@ def _generate_pdf(items, title, tab_name=None):
 
 def _build_standalone_subtree_html(tab_name, items, title, dest_dir=None):
     """Build a standalone interactive HTML for a subtree (for ZIP export).
-    If *dest_dir* is given, images referenced in the HTML are copied into
-    ``dest_dir/images/`` and their ``src`` attributes rewritten to match."""
+    If *dest_dir* is given, referenced images are copied to ``dest_dir/images/``
+    and attachments to ``dest_dir/files/``, with URLs rewritten to match."""
     content_data = {}
     img_pattern = re.compile(r'/uploads/' + re.escape(tab_name) + r'/images/')
+    file_pattern = re.compile(r'/uploads/' + re.escape(tab_name) + r'/files/')
 
     # Build tree structure AND content_data in ONE pass, using SAME uuid for both.
     tree_data = []
@@ -5075,8 +5148,10 @@ def _build_standalone_subtree_html(tab_name, items, title, dest_dir=None):
         html = content_html
         if html:
             html = img_pattern.sub('images/', html)
+            html = file_pattern.sub('files/', html)
             if dest_dir:
                 html = _copy_export_images(html, tab_name, dest_dir)
+                html = _copy_export_files(html, tab_name, dest_dir)
         content_data[item_id] = html
 
         # Find parent based on depth
@@ -5113,6 +5188,8 @@ def _build_standalone_subtree_html(tab_name, items, title, dest_dir=None):
   img {{ max-width:100%; height:auto !important; }}
   table {{ border-collapse:collapse; }}
   td, th {{ border:1px solid #ccc; padding:4px 8px; }}
+  .file-embed {{ display:inline-block; background:#f0f7ff; border:1px solid #d0e3f7; border-radius:6px; padding:6px 10px; margin:4px 0; }}
+  .file-embed a {{ text-decoration:none; color:#2c6fb0; font-size:14px; }}
 </style>
 </head>
 <body>
@@ -5170,6 +5247,24 @@ var CONTENT_DATA = {content_json};
     }});
   }}
   render({json.dumps(tree_data, ensure_ascii=False)}, treeEl);
+
+  // Download attachments from the exported, offline package.
+  contentArea.addEventListener('click', function(e) {{
+    var node = e.target;
+    while (node && node !== contentArea) {{
+      if (node.nodeName === 'A' && node.getAttribute('download')) {{
+        e.preventDefault();
+        var a = document.createElement('a');
+        a.href = node.href;
+        a.download = node.getAttribute('download');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }}
+      node = node.parentNode;
+    }}
+  }});
 }})();
 </script>
 </body>
@@ -5216,6 +5311,44 @@ def _copy_export_images(html_content, tab_name, dest_dir):
         return match.group(0)
 
     return img_pattern.sub(_replace_img, html_content)
+
+
+def _copy_export_files(html_content, tab_name, dest_dir):
+    """Copy attachment files referenced by <a download> links into dest_dir/files/.
+
+    Attachment URLs in stored content are either absolute
+    (/uploads/<tab>/files/<name>) or already relative (files/<name>). Their
+    bytes live in the tab's images/ folder; read_tab_file() keeps this working
+    for encrypted tabs that have been unlocked.
+    """
+    link_pattern = re.compile(r'<a\b[^>]*>', re.IGNORECASE)
+
+    def _replace_link(match):
+        tag = match.group(0)
+        if not re.search(r'\bdownload\b', tag, re.IGNORECASE):
+            return tag
+        href_m = re.search(r'\bhref\s*=\s*(["\'])(.*?)\1', tag, re.DOTALL | re.IGNORECASE)
+        if not href_m:
+            return tag
+        href = html_module.unescape(href_m.group(2))
+        filename = os.path.basename(urlparse(href).path)
+        if not filename:
+            return tag
+        abs_m = re.match(r'^/uploads/([^/]+)/files/(.+)$', href)
+        if abs_m:
+            data = read_tab_file(abs_m.group(1), f'images/{abs_m.group(2)}')
+        elif href.startswith('files/'):
+            data = read_tab_file(tab_name, f'images/{href[len("files/"):]}')
+        else:
+            data = read_tab_file(tab_name, f'images/{filename}')
+        if data is None:
+            return tag
+        files_dest = dest_dir / 'files'
+        files_dest.mkdir(exist_ok=True)
+        (files_dest / filename).write_bytes(data)
+        return tag[: href_m.start(2)] + f'files/{filename}' + tag[href_m.end(2) :]
+
+    return link_pattern.sub(_replace_link, html_content)
 
 
 # ─── Markdown Export Helpers ─────────────────────────────────────────────
@@ -5342,11 +5475,40 @@ def _copy_image_for_md(src, tab_name, dest_dir):
     return None
 
 
+def _copy_attachment_for_md(href, tab_name, dest_dir):
+    """Copy an attachment referenced by a file-embed link into dest_dir/files/.
+
+    Attachments are stored in the tab's ``images/`` folder on the server but
+    are exported into a separate ``files/`` folder so they cannot collide with
+    image files.  Works for encrypted tabs via read_tab_file().
+    Returns the relative path used in Markdown, or None on failure.
+    """
+    if not href:
+        return None
+    filename = os.path.basename(urlparse(href).path)
+    if not filename:
+        return None
+    data = None
+    m = re.match(r'^/uploads/([^/]+)/files/(.+)$', href)
+    if m:
+        data = read_tab_file(m.group(1), f'images/{m.group(2)}')
+    elif href.startswith('files/'):
+        data = read_tab_file(tab_name, f'images/{href[len("files/"):]}')
+    else:
+        data = read_tab_file(tab_name, f'images/{filename}')
+    if data is None:
+        return None
+    files_dir = dest_dir / 'files'
+    files_dir.mkdir(exist_ok=True)
+    (files_dir / filename).write_bytes(data)
+    return f'files/{filename}'
+
+
 def _generate_md(items, title, tab_name, dest_dir):
     """Generate Markdown content from collected items.
 
     items: [(label, content_html, depth), ...]
-    Images are copied to dest_dir/images/.
+    Images are copied to dest_dir/images/ and attachments to dest_dir/files/.
     Returns the markdown string.
     """
     try:
@@ -5410,20 +5572,30 @@ def _generate_md(items, title, tab_name, dest_dir):
                 # Skip SVGs — mermaid ones already handled via source code
                 pass
 
+            elif elem_type == 'file':
+                name, size, href = _parse_file_embed(fragment)
+                safe_name = name.replace('[', '\\[').replace(']', '\\]')
+                label = f'📎 {safe_name}' + (f' ({_format_file_size(size)})' if size else '')
+                local_path = _copy_attachment_for_md(href, tab_name, dest_dir)
+                lines.append(f'\n[{label}](<{local_path}>)\n' if local_path else f'\n{label}\n')
+
     return '\n'.join(lines)
 
 
 def _build_md_export(tab_name, items, title, filename_base):
-    """Build MD export: plain .md if no images, ZIP (.md + images/) otherwise.
+    """Build MD export: plain .md if no assets, ZIP (.md + images/ + files/) otherwise.
 
     Returns (file_path, download_filename, mimetype).
     """
     tmp_dir = _export_temp_dir()
     try:
         md_content = _generate_md(items, title, tab_name, tmp_dir)
-        has_images = (tmp_dir / 'images').exists() and any((tmp_dir / 'images').iterdir())
+        has_assets = any(
+            (tmp_dir / subdir).exists() and any((tmp_dir / subdir).iterdir())
+            for subdir in ('images', 'files')
+        )
 
-        if not has_images:
+        if not has_assets:
             md_filename = f'{filename_base}.md'
             md_path = _EXPORT_DIR / md_filename
             md_path.write_text(md_content, encoding='utf-8')

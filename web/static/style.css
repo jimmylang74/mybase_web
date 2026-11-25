@@ -616,6 +616,30 @@ body {
   color: #1a4f8a;
 }
 
+/* ─── Attachment Preview ─────────────────────────────────────────────── */
+.attachment-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #555;
+}
+.attachment-preview-text {
+  max-height: 60vh;
+  overflow: auto;
+  background: #f7f8fa;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ─── Editor Context Menu ─────────────────────────────────────────────── */
 #context-menu {
   display: none;
