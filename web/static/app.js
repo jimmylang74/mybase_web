@@ -5584,7 +5584,7 @@
       const size = result.size || 0;
       const sizeStr = formatFileSize(size);
       const displayName = result.filename || file.name || 'file';
-      const fileHtml = '<div class="file-embed" contenteditable="false" data-filename="' + escapeHtml(displayName) + '" data-filesize="' + size + '">' +
+      const fileHtml = '<div class="file-embed" contenteditable="false" data-filename="' + escapeHtml(displayName).replace(/"/g, '&quot;') + '" data-filesize="' + size + '">' +
         '<a href="' + escapeHtml(result.url).replace(/"/g, '&quot;') + '" download="' + escapeHtml(displayName).replace(/"/g, '&quot;') + '">' +
         '📎 ' + escapeHtml(displayName) + ' (' + sizeStr + ')' +
         '</a>' +

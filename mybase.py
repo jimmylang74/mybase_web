@@ -3503,19 +3503,28 @@ def upload_file(tab):
     if not file.filename:
         return jsonify({'error': 'No file selected'}), 400
 
-    orig_filename = secure_filename(file.filename)
-    if not orig_filename:
-        orig_filename = f"file_{uuid.uuid4().hex[:8]}.bin"
+    # Keep the original name (Chinese included) for display / download; the
+    # sanitized name is only used for the stored file and URL because
+    # secure_filename() strips all non-ASCII characters.
+    display_name = os.path.basename(file.filename.replace('\\', '/')).strip()
+    if not display_name:
+        display_name = f"file_{uuid.uuid4().hex[:8]}.bin"
 
-    name_part, ext_part = os.path.splitext(orig_filename) if '.' in orig_filename else (orig_filename, '.bin')
-    unique_name = f"{name_part}_{uuid.uuid4().hex[:4]}{ext_part}"
+    name_part, ext_part = os.path.splitext(display_name)
+    safe_name = secure_filename(name_part)
+    safe_ext = secure_filename(ext_part)
+    if not safe_name:
+        safe_name = f"file_{uuid.uuid4().hex[:8]}"
+    if not safe_ext:
+        safe_ext = secure_filename(ext_part.lstrip('.')) or 'bin'
+    unique_name = f"{safe_name}_{uuid.uuid4().hex[:4]}.{safe_ext}"
 
     file_data = file.read()
     write_tab_file(tab, f"images/{unique_name}", file_data)
 
     return jsonify({
         'url': f'/uploads/{tab}/files/{unique_name}',
-        'filename': orig_filename,
+        'filename': display_name,
         'size': len(file_data)
     }), 201
 
